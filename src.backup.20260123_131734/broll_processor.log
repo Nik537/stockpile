@@ -1,0 +1,819 @@
+2026-01-21 17:54:16,012 - main - INFO - Starting stockpile...
+2026-01-21 17:54:16,130 - services.ai_service - INFO - Initialized AI service with model: gemma-3-27b-it
+2026-01-21 17:54:16,131 - services.transcription - INFO - Loading Whisper model: base
+2026-01-21 17:54:17,051 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-21 17:54:17,052 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 17:54:17,052 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 17:54:17,053 - broll_processor - INFO - stockpile initialized successfully
+2026-01-21 17:54:17,054 - broll_processor - INFO - Starting stockpile...
+2026-01-21 17:54:17,054 - services.file_monitor - INFO - Starting file monitoring...
+2026-01-21 17:54:17,055 - services.file_monitor - INFO - Found existing video file: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 17:54:17,056 - broll_processor - INFO - New file detected from local: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 17:54:17,058 - services.file_monitor - INFO - Started monitoring local folder: /Users/niknoavak/Desktop/YT/stockpile/input
+2026-01-21 17:54:17,060 - services.file_monitor - INFO - File monitoring started
+2026-01-21 17:54:17,061 - broll_processor - INFO - Processor started successfully
+2026-01-21 17:54:17,062 - main - INFO - stockpile started successfully
+2026-01-21 17:54:17,063 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 17:54:17,065 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-21 17:54:17,066 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-21 17:55:48,571 - broll_processor - INFO - Transcription completed. Length: 10201 characters
+2026-01-21 17:55:52,204 - broll_processor - INFO - Extracted 10 search phrases: ['mma training montage', 'wrestler explosive takedown', 'grappling clinch control', 'box jumps plyometrics', 'kettlebell swings exercise', 'olympic weightlifting clean', 'fighter deadlift exercise', 'squats leg drive', 'medicine ball throws', 'high-intensity interval training']
+2026-01-21 17:55:52,206 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552 for video descriptS&C.mp4
+2026-01-21 17:55:52,208 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552
+2026-01-21 17:55:52,209 - broll_processor - INFO - Processing 10 search phrases
+2026-01-21 17:55:52,210 - broll_processor - INFO - Processing phrase: mma training montage
+2026-01-21 17:55:52,211 - services.youtube_service - INFO - Searching YouTube for: 'mma training montage'
+2026-01-21 17:56:08,614 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 17:56:08,620 - broll_processor - INFO - Found 8 videos for: mma training montage
+2026-01-21 17:56:11,772 - services.ai_service - INFO - Evaluated videos for 'mma training montage': 5 videos scored >= 6
+2026-01-21 17:56:11,774 - broll_processor - INFO - Selected 3 top videos for: mma training montage
+2026-01-21 17:56:11,776 - services.video_downloader - INFO - Downloading 3 videos for phrase 'mma training montage' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/mma_training_montage
+2026-01-21 17:57:57,957 - services.video_downloader - INFO - Downloaded: score08_MMA Training - Cinematic Video.mp4
+2026-01-21 18:02:28,704 - services.video_downloader - INFO - Downloaded: score07_Training MMA.mp4
+2026-01-21 18:03:24,213 - services.video_downloader - INFO - Downloaded: score07_MMA TRAINING - Motivation Video.mp4
+2026-01-21 18:03:24,216 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'mma training montage'
+2026-01-21 18:03:24,222 - broll_processor - INFO - Downloaded 3 files for: mma training montage
+2026-01-21 18:03:24,226 - broll_processor - INFO - Processing phrase: wrestler explosive takedown
+2026-01-21 18:03:24,228 - services.youtube_service - INFO - Searching YouTube for: 'wrestler explosive takedown'
+2026-01-21 18:03:37,543 - broll_processor - INFO - Found 9 videos for: wrestler explosive takedown
+2026-01-21 18:03:40,146 - services.ai_service - INFO - Evaluated videos for 'wrestler explosive takedown': 3 videos scored >= 6
+2026-01-21 18:03:40,148 - broll_processor - INFO - Selected 3 top videos for: wrestler explosive takedown
+2026-01-21 18:03:40,150 - services.video_downloader - INFO - Downloading 3 videos for phrase 'wrestler explosive takedown' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/wrestler_explosive_takedown
+2026-01-21 18:06:52,946 - services.video_downloader - INFO - Downloaded: score09_TMG Clips #175 - Awesome Explosive Takedown!.mp4
+2026-01-21 18:07:08,830 - services.video_downloader - INFO - Downloaded: score08_10 minutes of insane takedowns in men's freestyle wrestling! 🤼‍♀️ 💪.f251.webm
+2026-01-21 18:09:38,981 - services.video_downloader - INFO - Downloaded: score07_15 Powerful Double Legs at 2023 NCAAs.mp4
+2026-01-21 18:09:38,984 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'wrestler explosive takedown'
+2026-01-21 18:09:38,985 - broll_processor - INFO - Downloaded 3 files for: wrestler explosive takedown
+2026-01-21 18:09:38,986 - broll_processor - INFO - Processing phrase: grappling clinch control
+2026-01-21 18:09:38,987 - services.youtube_service - INFO - Searching YouTube for: 'grappling clinch control'
+2026-01-21 18:09:53,655 - broll_processor - INFO - Found 9 videos for: grappling clinch control
+2026-01-21 18:09:56,255 - services.ai_service - INFO - Evaluated videos for 'grappling clinch control': 3 videos scored >= 6
+2026-01-21 18:09:56,257 - broll_processor - INFO - Selected 3 top videos for: grappling clinch control
+2026-01-21 18:09:56,260 - services.video_downloader - INFO - Downloading 3 videos for phrase 'grappling clinch control' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/grappling_clinch_control
+2026-01-21 18:12:00,512 - services.video_downloader - INFO - Downloaded: score08_Using Torque To Control The Clinch.mp4
+2026-01-21 18:12:43,679 - services.video_downloader - INFO - Downloaded: score07_The Dos and Don’ts of Clinch Control and Takedowns.mp4
+2026-01-21 18:12:56,280 - services.video_downloader - INFO - Downloaded: score07_how to win small fights in clinch and 3 simple clinch takedowns.f251.webm
+2026-01-21 18:12:56,281 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'grappling clinch control'
+2026-01-21 18:12:56,282 - broll_processor - INFO - Downloaded 3 files for: grappling clinch control
+2026-01-21 18:12:56,283 - broll_processor - INFO - Processing phrase: box jumps plyometrics
+2026-01-21 18:12:56,283 - services.youtube_service - INFO - Searching YouTube for: 'box jumps plyometrics'
+2026-01-21 18:13:09,894 - broll_processor - INFO - Found 9 videos for: box jumps plyometrics
+2026-01-21 18:13:12,936 - services.ai_service - INFO - Evaluated videos for 'box jumps plyometrics': 4 videos scored >= 6
+2026-01-21 18:13:12,938 - broll_processor - INFO - Selected 3 top videos for: box jumps plyometrics
+2026-01-21 18:13:12,940 - services.video_downloader - INFO - Downloading 3 videos for phrase 'box jumps plyometrics' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/box_jumps_plyometrics
+2026-01-21 18:14:15,497 - services.video_downloader - INFO - Downloaded: score09_Top 15 BEST Plyo Box Workouts, Drills & Exercises.mp4
+2026-01-21 18:17:19,814 - services.video_downloader - INFO - Downloaded: score08_15 MUST DO Plyometric Box Exercises ⧸⧸ Build STRENGTH & Increase POWER.mp4
+2026-01-21 18:17:32,220 - services.video_downloader - INFO - Downloaded: score07_Hiit Workout： Front squats and box jumps.f251.webm
+2026-01-21 18:17:32,221 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'box jumps plyometrics'
+2026-01-21 18:17:32,223 - broll_processor - INFO - Downloaded 3 files for: box jumps plyometrics
+2026-01-21 18:17:32,226 - broll_processor - INFO - Processing phrase: kettlebell swings exercise
+2026-01-21 18:17:32,227 - services.youtube_service - INFO - Searching YouTube for: 'kettlebell swings exercise'
+2026-01-21 18:17:47,696 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 18:17:47,701 - broll_processor - INFO - Found 8 videos for: kettlebell swings exercise
+2026-01-21 18:17:50,464 - services.ai_service - INFO - Evaluated videos for 'kettlebell swings exercise': 3 videos scored >= 6
+2026-01-21 18:17:50,465 - broll_processor - INFO - Selected 3 top videos for: kettlebell swings exercise
+2026-01-21 18:17:50,466 - services.video_downloader - INFO - Downloading 3 videos for phrase 'kettlebell swings exercise' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/kettlebell_swings_exercise
+2026-01-21 18:19:02,418 - services.video_downloader - INFO - Downloaded: score08_Kettlebell Swing.mp4
+2026-01-21 18:19:13,075 - services.video_downloader - INFO - Downloaded: score07_How to do a Russian Kettlebell Swing by Wodstar.mp4
+2026-01-21 18:19:32,060 - services.video_downloader - INFO - Downloaded: score06_Kettlebell Swing.mp4
+2026-01-21 18:19:32,062 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'kettlebell swings exercise'
+2026-01-21 18:19:32,065 - broll_processor - INFO - Downloaded 3 files for: kettlebell swings exercise
+2026-01-21 18:19:32,066 - broll_processor - INFO - Processing phrase: olympic weightlifting clean
+2026-01-21 18:19:32,067 - services.youtube_service - INFO - Searching YouTube for: 'olympic weightlifting clean'
+2026-01-21 18:19:44,283 - broll_processor - INFO - Found 9 videos for: olympic weightlifting clean
+2026-01-21 18:19:47,108 - services.ai_service - INFO - Evaluated videos for 'olympic weightlifting clean': 4 videos scored >= 6
+2026-01-21 18:19:47,110 - broll_processor - INFO - Selected 3 top videos for: olympic weightlifting clean
+2026-01-21 18:19:47,110 - services.video_downloader - INFO - Downloading 3 videos for phrase 'olympic weightlifting clean' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/olympic_weightlifting_clean
+2026-01-21 18:19:53,056 - services.video_downloader - INFO - Downloaded: score09_new world record Lasha Talakhadze clean and lerk 267 kg ｜ 2021 World Weightlifting Championships.mp4
+2026-01-21 18:20:11,061 - services.video_downloader - INFO - Downloaded: score08_Slow motion of Mattie Rogers (76kg 🇺🇸) 141kg ⧸ 310lbs 🥇 clean & jerk!.mp4
+2026-01-21 18:21:09,164 - services.video_downloader - INFO - Downloaded: score07_Shi Zhi Yong (73kg 🇨🇳) 190kg ⧸ 419lbs Power Clean & Squat Jerk Slow Motion! #weightlifting.mp4
+2026-01-21 18:21:09,170 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'olympic weightlifting clean'
+2026-01-21 18:21:09,171 - broll_processor - INFO - Downloaded 3 files for: olympic weightlifting clean
+2026-01-21 18:21:09,173 - broll_processor - INFO - Processing phrase: fighter deadlift exercise
+2026-01-21 18:21:09,174 - services.youtube_service - INFO - Searching YouTube for: 'fighter deadlift exercise'
+2026-01-21 18:21:16,723 - broll_processor - INFO - Found 2 videos for: fighter deadlift exercise
+2026-01-21 18:21:18,625 - services.ai_service - INFO - Evaluated videos for 'fighter deadlift exercise': 2 videos scored >= 6
+2026-01-21 18:21:18,626 - broll_processor - INFO - Selected 2 top videos for: fighter deadlift exercise
+2026-01-21 18:21:18,627 - services.video_downloader - INFO - Downloading 2 videos for phrase 'fighter deadlift exercise' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/fighter_deadlift_exercise
+2026-01-21 18:27:16,146 - services.video_downloader - INFO - Downloaded: score08_Anatoly vs Eddie Hall, you wont believe who is stronger.mp4
+2026-01-21 18:27:29,138 - services.video_downloader - INFO - Downloaded: score06_Bruce Lee's Workout DESTROYS World's Strongest Man!.f251.webm
+2026-01-21 18:27:29,139 - services.video_downloader - INFO - Successfully downloaded 2 videos for phrase: 'fighter deadlift exercise'
+2026-01-21 18:27:29,140 - broll_processor - INFO - Downloaded 2 files for: fighter deadlift exercise
+2026-01-21 18:27:29,141 - broll_processor - INFO - Processing phrase: squats leg drive
+2026-01-21 18:27:29,141 - services.youtube_service - INFO - Searching YouTube for: 'squats leg drive'
+2026-01-21 18:27:42,240 - broll_processor - INFO - Found 9 videos for: squats leg drive
+2026-01-21 18:27:44,976 - services.ai_service - INFO - Evaluated videos for 'squats leg drive': 4 videos scored >= 6
+2026-01-21 18:27:44,983 - broll_processor - INFO - Selected 3 top videos for: squats leg drive
+2026-01-21 18:27:44,985 - services.video_downloader - INFO - Downloading 3 videos for phrase 'squats leg drive' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/squats_leg_drive
+2026-01-21 18:28:01,043 - services.video_downloader - INFO - Downloaded: score08_This BACK POSITION Will BLOW UP Your SQUAT (I Lift 280kg With It).f399.mp4.part
+2026-01-21 18:31:11,496 - services.video_downloader - INFO - Downloaded: score07_How To Squat Properly： Squat Deep -Essential Tips and Techniques ｜ Tom Platz.mp4
+2026-01-21 18:37:37,083 - services.video_downloader - INFO - Downloaded: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 18:37:37,086 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'squats leg drive'
+2026-01-21 18:37:37,090 - broll_processor - INFO - Downloaded 3 files for: squats leg drive
+2026-01-21 18:37:37,092 - broll_processor - INFO - Processing phrase: medicine ball throws
+2026-01-21 18:37:37,094 - services.youtube_service - INFO - Searching YouTube for: 'medicine ball throws'
+2026-01-21 18:37:50,056 - broll_processor - INFO - Found 9 videos for: medicine ball throws
+2026-01-21 18:37:53,295 - services.ai_service - INFO - Evaluated videos for 'medicine ball throws': 4 videos scored >= 6
+2026-01-21 18:37:53,296 - broll_processor - INFO - Selected 3 top videos for: medicine ball throws
+2026-01-21 18:37:53,298 - services.video_downloader - INFO - Downloading 3 videos for phrase 'medicine ball throws' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_175552/medicine_ball_throws
+2026-01-21 18:38:10,513 - services.video_downloader - INFO - Downloaded: score08_Sprinter Medicine Ball Throws.f251.webm
+2026-01-21 18:38:29,451 - services.video_downloader - INFO - Downloaded: score07_Medicine Ball Side Throw.mp4
+2026-01-21 18:39:07,981 - services.video_downloader - INFO - Downloaded: score07_Med Ball Chest Throw Technique Video.mp4
+2026-01-21 18:39:07,984 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'medicine ball throws'
+2026-01-21 18:39:07,986 - broll_processor - INFO - Downloaded 3 files for: medicine ball throws
+2026-01-21 18:39:07,988 - broll_processor - INFO - Processing phrase: high-intensity interval training
+2026-01-21 18:39:07,990 - services.youtube_service - INFO - Searching YouTube for: 'high-intensity interval training'
+2026-01-21 18:39:22,536 - services.youtube_service - INFO - Filtered out 9 videos that didn't meet criteria
+2026-01-21 18:39:22,540 - broll_processor - INFO - Found 0 videos for: high-intensity interval training
+2026-01-21 18:39:22,541 - broll_processor - INFO - No videos to evaluate for phrase: high-intensity interval training
+2026-01-21 18:39:22,542 - broll_processor - INFO - Selected 0 top videos for: high-intensity interval training
+2026-01-21 18:39:22,542 - broll_processor - INFO - No videos to download for phrase: high-intensity interval training
+2026-01-21 18:39:22,544 - broll_processor - INFO - Processing completed successfully: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 19:19:41,396 - __main__ - INFO - Starting stockpile...
+2026-01-21 19:19:41,441 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-21 19:19:41,442 - services.transcription - INFO - Loading Whisper model: base
+2026-01-21 19:19:42,806 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-21 19:19:42,809 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 19:19:42,810 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 19:19:42,896 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-21 19:19:42,898 - broll_processor - INFO - Clip extraction enabled
+2026-01-21 19:19:42,898 - broll_processor - INFO - stockpile initialized successfully
+2026-01-21 19:19:42,899 - broll_processor - INFO - Starting stockpile...
+2026-01-21 19:19:42,900 - services.file_monitor - INFO - Starting file monitoring...
+2026-01-21 19:19:42,902 - services.file_monitor - INFO - Found existing video file: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 19:19:42,906 - broll_processor - INFO - New file detected from local: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 19:19:42,913 - services.file_monitor - INFO - Started monitoring local folder: /Users/niknoavak/Desktop/YT/stockpile/input
+2026-01-21 19:19:42,913 - services.file_monitor - INFO - File monitoring started
+2026-01-21 19:19:42,914 - broll_processor - INFO - Processor started successfully
+2026-01-21 19:19:42,914 - __main__ - INFO - stockpile started successfully
+2026-01-21 19:19:42,915 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-21 19:19:42,916 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-21 19:19:42,916 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-21 19:21:05,789 - broll_processor - INFO - Transcription completed. Length: 10201 characters
+2026-01-21 19:21:13,088 - broll_processor - INFO - Extracted 10 search phrases: ['mma fighters grappling on mats', 'athlete performing heavy barbell squats', 'man doing deadlifts in gym', 'athlete doing pull ups', 'person doing kettlebell swings', 'athlete jumping on wooden box', 'fighters in a clinch position', 'close up of hands gripping gi', 'person doing russian twists', 'athlete carrying heavy dumbbells']
+2026-01-21 19:21:13,091 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113 for video descriptS&C.mp4
+2026-01-21 19:21:13,095 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113
+2026-01-21 19:21:13,097 - broll_processor - INFO - Processing 10 search phrases
+2026-01-21 19:21:13,099 - broll_processor - INFO - Processing phrase: mma fighters grappling on mats
+2026-01-21 19:21:13,101 - services.youtube_service - INFO - Searching YouTube for: 'mma fighters grappling on mats'
+2026-01-21 19:21:32,381 - broll_processor - INFO - Found 9 videos for: mma fighters grappling on mats
+2026-01-21 19:21:46,716 - services.ai_service - INFO - Evaluated videos for 'mma fighters grappling on mats': 4 videos scored >= 6
+2026-01-21 19:21:46,718 - broll_processor - INFO - Selected 3 top videos for: mma fighters grappling on mats
+2026-01-21 19:21:46,719 - services.video_downloader - INFO - Downloading 3 videos for phrase 'mma fighters grappling on mats' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/mma_fighters_grappling_on_mats
+2026-01-21 19:21:55,800 - services.video_downloader - INFO - Downloaded: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:38:49,077 - services.video_downloader - INFO - Downloaded: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:53:48,439 - services.video_downloader - INFO - Downloaded: score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:53:48,444 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'mma fighters grappling on mats'
+2026-01-21 19:53:48,447 - broll_processor - INFO - Downloaded 3 files for: mma fighters grappling on mats
+2026-01-21 19:53:48,450 - broll_processor - INFO - Extracting clips from: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:53:48,451 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:53:48,659 - services.clip_extractor - INFO - Uploading video to Gemini File API: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:53:56,010 - services.clip_extractor - INFO - File ready for analysis: files/e8fu8z4q4zbm
+2026-01-21 19:54:01,988 - services.clip_extractor - WARNING - No segments found in video: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:54:01,990 - broll_processor - INFO - No clips extracted, keeping original: score08_Double Leg Takedown Technique - MMA Manchester.mp4
+2026-01-21 19:54:01,992 - broll_processor - INFO - Extracting clips from: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:54:01,994 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:54:02,110 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:54:02,114 - services.clip_extractor - ERROR - Video analysis failed: 'ascii' codec can't encode character '\uff5c' in position 29: ordinal not in range(128)
+2026-01-21 19:54:02,116 - services.clip_extractor - WARNING - No segments found in video: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:54:02,118 - broll_processor - INFO - No clips extracted, keeping original: score07_THE SMASHING MACHINE ｜ Mark Kerr Was JACKED UP & VIOLENT ｜ Brutal MMA & UFC Knockouts & Highlights.mp4
+2026-01-21 19:54:02,120 - broll_processor - INFO - Extracting clips from: score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:54:02,122 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:54:02,246 - services.clip_extractor - INFO - Uploading video to Gemini File API: score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:55:07,078 - services.clip_extractor - INFO - File ready for analysis: files/r6trvbfu69ig
+2026-01-21 19:56:09,322 - services.clip_extractor - INFO - Extracted clip: clip1_263_5s-271_5s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4 (8.0s)
+2026-01-21 19:56:09,328 - services.clip_extractor - INFO - Extracted clip 1: clip1_263_5s-271_5s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:56:19,140 - services.clip_extractor - INFO - Extracted clip: clip2_442_0s-451_0s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4 (9.0s)
+2026-01-21 19:56:19,145 - services.clip_extractor - INFO - Extracted clip 2: clip2_442_0s-451_0s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:56:24,496 - services.clip_extractor - INFO - Extracted clip: clip3_317_5s-323_5s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4 (6.0s)
+2026-01-21 19:56:24,498 - services.clip_extractor - INFO - Extracted clip 3: clip3_317_5s-323_5s_score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:56:24,499 - broll_processor - INFO - Extracted 3 clips from score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:56:24,503 - services.clip_extractor - INFO - Deleted original video: score06_UFC vs USMC - Paddy the Baddy Takes On The Marines!.mp4
+2026-01-21 19:56:24,505 - broll_processor - INFO - Clip extraction complete: 5 clips for: mma fighters grappling on mats
+2026-01-21 19:56:24,506 - broll_processor - INFO - Processing phrase: athlete performing heavy barbell squats
+2026-01-21 19:56:24,507 - services.youtube_service - INFO - Searching YouTube for: 'athlete performing heavy barbell squats'
+2026-01-21 19:56:45,693 - broll_processor - INFO - Found 7 videos for: athlete performing heavy barbell squats
+2026-01-21 19:57:00,436 - services.ai_service - INFO - Evaluated videos for 'athlete performing heavy barbell squats': 4 videos scored >= 6
+2026-01-21 19:57:00,439 - broll_processor - INFO - Selected 3 top videos for: athlete performing heavy barbell squats
+2026-01-21 19:57:00,441 - services.video_downloader - INFO - Downloading 3 videos for phrase 'athlete performing heavy barbell squats' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/athlete_performing_heavy_barbell_squats
+2026-01-21 19:57:15,458 - services.video_downloader - INFO - Downloaded: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:04:53,357 - services.video_downloader - INFO - Downloaded: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:05:05,658 - services.video_downloader - INFO - Downloaded: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:05:05,659 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'athlete performing heavy barbell squats'
+2026-01-21 20:05:05,660 - broll_processor - INFO - Downloaded 3 files for: athlete performing heavy barbell squats
+2026-01-21 20:05:05,661 - broll_processor - INFO - Extracting clips from: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:05:05,661 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:05:05,746 - services.clip_extractor - INFO - Uploading video to Gemini File API: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:05:05,748 - services.clip_extractor - ERROR - Video analysis failed: 'ascii' codec can't encode character '\uff1f' in position 25: ordinal not in range(128)
+2026-01-21 20:05:05,749 - services.clip_extractor - WARNING - No segments found in video: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:05:05,750 - broll_processor - INFO - No clips extracted, keeping original: score08_Why Squat So Deep？!.mp4
+2026-01-21 20:05:05,750 - broll_processor - INFO - Extracting clips from: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:05:05,751 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:05:05,833 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:05:48,030 - services.clip_extractor - INFO - File ready for analysis: files/u1pui2uje0k4
+2026-01-21 20:06:34,730 - services.clip_extractor - INFO - Extracted clip: clip1_100_0s-106_0s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4 (6.0s)
+2026-01-21 20:06:34,732 - services.clip_extractor - INFO - Extracted clip 1: clip1_100_0s-106_0s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:06:38,138 - services.clip_extractor - INFO - Extracted clip: clip2_397_0s-402_0s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4 (5.0s)
+2026-01-21 20:06:38,140 - services.clip_extractor - INFO - Extracted clip 2: clip2_397_0s-402_0s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:06:40,315 - services.clip_extractor - INFO - Extracted clip: clip3_68_0s-73_5s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4 (5.5s)
+2026-01-21 20:06:40,316 - services.clip_extractor - INFO - Extracted clip 3: clip3_68_0s-73_5s_score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:06:40,317 - broll_processor - INFO - Extracted 3 clips from score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:06:40,319 - broll_processor - INFO - Extracting clips from: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:06:40,321 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:06:40,398 - services.clip_extractor - INFO - Uploading video to Gemini File API: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:06:47,877 - services.clip_extractor - ERROR - Video analysis failed: 500 INTERNAL. {'error': {'code': 500, 'message': 'Failed to convert server response to JSON', 'status': 'INTERNAL'}}
+2026-01-21 20:06:47,878 - services.clip_extractor - WARNING - No segments found in video: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:06:47,879 - broll_processor - INFO - No clips extracted, keeping original: score06_5 Best Exercises for Strong & Fast - Athletic Legs.f251.webm
+2026-01-21 20:06:47,884 - services.clip_extractor - INFO - Deleted original video: score07_How to PROPERLY Squat for Growth (4 Easy Steps).mp4
+2026-01-21 20:06:47,885 - broll_processor - INFO - Clip extraction complete: 5 clips for: athlete performing heavy barbell squats
+2026-01-21 20:06:47,885 - broll_processor - INFO - Processing phrase: man doing deadlifts in gym
+2026-01-21 20:06:47,886 - services.youtube_service - INFO - Searching YouTube for: 'man doing deadlifts in gym'
+2026-01-21 20:06:59,735 - broll_processor - INFO - Found 9 videos for: man doing deadlifts in gym
+2026-01-21 20:07:11,930 - services.ai_service - INFO - Evaluated videos for 'man doing deadlifts in gym': 4 videos scored >= 6
+2026-01-21 20:07:11,933 - broll_processor - INFO - Selected 3 top videos for: man doing deadlifts in gym
+2026-01-21 20:07:11,935 - services.video_downloader - INFO - Downloading 3 videos for phrase 'man doing deadlifts in gym' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/man_doing_deadlifts_in_gym
+2026-01-21 20:07:22,432 - services.video_downloader - INFO - Downloaded: score08_Deadlift.mp4
+2026-01-21 20:07:38,323 - services.video_downloader - INFO - Downloaded: score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:07:57,057 - services.video_downloader - INFO - Downloaded: score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:07:57,058 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'man doing deadlifts in gym'
+2026-01-21 20:07:57,059 - broll_processor - INFO - Downloaded 3 files for: man doing deadlifts in gym
+2026-01-21 20:07:57,061 - broll_processor - INFO - Extracting clips from: score08_Deadlift.mp4
+2026-01-21 20:07:57,062 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score08_Deadlift.mp4
+2026-01-21 20:07:57,170 - services.clip_extractor - INFO - Uploading video to Gemini File API: score08_Deadlift.mp4
+2026-01-21 20:08:05,346 - services.clip_extractor - INFO - File ready for analysis: files/nhar5r3o7ywi
+2026-01-21 20:08:18,035 - services.clip_extractor - INFO - Extracted clip: clip1_1_0s-11_0s_score08_Deadlift.mp4 (10.0s)
+2026-01-21 20:08:18,037 - services.clip_extractor - INFO - Extracted clip 1: clip1_1_0s-11_0s_score08_Deadlift.mp4
+2026-01-21 20:08:18,039 - broll_processor - INFO - Extracted 1 clips from score08_Deadlift.mp4
+2026-01-21 20:08:18,040 - broll_processor - INFO - Extracting clips from: score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:18,041 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:18,145 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:26,636 - services.clip_extractor - INFO - File ready for analysis: files/pmnh1fkonvkw
+2026-01-21 20:08:46,808 - services.clip_extractor - INFO - Extracted clip: clip1_18_0s-26_0s_score07_900lb no straps deadlift PR  Larrywheels..mp4 (8.0s)
+2026-01-21 20:08:46,811 - services.clip_extractor - INFO - Extracted clip 1: clip1_18_0s-26_0s_score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:49,204 - services.clip_extractor - INFO - Extracted clip: clip2_5_0s-12_0s_score07_900lb no straps deadlift PR  Larrywheels..mp4 (7.0s)
+2026-01-21 20:08:49,206 - services.clip_extractor - INFO - Extracted clip 2: clip2_5_0s-12_0s_score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:49,207 - broll_processor - INFO - Extracted 2 clips from score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:08:49,209 - broll_processor - INFO - Extracting clips from: score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:08:49,210 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:08:49,338 - services.clip_extractor - INFO - Uploading video to Gemini File API: score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:08:57,555 - services.clip_extractor - INFO - File ready for analysis: files/bdp279k88rvp
+2026-01-21 20:09:16,604 - services.clip_extractor - INFO - Extracted clip: clip1_8_2s-18_2s_score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4 (10.0s)
+2026-01-21 20:09:16,605 - services.clip_extractor - INFO - Extracted clip 1: clip1_8_2s-18_2s_score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:09:20,495 - services.clip_extractor - INFO - Extracted clip: clip2_0_0s-8_2s_score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4 (8.2s)
+2026-01-21 20:09:20,497 - services.clip_extractor - INFO - Extracted clip 2: clip2_0_0s-8_2s_score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:09:20,498 - broll_processor - INFO - Extracted 2 clips from score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:09:20,499 - services.clip_extractor - INFO - Deleted original video: score08_Deadlift.mp4
+2026-01-21 20:09:20,500 - services.clip_extractor - INFO - Deleted original video: score07_900lb no straps deadlift PR  Larrywheels..mp4
+2026-01-21 20:09:20,501 - services.clip_extractor - INFO - Deleted original video: score06_Franco Columbu - 700lbs x 3 Deadlift (1972).mp4
+2026-01-21 20:09:20,501 - broll_processor - INFO - Clip extraction complete: 5 clips for: man doing deadlifts in gym
+2026-01-21 20:09:20,502 - broll_processor - INFO - Processing phrase: athlete doing pull ups
+2026-01-21 20:09:20,502 - services.youtube_service - INFO - Searching YouTube for: 'athlete doing pull ups'
+2026-01-21 20:09:33,234 - broll_processor - INFO - Found 9 videos for: athlete doing pull ups
+2026-01-21 20:09:45,793 - services.ai_service - INFO - Evaluated videos for 'athlete doing pull ups': 6 videos scored >= 6
+2026-01-21 20:09:45,794 - broll_processor - INFO - Selected 3 top videos for: athlete doing pull ups
+2026-01-21 20:09:45,795 - services.video_downloader - INFO - Downloading 3 videos for phrase 'athlete doing pull ups' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/athlete_doing_pull_ups
+2026-01-21 20:09:49,753 - services.video_downloader - INFO - Downloaded: score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:10:45,249 - services.video_downloader - INFO - Downloaded: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:12:50,074 - services.video_downloader - INFO - Downloaded: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:12:50,076 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'athlete doing pull ups'
+2026-01-21 20:12:50,078 - broll_processor - INFO - Downloaded 3 files for: athlete doing pull ups
+2026-01-21 20:12:50,079 - broll_processor - INFO - Extracting clips from: score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:12:50,080 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:12:50,170 - services.clip_extractor - INFO - Uploading video to Gemini File API: score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:04,353 - services.clip_extractor - INFO - File ready for analysis: files/mbhb3uag8927
+2026-01-21 20:13:22,904 - services.clip_extractor - INFO - Extracted clip: clip1_197_0s-202_0s_score08_PUSH UP, PULL UP THE VIDEO.mp4 (5.0s)
+2026-01-21 20:13:22,906 - services.clip_extractor - INFO - Extracted clip 1: clip1_197_0s-202_0s_score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:23,218 - services.clip_extractor - INFO - Extracted clip: clip2_129_5s-133_5s_score08_PUSH UP, PULL UP THE VIDEO.mp4 (4.0s)
+2026-01-21 20:13:23,220 - services.clip_extractor - INFO - Extracted clip 2: clip2_129_5s-133_5s_score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:23,698 - services.clip_extractor - INFO - Extracted clip: clip3_185_5s-192_5s_score08_PUSH UP, PULL UP THE VIDEO.mp4 (7.0s)
+2026-01-21 20:13:23,700 - services.clip_extractor - INFO - Extracted clip 3: clip3_185_5s-192_5s_score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:23,701 - broll_processor - INFO - Extracted 3 clips from score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:23,702 - broll_processor - INFO - Extracting clips from: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:13:23,702 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:13:23,794 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:13:23,796 - services.clip_extractor - ERROR - Video analysis failed: 'ascii' codec can't encode character '\uff02' in position 39: ordinal not in range(128)
+2026-01-21 20:13:23,798 - services.clip_extractor - WARNING - No segments found in video: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:13:23,799 - broll_processor - INFO - No clips extracted, keeping original: score07_Official Guinness World Record ＂Most pull-ups in 1 min +40-lb(18.2kg) pack＂. Maksim Trukonovets.mp4
+2026-01-21 20:13:23,799 - broll_processor - INFO - Extracting clips from: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:13:23,800 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:13:23,877 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:13:23,879 - services.clip_extractor - ERROR - Video analysis failed: 'ascii' codec can't encode character '\uff02' in position 32: ordinal not in range(128)
+2026-01-21 20:13:23,882 - services.clip_extractor - WARNING - No segments found in video: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:13:23,883 - broll_processor - INFO - No clips extracted, keeping original: score07_Female Pull-Up Champion ＂MIss Jane＂ Winning Comp at FitShow AussieStrength.mp4
+2026-01-21 20:13:23,885 - services.clip_extractor - INFO - Deleted original video: score08_PUSH UP, PULL UP THE VIDEO.mp4
+2026-01-21 20:13:23,886 - broll_processor - INFO - Clip extraction complete: 5 clips for: athlete doing pull ups
+2026-01-21 20:13:23,886 - broll_processor - INFO - Processing phrase: person doing kettlebell swings
+2026-01-21 20:13:23,887 - services.youtube_service - INFO - Searching YouTube for: 'person doing kettlebell swings'
+2026-01-21 20:13:40,120 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 20:13:40,123 - broll_processor - INFO - Found 8 videos for: person doing kettlebell swings
+2026-01-21 20:13:48,387 - services.ai_service - INFO - Evaluated videos for 'person doing kettlebell swings': 5 videos scored >= 6
+2026-01-21 20:13:48,389 - broll_processor - INFO - Selected 3 top videos for: person doing kettlebell swings
+2026-01-21 20:13:48,390 - services.video_downloader - INFO - Downloading 3 videos for phrase 'person doing kettlebell swings' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/person_doing_kettlebell_swings
+2026-01-21 20:14:56,499 - services.video_downloader - INFO - Downloaded: score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:14:58,968 - services.video_downloader - INFO - Downloaded: score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:16:01,607 - services.video_downloader - INFO - Downloaded: score07_Kettlebell Swing.mp4
+2026-01-21 20:16:01,609 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'person doing kettlebell swings'
+2026-01-21 20:16:01,610 - broll_processor - INFO - Downloaded 3 files for: person doing kettlebell swings
+2026-01-21 20:16:01,612 - broll_processor - INFO - Extracting clips from: score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:01,620 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:01,739 - services.clip_extractor - INFO - Uploading video to Gemini File API: score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:17,506 - services.clip_extractor - INFO - File ready for analysis: files/08xhpsg3768c
+2026-01-21 20:16:31,605 - services.clip_extractor - INFO - Extracted clip: clip1_48_0s-53_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4 (5.0s)
+2026-01-21 20:16:31,609 - services.clip_extractor - INFO - Extracted clip 1: clip1_48_0s-53_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:35,553 - services.clip_extractor - INFO - Extracted clip: clip2_115_0s-121_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4 (6.0s)
+2026-01-21 20:16:35,557 - services.clip_extractor - INFO - Extracted clip 2: clip2_115_0s-121_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:38,301 - services.clip_extractor - INFO - Extracted clip: clip3_132_0s-136_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4 (4.0s)
+2026-01-21 20:16:38,305 - services.clip_extractor - INFO - Extracted clip 3: clip3_132_0s-136_0s_score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:38,310 - broll_processor - INFO - Extracted 3 clips from score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:16:38,311 - broll_processor - INFO - Extracting clips from: score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:16:38,314 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:16:38,449 - services.clip_extractor - INFO - Uploading video to Gemini File API: score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:16:46,517 - services.clip_extractor - INFO - File ready for analysis: files/li60ic8l419z
+2026-01-21 20:17:16,830 - services.clip_extractor - INFO - Extracted clip: clip1_0_0s-10_9s_score08_Exercise Videos- Kettlebell Full Swing.mp4 (10.9s)
+2026-01-21 20:17:16,831 - services.clip_extractor - INFO - Extracted clip 1: clip1_0_0s-10_9s_score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:17:16,832 - broll_processor - INFO - Extracted 1 clips from score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:17:16,833 - broll_processor - INFO - Extracting clips from: score07_Kettlebell Swing.mp4
+2026-01-21 20:17:16,833 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score07_Kettlebell Swing.mp4
+2026-01-21 20:17:16,909 - services.clip_extractor - INFO - Uploading video to Gemini File API: score07_Kettlebell Swing.mp4
+2026-01-21 20:17:32,587 - services.clip_extractor - INFO - File ready for analysis: files/gi6jjkt1cxi9
+2026-01-21 20:17:49,829 - services.clip_extractor - INFO - Extracted clip: clip1_76_5s-86_0s_score07_Kettlebell Swing.mp4 (9.5s)
+2026-01-21 20:17:49,831 - services.clip_extractor - INFO - Extracted clip 1: clip1_76_5s-86_0s_score07_Kettlebell Swing.mp4
+2026-01-21 20:17:49,835 - broll_processor - INFO - Extracted 1 clips from score07_Kettlebell Swing.mp4
+2026-01-21 20:17:49,838 - services.clip_extractor - INFO - Deleted original video: score09_Find Your Purpose- Kettlebell Commercial.mp4
+2026-01-21 20:17:49,840 - services.clip_extractor - INFO - Deleted original video: score08_Exercise Videos- Kettlebell Full Swing.mp4
+2026-01-21 20:17:49,843 - services.clip_extractor - INFO - Deleted original video: score07_Kettlebell Swing.mp4
+2026-01-21 20:17:49,844 - broll_processor - INFO - Clip extraction complete: 5 clips for: person doing kettlebell swings
+2026-01-21 20:17:49,845 - broll_processor - INFO - Processing phrase: athlete jumping on wooden box
+2026-01-21 20:17:49,847 - services.youtube_service - INFO - Searching YouTube for: 'athlete jumping on wooden box'
+2026-01-21 20:18:00,573 - broll_processor - INFO - Found 9 videos for: athlete jumping on wooden box
+2026-01-21 20:18:11,766 - services.ai_service - INFO - Evaluated videos for 'athlete jumping on wooden box': 5 videos scored >= 6
+2026-01-21 20:18:11,767 - broll_processor - INFO - Selected 3 top videos for: athlete jumping on wooden box
+2026-01-21 20:18:11,768 - services.video_downloader - INFO - Downloading 3 videos for phrase 'athlete jumping on wooden box' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/athlete_jumping_on_wooden_box
+2026-01-21 20:19:36,623 - services.video_downloader - INFO - Downloaded: score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:20:26,702 - services.video_downloader - INFO - Downloaded: score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:21:24,758 - services.video_downloader - INFO - Downloaded: score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:21:24,763 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'athlete jumping on wooden box'
+2026-01-21 20:21:24,764 - broll_processor - INFO - Downloaded 3 files for: athlete jumping on wooden box
+2026-01-21 20:21:24,767 - broll_processor - INFO - Extracting clips from: score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:21:24,768 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:21:24,899 - services.clip_extractor - INFO - Uploading video to Gemini File API: score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:21:35,592 - services.clip_extractor - INFO - File ready for analysis: files/0m6mv82qhkz7
+2026-01-21 20:22:20,153 - services.clip_extractor - INFO - Extracted clip: clip1_0_0s-8_0s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4 (8.0s)
+2026-01-21 20:22:20,158 - services.clip_extractor - INFO - Extracted clip 1: clip1_0_0s-8_0s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:22:45,750 - services.clip_extractor - INFO - Extracted clip: clip2_8_0s-16_0s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4 (8.0s)
+2026-01-21 20:22:45,752 - services.clip_extractor - INFO - Extracted clip 2: clip2_8_0s-16_0s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:23:08,886 - services.clip_extractor - INFO - Extracted clip: clip3_16_0s-20_8s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4 (4.8s)
+2026-01-21 20:23:08,890 - services.clip_extractor - INFO - Extracted clip 3: clip3_16_0s-20_8s_score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:23:08,897 - broll_processor - INFO - Extracted 3 clips from score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:23:08,898 - broll_processor - INFO - Extracting clips from: score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:23:08,900 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:23:09,112 - services.clip_extractor - INFO - Uploading video to Gemini File API: score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:23:18,007 - services.clip_extractor - INFO - File ready for analysis: files/2c1abwgy5zmf
+2026-01-21 20:23:47,602 - services.clip_extractor - INFO - Extracted clip: clip1_0_0s-5_5s_score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4 (5.5s)
+2026-01-21 20:23:47,607 - services.clip_extractor - INFO - Extracted clip 1: clip1_0_0s-5_5s_score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:24:10,021 - services.clip_extractor - INFO - Extracted clip: clip2_5_5s-11_5s_score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4 (6.0s)
+2026-01-21 20:24:10,025 - services.clip_extractor - INFO - Extracted clip 2: clip2_5_5s-11_5s_score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:24:10,026 - broll_processor - INFO - Extracted 2 clips from score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:24:10,028 - broll_processor - INFO - Extracting clips from: score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:24:10,029 - services.clip_extractor - INFO - Analyzing video for B-roll segments: score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:24:10,231 - services.clip_extractor - INFO - Uploading video to Gemini File API: score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:24:20,133 - services.clip_extractor - INFO - File ready for analysis: files/hz2woi5sebad
+2026-01-21 20:24:42,839 - services.clip_extractor - INFO - Extracted clip: clip1_0_0s-4_5s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4 (4.5s)
+2026-01-21 20:24:42,843 - services.clip_extractor - INFO - Extracted clip 1: clip1_0_0s-4_5s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:24:58,185 - services.clip_extractor - INFO - Extracted clip: clip2_4_5s-9_5s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4 (5.0s)
+2026-01-21 20:24:58,189 - services.clip_extractor - INFO - Extracted clip 2: clip2_4_5s-9_5s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:25:20,817 - services.clip_extractor - INFO - Extracted clip: clip3_9_5s-13_9s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4 (4.4s)
+2026-01-21 20:25:20,823 - services.clip_extractor - INFO - Extracted clip 3: clip3_9_5s-13_9s_score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:25:20,826 - broll_processor - INFO - Extracted 3 clips from score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:25:20,830 - services.clip_extractor - INFO - Deleted original video: score10_Low shot of anonymous man jumping on wooden box during crossfit workout in gym.mp4
+2026-01-21 20:25:20,834 - services.clip_extractor - INFO - Deleted original video: score10_Slow motion of young woman in sportswear jumping on wooden box in crossfit training.mp4
+2026-01-21 20:25:20,837 - services.clip_extractor - INFO - Deleted original video: score10_Young man jumping on wooden box during crossfit training while female coach watching.mp4
+2026-01-21 20:25:20,838 - broll_processor - INFO - Clip extraction complete: 8 clips for: athlete jumping on wooden box
+2026-01-21 20:25:20,840 - broll_processor - INFO - Processing phrase: fighters in a clinch position
+2026-01-21 20:25:20,841 - services.youtube_service - INFO - Searching YouTube for: 'fighters in a clinch position'
+2026-01-21 20:25:33,964 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 20:25:33,968 - broll_processor - INFO - Found 8 videos for: fighters in a clinch position
+2026-01-21 20:25:41,973 - services.ai_service - INFO - Evaluated videos for 'fighters in a clinch position': 4 videos scored >= 6
+2026-01-21 20:25:41,974 - broll_processor - INFO - Selected 3 top videos for: fighters in a clinch position
+2026-01-21 20:25:41,976 - services.video_downloader - INFO - Downloading 3 videos for phrase 'fighters in a clinch position' to: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260121_192113/fighters_in_a_clinch_position
+2026-01-21 20:28:09,656 - services.file_monitor - INFO - New video file detected: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,661 - broll_processor - INFO - New file detected from local: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,665 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,668 - services.transcription - INFO - Starting transcription of: test_3min.mp4
+2026-01-21 20:28:09,669 - services.transcription - INFO - Extracting audio from video: test_3min.mp4
+2026-01-21 20:28:09,846 - services.file_monitor - INFO - New video file detected: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,882 - broll_processor - INFO - New file detected from local: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,894 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/test_3min.mp4
+2026-01-21 20:28:09,910 - services.transcription - INFO - Starting transcription of: test_3min.mp4
+2026-01-21 20:28:09,918 - services.transcription - INFO - Extracting audio from video: test_3min.mp4
+2026-01-21 20:30:19,007 - broll_processor - INFO - Transcription completed. Length: 2570 characters
+2026-01-21 20:30:20,731 - broll_processor - INFO - Transcription completed. Length: 2570 characters
+2026-01-21 20:30:24,311 - broll_processor - INFO - Extracted 10 search phrases: ['mma fighter training', 'wrestler explosive takedown', 'grappling grip battle', 'fighter in clinch', 'mma sparring session', 'athlete lifting weights', 'fighter running sprints', 'boxing speed bag', 'wrestling practice drill', 'judo throw technique']
+2026-01-21 20:30:24,316 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203024 for video test_3min.mp4
+2026-01-21 20:30:24,319 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203024
+2026-01-21 20:30:24,321 - broll_processor - INFO - Processing 10 search phrases
+2026-01-21 20:30:24,323 - broll_processor - INFO - Processing phrase: mma fighter training
+2026-01-21 20:30:24,325 - services.youtube_service - INFO - Searching YouTube for: 'mma fighter training'
+2026-01-21 20:30:29,892 - broll_processor - INFO - Extracted 10 search phrases: ['mma fighters training on mats', 'bjj athletes rolling in gym', 'wrestler practicing explosive takedown', 'athlete lifting heavy barbell', 'fighter doing medicine ball slams', 'close up of athlete sweating', 'athlete clinching against a cage', 'grapplers fighting for grip', 'fighter hitting heavy punching bag', 'athlete doing kettlebell swings']
+2026-01-21 20:30:29,897 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203029 for video test_3min.mp4
+2026-01-21 20:30:29,900 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203029
+2026-01-21 20:30:29,902 - broll_processor - INFO - Processing 10 search phrases
+2026-01-21 20:30:29,903 - broll_processor - INFO - Processing phrase: mma fighters training on mats
+2026-01-21 20:30:29,905 - services.youtube_service - INFO - Searching YouTube for: 'mma fighters training on mats'
+2026-01-21 20:30:46,086 - services.youtube_service - INFO - Filtered out 3 videos that didn't meet criteria
+2026-01-21 20:30:46,109 - broll_processor - INFO - Found 6 videos for: mma fighter training
+2026-01-21 20:30:48,871 - services.ai_service - INFO - Evaluated videos for 'mma fighter training': 4 videos scored >= 6
+2026-01-21 20:30:48,876 - broll_processor - INFO - Selected 3 top videos for: mma fighter training
+2026-01-21 20:30:48,880 - services.video_downloader - INFO - Downloading 3 videos for phrase 'mma fighter training' to: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203024/mma_fighter_training
+2026-01-21 20:31:01,761 - services.video_downloader - INFO - Downloaded: score09_Elite MMA Sparring EP1 ｜ BST Academy ｜ Siam Boxing.f401.mp4.part
+2026-01-21 20:32:09,380 - services.file_monitor - INFO - New video file detected: /Users/niknoavak/Desktop/YT/stockpile/input/test_2min.mp4
+2026-01-21 20:32:09,404 - broll_processor - INFO - New file detected from local: /Users/niknoavak/Desktop/YT/stockpile/input/test_2min.mp4
+2026-01-21 20:32:09,437 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/test_2min.mp4
+2026-01-21 20:32:09,440 - services.transcription - INFO - Starting transcription of: test_2min.mp4
+2026-01-21 20:32:09,441 - services.transcription - INFO - Extracting audio from video: test_2min.mp4
+2026-01-21 20:32:31,500 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-21 20:32:31,513 - services.transcription - INFO - Loading Whisper model: base
+2026-01-21 20:32:34,898 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-21 20:32:34,899 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 20:32:34,900 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-21 20:32:34,919 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-21 20:32:34,920 - broll_processor - INFO - Clip extraction enabled
+2026-01-21 20:32:34,921 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-21 20:32:34,922 - broll_processor - INFO - stockpile initialized successfully
+2026-01-21 20:32:35,019 - broll_processor - INFO - Starting pipeline for: input/test_2min.mp4
+2026-01-21 20:32:35,054 - services.transcription - INFO - Starting transcription of: test_2min.mp4
+2026-01-21 20:32:35,055 - services.transcription - INFO - Extracting audio from video: test_2min.mp4
+2026-01-21 20:33:23,513 - broll_processor - INFO - Transcription completed. Length: 1738 characters
+2026-01-21 20:33:26,813 - broll_processor - INFO - Extracted 10 search phrases: ['mma fighter training montage', 'wrestler takedown technique', 'judo throw slow motion', 'boxing speed bag training', 'grappling sparring session', 'fighter exhausted in ring', 'weightlifting power clean', 'athlete stretching muscles', 'sports injury rehabilitation', 'fighter shadow boxing']
+2026-01-21 20:33:26,827 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_05826d1d_20260121_203326 for video test_2min.mp4
+2026-01-21 20:33:26,846 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_05826d1d_20260121_203326
+2026-01-21 20:33:26,847 - broll_processor - INFO - Processing 10 search phrases
+2026-01-21 20:33:26,848 - broll_processor - INFO - Processing phrase: mma fighter training montage
+2026-01-21 20:33:26,849 - services.youtube_service - INFO - Searching YouTube for: 'mma fighter training montage'
+2026-01-21 20:33:45,137 - services.transcription - INFO - Transcription complete: 20 segments, 120.0s duration, language: en
+2026-01-21 20:33:45,142 - broll_processor - INFO - Transcription completed: 1738 chars, 20 segments, 2.0 min duration
+2026-01-21 20:33:47,075 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 20:33:47,118 - broll_processor - INFO - Found 8 videos for: mma fighter training montage
+2026-01-21 20:33:49,899 - services.ai_service - INFO - Evaluated videos for 'mma fighter training montage': 4 videos scored >= 6
+2026-01-21 20:33:49,901 - broll_processor - INFO - Selected 3 top videos for: mma fighter training montage
+2026-01-21 20:33:49,902 - services.video_downloader - INFO - Downloading 3 videos for phrase 'mma fighter training montage' to: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_05826d1d_20260121_203326/mma_fighter_training_montage
+2026-01-21 20:33:57,574 - services.ai_service - INFO - B-roll planning complete: 4 needs identified for 2.0 min video (target: 4)
+2026-01-21 20:33:57,576 - broll_processor - INFO - B-roll planning complete: 4 needs identified (target: 4 at 2.0/min)
+2026-01-21 20:33:57,577 - broll_processor - INFO -   [1] 6.0s - mma training gym montage (Athletes training in a combat gym)
+2026-01-21 20:33:57,579 - broll_processor - INFO -   [2] 38.0s - athlete lifting heavy barbell (Close up of weightlifting)
+2026-01-21 20:33:57,580 - broll_processor - INFO -   [3] 70.0s - fitness coach writing on clipboard (Coach planning a workout routine)
+2026-01-21 20:33:57,582 - broll_processor - INFO -   [4] 100.0s - wrestling takedown competition (Dynamic wrestling takedown move)
+2026-01-21 20:33:57,590 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_f81111d8_20260121_203357 for video test_2min.mp4
+2026-01-21 20:33:57,592 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_f81111d8_20260121_203357
+2026-01-21 20:33:57,593 - broll_processor - INFO - Processing 4 B-roll needs
+2026-01-21 20:33:57,594 - broll_processor - INFO - [1/4] Processing: mma training gym montage at 6.0s
+2026-01-21 20:33:57,596 - services.youtube_service - INFO - Searching YouTube for: 'mma training gym montage'
+2026-01-21 20:34:28,262 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 20:34:28,307 - broll_processor - INFO -   Found 8 videos
+2026-01-21 20:34:36,558 - services.ai_service - INFO - Evaluated videos for 'mma training gym montage': 5 videos scored >= 6
+2026-01-21 20:34:36,560 - broll_processor - INFO -   Selected 3 top videos
+2026-01-21 20:34:36,562 - broll_processor - INFO -   Output folder: 0m06s_athletes_training_in_a_combat_gym
+2026-01-21 20:34:36,564 - services.video_downloader - INFO - Downloading 3 videos for phrase 'mma training gym montage' to: /Users/niknoavak/Desktop/YT/stockpile/output/test_2min_f81111d8_20260121_203357/0m06s_athletes_training_in_a_combat_gym
+2026-01-21 20:38:34,438 - services.video_downloader - INFO - Downloaded: score09_MMA Training - Cinematic Video.mp4
+2026-01-21 20:39:09,809 - services.video_downloader - INFO - Downloaded: score09_MMA Training - Cinematic Video.mp4
+2026-01-21 20:40:44,302 - services.video_downloader - INFO - Downloaded: score08_Training MMA.mp4
+2026-01-21 20:40:56,914 - services.video_downloader - INFO - Downloaded: score07_Leon Edwards Muay Thai Training - UFC x Siam Boxing.f251.webm
+2026-01-21 20:40:56,916 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'mma fighter training'
+2026-01-21 20:40:56,918 - broll_processor - INFO - Downloaded 3 files for: mma fighter training
+2026-01-21 20:40:56,919 - broll_processor - INFO - Processing phrase: wrestler explosive takedown
+2026-01-21 20:40:56,920 - services.youtube_service - INFO - Searching YouTube for: 'wrestler explosive takedown'
+2026-01-21 20:41:15,444 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-21 20:41:15,451 - broll_processor - INFO - Found 8 videos for: wrestler explosive takedown
+2026-01-21 20:41:18,040 - services.ai_service - INFO - Evaluated videos for 'wrestler explosive takedown': 3 videos scored >= 6
+2026-01-21 20:41:18,042 - broll_processor - INFO - Selected 3 top videos for: wrestler explosive takedown
+2026-01-21 20:41:18,044 - services.video_downloader - INFO - Downloading 3 videos for phrase 'wrestler explosive takedown' to: /Users/niknoavak/Desktop/YT/stockpile/output/test_3min_83fbe17c_20260121_203024/wrestler_explosive_takedown
+2026-01-21 20:43:01,547 - services.video_downloader - INFO - Downloaded: score08_Training Motivation MMA & Muay Thai.mp4
+2026-01-21 20:48:20,734 - services.video_downloader - INFO - Downloaded: score09_TMG Clips #175 - Awesome Explosive Takedown!.mp4
+2026-01-21 20:48:33,583 - services.video_downloader - INFO - Downloaded: score08_Training MMA.mp4
+2026-01-21 20:48:47,788 - main - INFO - Received signal 15, shutting down gracefully...
+2026-01-21 20:48:48,240 - services.video_downloader - INFO - Downloaded: score08_10 minutes of insane takedowns in men's freestyle wrestling! 🤼‍♀️ 💪.f251.webm
+2026-01-21 20:48:50,591 - services.video_downloader - INFO - Downloaded: score07_Training MMA.mp4
+2026-01-21 20:48:50,592 - services.video_downloader - INFO - Successfully downloaded 3 videos for phrase: 'mma fighter training montage'
+2026-01-21 20:48:55,520 - main - INFO - Received signal 15, shutting down gracefully...
+2026-01-23 10:53:53,895 - services.video_downloader - INFO - Initialized video downloader with output dir: test_output
+2026-01-23 10:53:53,897 - __main__ - INFO - === Testing yt-dlp version check ===
+2026-01-23 10:53:53,898 - __main__ - INFO - yt-dlp supports --download-sections: True
+2026-01-23 10:53:53,898 - __main__ - INFO - 
+=== Test 1: Download preview (360p) ===
+2026-01-23 10:53:53,963 - services.video_downloader - ERROR - Preview download failed for dQw4w9WgXcQ: 'ScoredVideo' object has no attribute 'url'
+2026-01-23 10:53:53,964 - __main__ - ERROR - ✗ Preview download failed
+2026-01-23 10:54:16,246 - services.video_downloader - INFO - Initialized video downloader with output dir: test_output
+2026-01-23 10:54:16,248 - __main__ - INFO - === Testing yt-dlp version check ===
+2026-01-23 10:54:16,249 - __main__ - INFO - yt-dlp supports --download-sections: True
+2026-01-23 10:54:16,249 - __main__ - INFO - 
+=== Test 1: Download preview (360p) ===
+2026-01-23 10:54:22,563 - services.video_downloader - INFO - Downloaded preview: preview_dQw4w9WgXcQ.mp4
+2026-01-23 10:54:22,567 - __main__ - INFO - ✓ Preview downloaded: preview_dQw4w9WgXcQ.mp4
+2026-01-23 10:54:22,567 - __main__ - INFO -   Size: 3.31 MB
+2026-01-23 10:54:22,568 - __main__ - INFO - 
+=== Test 2: Download clip sections (high quality) ===
+2026-01-23 10:54:27,268 - services.video_downloader - WARNING - Clip not found after download: clip1_10.0s-15.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:54:32,631 - services.video_downloader - WARNING - Clip not found after download: clip2_30.0s-38.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:54:32,634 - __main__ - ERROR - ✗ No clips downloaded
+2026-01-23 10:55:16,212 - services.video_downloader - INFO - Initialized video downloader with output dir: test_output
+2026-01-23 10:55:16,214 - __main__ - INFO - === Testing yt-dlp version check ===
+2026-01-23 10:55:16,215 - __main__ - INFO - yt-dlp supports --download-sections: True
+2026-01-23 10:55:16,215 - __main__ - INFO - 
+=== Test 1: Download preview (360p) ===
+2026-01-23 10:55:21,791 - services.video_downloader - INFO - Downloaded preview: preview_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:21,793 - __main__ - INFO - ✓ Preview downloaded: preview_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:21,794 - __main__ - INFO -   Size: 3.31 MB
+2026-01-23 10:55:21,794 - __main__ - INFO - 
+=== Test 2: Download clip sections (high quality) ===
+2026-01-23 10:55:26,702 - services.video_downloader - INFO - Downloaded clip: clip1_10.0s-15.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:31,313 - services.video_downloader - INFO - Downloaded clip: clip2_30.0s-38.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:31,314 - __main__ - INFO - ✓ Downloaded 2 clips:
+2026-01-23 10:55:31,315 - __main__ - INFO -   - clip1_10.0s-15.0s_dQw4w9WgXcQ.mp4 (3.31 MB)
+2026-01-23 10:55:31,315 - __main__ - INFO -   - clip2_30.0s-38.0s_dQw4w9WgXcQ.mp4 (3.31 MB)
+2026-01-23 10:55:31,316 - __main__ - INFO -   Total clips size: 6.62 MB
+2026-01-23 10:55:31,316 - __main__ - INFO - 
+=== Test Summary ===
+2026-01-23 10:55:31,317 - __main__ - INFO - Preview size: 3.31 MB
+2026-01-23 10:55:31,317 - __main__ - INFO - Clips size: 6.62 MB
+2026-01-23 10:55:31,317 - __main__ - INFO - Total download: 9.94 MB
+2026-01-23 10:55:31,318 - __main__ - INFO - 
+Note: A traditional full-quality download would be much larger
+2026-01-23 10:55:31,318 - __main__ - INFO - ✓ Two-pass optimization test PASSED
+2026-01-23 10:55:31,319 - __main__ - INFO - 
+=== Cleanup ===
+2026-01-23 10:55:31,319 - __main__ - INFO - Deleted preview: preview_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:31,320 - __main__ - INFO - Deleted clip: clip1_10.0s-15.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:55:31,320 - __main__ - INFO - Deleted clip: clip2_30.0s-38.0s_dQw4w9WgXcQ.mp4
+2026-01-23 10:58:11,623 - __main__ - INFO - Starting stockpile in daemon mode...
+2026-01-23 10:58:11,667 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 10:58:11,669 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 10:58:43,530 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 10:58:43,533 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 10:58:44,416 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-23 10:58:44,417 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 10:58:44,417 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 10:58:44,429 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-23 10:58:44,430 - broll_processor - INFO - Clip extraction enabled
+2026-01-23 10:58:44,430 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-23 10:58:44,431 - broll_processor - INFO - stockpile initialized successfully
+2026-01-23 10:58:44,432 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-23 10:58:44,432 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-23 11:40:00,374 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 11:40:00,377 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 11:40:01,575 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-23 11:40:01,576 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:40:01,577 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:40:01,591 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-23 11:40:01,592 - broll_processor - INFO - Clip extraction enabled
+2026-01-23 11:40:01,593 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-23 11:40:01,593 - broll_processor - INFO - stockpile initialized successfully
+2026-01-23 11:40:01,594 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-23 11:40:01,595 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-23 11:40:53,544 - services.transcription - INFO - Transcription complete: 110 segments, 745.8s duration, language: en
+2026-01-23 11:40:53,548 - main - ERROR - Interactive mode failed: 'TranscriptSegment' object is not subscriptable
+Traceback (most recent call last):
+  File "/Users/niknoavak/Desktop/YT/stockpile/src/main.py", line 91, in _start_interactive
+    self.ui.display_transcript_preview(transcript)
+  File "/Users/niknoavak/Desktop/YT/stockpile/src/services/interactive_ui.py", line 88, in display_transcript_preview
+    timestamp = f"[dim][{int(segment['start'] // 60):02d}:{int(segment['start'] % 60):02d}][/dim]"
+TypeError: 'TranscriptSegment' object is not subscriptable
+2026-01-23 11:41:32,034 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 11:41:32,038 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 11:41:32,992 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-23 11:41:32,993 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:41:32,994 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:41:33,007 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-23 11:41:33,008 - broll_processor - INFO - Clip extraction enabled
+2026-01-23 11:41:33,009 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-23 11:41:33,009 - broll_processor - INFO - stockpile initialized successfully
+2026-01-23 11:41:33,010 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-23 11:41:33,010 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-23 11:42:31,733 - services.transcription - INFO - Transcription complete: 110 segments, 745.8s duration, language: en
+2026-01-23 11:42:31,743 - main - ERROR - Interactive mode failed: EOF when reading a line
+Traceback (most recent call last):
+  File "/Users/niknoavak/Desktop/YT/stockpile/src/main.py", line 94, in _start_interactive
+    preferences = self.ui.ask_predefined_questions()
+  File "/Users/niknoavak/Desktop/YT/stockpile/src/services/interactive_ui.py", line 126, in ask_predefined_questions
+    style_choice = Prompt.ask(
+  File "/Users/niknoavak/Desktop/YT/stockpile/.venv/lib/python3.10/site-packages/rich/prompt.py", line 149, in ask
+    return _prompt(default=default, stream=stream)
+  File "/Users/niknoavak/Desktop/YT/stockpile/.venv/lib/python3.10/site-packages/rich/prompt.py", line 292, in __call__
+    value = self.get_input(self.console, prompt, self.password, stream=stream)
+  File "/Users/niknoavak/Desktop/YT/stockpile/.venv/lib/python3.10/site-packages/rich/prompt.py", line 211, in get_input
+    return console.input(prompt, password=password, stream=stream)
+  File "/Users/niknoavak/Desktop/YT/stockpile/.venv/lib/python3.10/site-packages/rich/console.py", line 2170, in input
+    result = input()
+EOFError: EOF when reading a line
+2026-01-23 11:46:59,357 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 11:46:59,360 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 11:47:00,285 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-23 11:47:00,287 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:47:00,287 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:47:00,300 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-23 11:47:00,300 - broll_processor - INFO - Clip extraction enabled
+2026-01-23 11:47:00,301 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-23 11:47:00,302 - broll_processor - INFO - stockpile initialized successfully
+2026-01-23 11:47:00,302 - broll_processor - INFO - Protected input video: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-23 11:47:00,303 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-23 11:47:00,303 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-23 11:47:00,304 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-23 11:47:55,613 - services.transcription - INFO - Transcription complete: 110 segments, 745.8s duration, language: en
+2026-01-23 11:47:55,618 - broll_processor - INFO - Transcription completed: 10201 chars, 110 segments, 12.4 min duration
+2026-01-23 11:48:39,520 - services.ai_service - INFO - B-roll planning complete: 24 needs identified for 12.4 min video (target: 24)
+2026-01-23 11:48:39,526 - broll_processor - INFO - B-roll planning complete: 24 needs identified (target: 24 at 2.0/min)
+2026-01-23 11:48:39,529 - broll_processor - INFO -   [1] 37.0s - man lifting heavy barbell gym (Man lifting heavy barbell)
+2026-01-23 11:48:39,532 - broll_processor - INFO -   [2] 66.0s - mma fighter hitting heavy bag (Fighter hitting heavy bag)
+2026-01-23 11:48:39,535 - broll_processor - INFO -   [3] 95.0s - exhausted fighter breathing heavily (Tired fighter breathing hard)
+2026-01-23 11:48:39,538 - broll_processor - INFO -   [4] 124.0s - wrestling takedown mma match (MMA takedown in cage)
+2026-01-23 11:48:39,540 - broll_processor - INFO -   [5] 153.0s - man running fast treadmill (Man running on treadmill)
+2026-01-23 11:48:39,542 - broll_processor - INFO -   [6] 182.0s - muay thai clinch training (Fighters in clinch position)
+2026-01-23 11:48:39,543 - broll_processor - INFO -   [7] 211.0s - man doing physical therapy (Man performing rehab drill)
+2026-01-23 11:48:39,544 - broll_processor - INFO -   [8] 240.0s - athlete in ice bath (Athlete in cold ice bath)
+2026-01-23 11:48:39,545 - broll_processor - INFO -   [9] 269.0s - man doing barbell squats (Man performing back squats)
+2026-01-23 11:48:39,547 - broll_processor - INFO -   [10] 298.0s - man doing heavy deadlifts (Man performing deadlifts)
+2026-01-23 11:48:39,548 - broll_processor - INFO -   [11] 327.0s - man doing box jumps (Man doing plyometric jumps)
+2026-01-23 11:48:39,550 - broll_processor - INFO -   [12] 356.0s - man doing kettlebell swings (Man swinging kettlebell)
+2026-01-23 11:48:39,551 - broll_processor - INFO -   [13] 385.0s - man doing battle ropes (Man using battle ropes)
+2026-01-23 11:48:39,552 - broll_processor - INFO -   [14] 414.0s - man sprinting outdoors (Man sprinting on track)
+2026-01-23 11:48:39,554 - broll_processor - INFO -   [15] 443.0s - man doing russian twists (Man doing core exercise)
+2026-01-23 11:48:39,555 - broll_processor - INFO -   [16] 472.0s - man doing farmers carry (Man doing farmers walk)
+2026-01-23 11:48:39,558 - broll_processor - INFO -   [17] 501.0s - man stretching on mat (Man stretching his legs)
+2026-01-23 11:48:39,560 - broll_processor - INFO -   [18] 530.0s - wrestling against cage wall (Wrestling against the cage)
+2026-01-23 11:48:39,562 - broll_processor - INFO -   [19] 559.0s - bjj rolling grappling match (BJJ athletes rolling)
+2026-01-23 11:48:39,564 - broll_processor - INFO -   [20] 588.0s - man writing training plan (Man writing on whiteboard)
+2026-01-23 11:48:39,565 - broll_processor - INFO -   [21] 617.0s - man foam rolling muscles (Man using foam roller)
+2026-01-23 11:48:39,566 - broll_processor - INFO -   [22] 646.0s - man using smartphone app (Man looking at phone app)
+2026-01-23 11:48:39,568 - broll_processor - INFO -   [23] 675.0s - man walking into gym (Man entering training gym)
+2026-01-23 11:48:39,570 - broll_processor - INFO -   [24] 704.0s - mma fighter bowing mat (Fighter bowing on mat)
+2026-01-23 11:48:39,574 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260123_114839 for video descriptS&C.mp4
+2026-01-23 11:48:39,577 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260123_114839
+2026-01-23 11:48:39,579 - broll_processor - INFO - Processing 24 B-roll needs
+2026-01-23 11:48:39,580 - broll_processor - INFO - [1/24] Processing: man lifting heavy barbell gym at 37.0s
+2026-01-23 11:48:39,581 - services.youtube_service - INFO - Searching YouTube for: 'man lifting heavy barbell gym'
+2026-01-23 11:49:00,052 - services.youtube_service - INFO - Filtered out 3 videos that didn't meet criteria
+2026-01-23 11:49:00,058 - broll_processor - INFO -   Found 6 videos
+2026-01-23 11:49:09,264 - services.ai_service - INFO - Evaluated videos for 'man lifting heavy barbell gym': 2 videos scored >= 6
+2026-01-23 11:49:09,277 - broll_processor - INFO -   Selected 2 top videos
+2026-01-23 11:49:09,279 - broll_processor - INFO -   Output folder: 0m37s_man_lifting_heavy_barbell
+2026-01-23 11:49:09,286 - broll_processor - INFO -   Video 1/2: 3HK43u8w0zM
+2026-01-23 11:49:09,333 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 11:49:15,433 - services.video_downloader - INFO - Downloaded preview: preview_3HK43u8w0zM.mp4
+2026-01-23 11:49:15,435 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 11:49:15,630 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_3HK43u8w0zM.mp4
+2026-01-23 11:49:37,777 - services.clip_extractor - INFO - File ready for analysis: files/lklkcfykc519
+2026-01-23 11:55:14,389 - broll_processor - ERROR -     Failed to process video 3HK43u8w0zM: object of type 'VideoAnalysisResult' has no len()
+2026-01-23 11:55:14,393 - broll_processor - INFO -   Video 2/2: OgDVFz0Wwsw
+2026-01-23 11:55:14,394 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 11:55:17,029 - services.video_downloader - INFO - Downloaded preview: preview_OgDVFz0Wwsw.mp4
+2026-01-23 11:55:17,031 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 11:55:17,205 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_OgDVFz0Wwsw.mp4
+2026-01-23 11:55:24,780 - services.clip_extractor - INFO - File ready for analysis: files/zytwnfn5j6b8
+2026-01-23 11:55:31,861 - broll_processor - ERROR -     Failed to process video OgDVFz0Wwsw: object of type 'VideoAnalysisResult' has no len()
+2026-01-23 11:55:31,862 - broll_processor - INFO -   Completed: 0 clips total
+2026-01-23 11:55:31,862 - broll_processor - INFO - [2/24] Processing: mma fighter hitting heavy bag at 66.0s
+2026-01-23 11:55:31,863 - services.youtube_service - INFO - Searching YouTube for: 'mma fighter hitting heavy bag'
+2026-01-23 11:55:44,559 - services.youtube_service - INFO - Filtered out 1 videos that didn't meet criteria
+2026-01-23 11:55:44,561 - broll_processor - INFO -   Found 8 videos
+2026-01-23 11:55:53,973 - services.ai_service - INFO - Evaluated videos for 'mma fighter hitting heavy bag': 3 videos scored >= 6
+2026-01-23 11:55:53,974 - broll_processor - INFO -   Selected 3 top videos
+2026-01-23 11:55:53,975 - broll_processor - INFO -   Output folder: 1m06s_fighter_hitting_heavy_bag
+2026-01-23 11:55:53,976 - broll_processor - INFO -   Video 1/3: gCvYAe99XfI
+2026-01-23 11:55:53,976 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 11:56:02,298 - services.video_downloader - INFO - Downloaded preview: preview_gCvYAe99XfI.mp4
+2026-01-23 11:56:02,299 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 11:56:02,593 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_gCvYAe99XfI.mp4
+2026-01-23 11:56:25,781 - services.clip_extractor - ERROR - File processing failed: files/lja5eog41ztx
+2026-01-23 11:56:25,784 - broll_processor - ERROR -     Failed to process video gCvYAe99XfI: object of type 'VideoAnalysisResult' has no len()
+2026-01-23 11:56:25,785 - broll_processor - INFO -   Video 2/3: mLE5tLuauV8
+2026-01-23 11:56:25,787 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 11:56:30,877 - services.video_downloader - INFO - Downloaded preview: preview_mLE5tLuauV8.mp4
+2026-01-23 11:56:30,878 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 11:56:31,221 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_mLE5tLuauV8.mp4
+2026-01-23 11:56:45,735 - services.clip_extractor - INFO - File ready for analysis: files/d1leylyjx4fj
+2026-01-23 11:57:21,481 - services.ai_service - INFO - Initialized AI service with model: gemini-3-flash-preview
+2026-01-23 11:57:21,487 - services.transcription - INFO - Loading Whisper model: base
+2026-01-23 11:57:22,802 - services.transcription - INFO - Loaded multilingual Whisper model with 71,825,920 parameters
+2026-01-23 11:57:22,804 - services.video_downloader - INFO - Initialized video downloader with output dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:57:22,805 - services.file_organizer - INFO - Initialized file organizer with base dir: /Users/niknoavak/Desktop/YT/stockpile/output
+2026-01-23 11:57:22,824 - services.clip_extractor - INFO - Initialized ClipExtractor with model: gemini-3-flash-preview
+2026-01-23 11:57:22,825 - broll_processor - INFO - Clip extraction enabled
+2026-01-23 11:57:22,826 - broll_processor - INFO - B-roll density: 2.0 clips per minute
+2026-01-23 11:57:22,826 - broll_processor - INFO - stockpile initialized successfully
+2026-01-23 11:57:22,828 - broll_processor - INFO - Protected input video: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-23 11:57:22,829 - broll_processor - INFO - Starting pipeline for: /Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4
+2026-01-23 11:57:22,830 - services.transcription - INFO - Starting transcription of: descriptS&C.mp4
+2026-01-23 11:57:22,831 - services.transcription - INFO - Extracting audio from video: descriptS&C.mp4
+2026-01-23 11:58:17,175 - services.transcription - INFO - Transcription complete: 110 segments, 745.8s duration, language: en
+2026-01-23 11:58:17,179 - broll_processor - INFO - Transcription completed: 10201 chars, 110 segments, 12.4 min duration
+2026-01-23 11:59:09,215 - services.ai_service - INFO - B-roll planning complete: 24 needs identified for 12.4 min video (target: 24)
+2026-01-23 11:59:09,228 - broll_processor - INFO - B-roll planning complete: 24 needs identified (target: 24 at 2.0/min)
+2026-01-23 11:59:09,230 - broll_processor - INFO -   [1] 37.0s - man skipping gym workout (Man walking away from gym entrance)
+2026-01-23 11:59:09,235 - broll_processor - INFO -   [2] 66.0s - exhausted mma fighter resting (Tired fighter sitting against cage)
+2026-01-23 11:59:09,244 - broll_processor - INFO -   [3] 95.0s - heavy bag striking power (Fighter hitting heavy bag with power)
+2026-01-23 11:59:09,264 - broll_processor - INFO -   [4] 124.0s - mma sparring intense round (Two men sparring in MMA cage)
+2026-01-23 11:59:09,265 - broll_processor - INFO -   [5] 153.0s - man performing barbell squat (Athlete doing heavy back squats)
+2026-01-23 11:59:09,265 - broll_processor - INFO -   [6] 182.0s - ice bath recovery athlete (Man submerged in ice bath)
+2026-01-23 11:59:09,266 - broll_processor - INFO -   [7] 211.0s - pull ups gym workout (Man doing wide grip pull ups)
+2026-01-23 11:59:09,267 - broll_processor - INFO -   [8] 240.0s - athlete performing box jump (Man jumping onto high wooden box)
+2026-01-23 11:59:09,267 - broll_processor - INFO -   [9] 269.0s - assault bike workout intense (Man sprinting on air bike)
+2026-01-23 11:59:09,268 - broll_processor - INFO -   [10] 298.0s - battle ropes gym workout (Man using heavy battle ropes)
+2026-01-23 11:59:09,277 - broll_processor - INFO -   [11] 327.0s - medicine ball rotational throw (Athlete throwing med ball at wall)
+2026-01-23 11:59:09,277 - broll_processor - INFO -   [12] 356.0s - hip mobility stretch athlete (Man performing deep hip stretch)
+2026-01-23 11:59:09,281 - broll_processor - INFO -   [13] 385.0s - foam rolling leg muscles (Athlete using foam roller on quads)
+2026-01-23 11:59:09,282 - broll_processor - INFO -   [14] 414.0s - wrestling against cage mma (Fighters grappling against the fence)
+2026-01-23 11:59:09,282 - broll_processor - INFO -   [15] 443.0s - bjj triangle choke submission (BJJ fighter applying triangle choke)
+2026-01-23 11:59:09,283 - broll_processor - INFO -   [16] 472.0s - writing workout plan whiteboard (Coach writing on gym whiteboard)
+2026-01-23 11:59:09,295 - broll_processor - INFO -   [17] 501.0s - mma fighter victory pose (Fighter raising arms in octagon)
+2026-01-23 11:59:09,302 - broll_processor - INFO -   [18] 530.0s - confused man looking computer (Man looking puzzled at laptop)
+2026-01-23 11:59:09,303 - broll_processor - INFO -   [19] 559.0s - gym equipment variety shot (Panning shot of various gym gear)
+2026-01-23 11:59:09,306 - broll_processor - INFO -   [20] 588.0s - calendar planning workout schedule (Hand marking dates on a calendar)
+2026-01-23 11:59:09,309 - broll_processor - INFO -   [21] 617.0s - scrolling fitness app phone (Close up of thumb scrolling app)
+2026-01-23 11:59:09,312 - broll_processor - INFO -   [22] 646.0s - typing discount code laptop (Hands typing on laptop keyboard)
+2026-01-23 11:59:09,315 - broll_processor - INFO -   [23] 675.0s - mma gym entrance morning (Fighter walking into gym at dawn)
+2026-01-23 11:59:09,324 - broll_processor - INFO -   [24] 704.0s - mma champion belt celebration (Fighter with championship belt)
+2026-01-23 11:59:09,330 - services.file_organizer - INFO - Created project directory: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260123_115909 for video descriptS&C.mp4
+2026-01-23 11:59:09,333 - broll_processor - INFO - Project structure created: /Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260123_115909
+2026-01-23 11:59:09,335 - broll_processor - INFO - Processing 24 B-roll needs
+2026-01-23 11:59:09,335 - broll_processor - INFO - [1/24] Processing: man skipping gym workout at 37.0s
+2026-01-23 11:59:09,336 - services.youtube_service - INFO - Searching YouTube for: 'man skipping gym workout'
+2026-01-23 11:59:24,644 - services.youtube_service - INFO - Filtered out 2 videos that didn't meet criteria
+2026-01-23 11:59:24,649 - broll_processor - INFO -   Found 7 videos
+2026-01-23 11:59:37,914 - services.ai_service - INFO - Evaluated videos for 'man skipping gym workout': 3 videos scored >= 6
+2026-01-23 11:59:37,917 - broll_processor - INFO -   Selected 3 top videos
+2026-01-23 11:59:37,919 - broll_processor - INFO -   Output folder: 0m37s_man_walking_away_from_gym_entrance
+2026-01-23 11:59:37,924 - broll_processor - INFO -   Video 1/3: pX-TQHILKqY
+2026-01-23 11:59:37,926 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 11:59:40,176 - services.video_downloader - INFO - Downloaded preview: preview_pX-TQHILKqY.mp4
+2026-01-23 11:59:40,177 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 11:59:40,327 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_pX-TQHILKqY.mp4
+2026-01-23 11:59:53,547 - services.clip_extractor - INFO - File ready for analysis: files/5z2adfukp0fu
+2026-01-23 12:00:00,284 - broll_processor - INFO -     Found 1 clips, downloading in high quality...
+2026-01-23 12:00:05,648 - services.video_downloader - INFO - Downloaded clip: clip1_0.0s-8.1s_pX-TQHILKqY.mp4
+2026-01-23 12:00:05,650 - broll_processor - INFO -     Downloaded 1 clips in high quality
+2026-01-23 12:00:05,652 - broll_processor - INFO -   Video 2/3: nGjFfjy3BOA
+2026-01-23 12:00:05,653 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 12:00:08,289 - services.video_downloader - INFO - Downloaded preview: preview_nGjFfjy3BOA.mp4
+2026-01-23 12:00:08,291 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 12:00:08,371 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_nGjFfjy3BOA.mp4
+2026-01-23 12:01:35,669 - services.clip_extractor - INFO - File ready for analysis: files/zc708w5oh6bl
+2026-01-23 12:01:45,902 - broll_processor - INFO -     Found 3 clips, downloading in high quality...
+2026-01-23 12:02:42,819 - services.video_downloader - INFO - Downloaded clip: clip1_25.0s-32.0s_nGjFfjy3BOA.mp4
+2026-01-23 12:03:44,476 - services.video_downloader - INFO - Downloaded clip: clip2_7.0s-14.0s_nGjFfjy3BOA.mp4
+2026-01-23 12:04:48,713 - services.video_downloader - INFO - Downloaded clip: clip3_18.0s-25.0s_nGjFfjy3BOA.mp4
+2026-01-23 12:04:48,717 - broll_processor - INFO -     Downloaded 3 clips in high quality
+2026-01-23 12:04:48,719 - broll_processor - INFO -   Video 3/3: ELj_vKvvi5U
+2026-01-23 12:04:48,720 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 12:04:55,295 - services.video_downloader - INFO - Downloaded preview: preview_ELj_vKvvi5U.mp4
+2026-01-23 12:04:55,296 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 12:04:55,440 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_ELj_vKvvi5U.mp4
+2026-01-23 12:05:16,403 - services.clip_extractor - INFO - File ready for analysis: files/tnf6kitf7coh
+2026-01-23 12:06:34,634 - broll_processor - INFO -     Found 3 clips, downloading in high quality...
+2026-01-23 12:30:18,008 - services.video_downloader - INFO - Downloaded clip: clip1_647.0s-651.0s_ELj_vKvvi5U.mp4
+2026-01-23 12:30:23,536 - services.video_downloader - INFO - Downloaded clip: clip2_368.0s-372.0s_ELj_vKvvi5U.f399.mp4.part
+2026-01-23 12:54:21,724 - services.video_downloader - INFO - Downloaded clip: clip3_568.0s-572.0s_ELj_vKvvi5U.mp4
+2026-01-23 12:54:21,735 - broll_processor - INFO -     Downloaded 3 clips in high quality
+2026-01-23 12:54:21,738 - broll_processor - INFO -   Completed: 7 clips total
+2026-01-23 12:54:21,741 - broll_processor - INFO - [2/24] Processing: exhausted mma fighter resting at 66.0s
+2026-01-23 12:54:21,744 - services.youtube_service - INFO - Searching YouTube for: 'exhausted mma fighter resting'
+2026-01-23 12:54:36,759 - broll_processor - INFO -   Found 9 videos
+2026-01-23 12:54:43,166 - services.ai_service - INFO - Evaluated videos for 'exhausted mma fighter resting': 2 videos scored >= 6
+2026-01-23 12:54:43,167 - broll_processor - INFO -   Selected 2 top videos
+2026-01-23 12:54:43,169 - broll_processor - INFO -   Output folder: 1m06s_tired_fighter_sitting_against_cage
+2026-01-23 12:54:43,170 - broll_processor - INFO -   Video 1/2: HUarvloys0w
+2026-01-23 12:54:43,170 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 12:54:45,728 - services.video_downloader - INFO - Downloaded preview: preview_HUarvloys0w.mp4
+2026-01-23 12:54:45,729 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 12:54:45,926 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_HUarvloys0w.mp4
+2026-01-23 12:55:20,955 - services.clip_extractor - INFO - File ready for analysis: files/8w36ml2rvo1y
+2026-01-23 12:55:33,871 - broll_processor - INFO -     Found 2 clips, downloading in high quality...
+2026-01-23 12:55:54,864 - services.video_downloader - INFO - Downloaded clip: clip1_0.0s-10.0s_HUarvloys0w.mp4
+2026-01-23 12:56:18,849 - services.video_downloader - INFO - Downloaded clip: clip2_16.0s-31.0s_HUarvloys0w.mp4
+2026-01-23 12:56:18,851 - broll_processor - INFO -     Downloaded 2 clips in high quality
+2026-01-23 12:56:18,853 - broll_processor - INFO -   Video 2/2: hHu6z_iSZqw
+2026-01-23 12:56:18,854 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 12:56:28,661 - services.video_downloader - INFO - Downloaded preview: preview_hHu6z_iSZqw.mp4
+2026-01-23 12:56:28,663 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 12:56:28,812 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_hHu6z_iSZqw.mp4
+2026-01-23 12:57:06,475 - services.clip_extractor - INFO - File ready for analysis: files/wp071g8eob00
+2026-01-23 12:57:49,498 - broll_processor - INFO -     Found 3 clips, downloading in high quality...
+2026-01-23 13:03:48,631 - services.video_downloader - INFO - Downloaded clip: clip1_586.5s-590.5s_hHu6z_iSZqw.mp4
+2026-01-23 13:08:56,949 - services.video_downloader - INFO - Downloaded clip: clip2_636.5s-642.5s_hHu6z_iSZqw.mp4
+2026-01-23 13:14:01,165 - services.video_downloader - INFO - Downloaded clip: clip3_285.5s-289.5s_hHu6z_iSZqw.mp4
+2026-01-23 13:14:01,169 - broll_processor - INFO -     Downloaded 3 clips in high quality
+2026-01-23 13:14:01,170 - broll_processor - WARNING -     Could not delete preview: [Errno 2] No such file or directory: '/Users/niknoavak/Desktop/YT/stockpile/output/descriptS&C_25fd4cb1_20260123_115909/1m06s_tired_fighter_sitting_against_cage/preview_hHu6z_iSZqw.mp4'
+2026-01-23 13:14:01,171 - broll_processor - INFO -   Completed: 5 clips total
+2026-01-23 13:14:01,171 - broll_processor - INFO - [3/24] Processing: heavy bag striking power at 95.0s
+2026-01-23 13:14:01,172 - services.youtube_service - INFO - Searching YouTube for: 'heavy bag striking power'
+2026-01-23 13:14:15,228 - services.youtube_service - INFO - Filtered out 3 videos that didn't meet criteria
+2026-01-23 13:14:15,231 - broll_processor - INFO -   Found 6 videos
+2026-01-23 13:14:24,181 - services.ai_service - INFO - Evaluated videos for 'heavy bag striking power': 5 videos scored >= 6
+2026-01-23 13:14:24,182 - broll_processor - INFO -   Selected 3 top videos
+2026-01-23 13:14:24,184 - broll_processor - INFO -   Output folder: 1m35s_fighter_hitting_heavy_bag_with_power
+2026-01-23 13:14:24,185 - broll_processor - INFO -   Video 1/3: mLE5tLuauV8
+2026-01-23 13:14:24,186 - broll_processor - INFO -     Using two-pass download (preview + clips)
+2026-01-23 13:14:27,101 - services.video_downloader - INFO - Downloaded preview: preview_mLE5tLuauV8.mp4
+2026-01-23 13:14:27,103 - broll_processor - INFO -     Preview downloaded, analyzing...
+2026-01-23 13:14:27,299 - services.clip_extractor - INFO - Uploading video to Gemini File API: preview_mLE5tLuauV8.mp4
+2026-01-23 13:15:14,201 - services.clip_extractor - INFO - File ready for analysis: files/2imq6kwtpgsq
+2026-01-23 13:15:53,380 - broll_processor - WARNING -     No clips found in preview, trying traditional download
+2026-01-23 13:15:53,386 - broll_processor - INFO -     Using traditional download (full video + extraction)
