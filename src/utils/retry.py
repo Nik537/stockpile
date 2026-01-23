@@ -83,6 +83,12 @@ class TemporaryServiceError(RetryableError):
     pass
 
 
+class YouTubeRateLimitError(RetryableError):
+    """Raised when YouTube returns HTTP 403 (rate limiting)."""
+
+    pass
+
+
 # Specific retry decorators for different use cases
 def retry_api_call(max_retries: int = 5, base_delay: float = 2.0):
     """Retry decorator specifically for API calls with longer delays."""
@@ -105,10 +111,14 @@ def retry_file_operation(max_retries: int = 3, base_delay: float = 1.0):
 
 
 def retry_download(max_retries: int = 3, base_delay: float = 2.0):
-    """Retry decorator for download operations."""
+    """Retry decorator for download operations with YouTube rate limit handling.
+
+    PHASE 2: Increased max_retries and base_delay for better YouTube stability.
+    Handles YouTube 403 rate limiting with exponential backoff.
+    """
     return retry_with_backoff(
         max_retries=max_retries,
         base_delay=base_delay,
-        max_delay=60.0,
-        exceptions=(NetworkError, TemporaryServiceError, ConnectionError),
+        max_delay=120.0,  # Increased from 60s for YouTube throttling
+        exceptions=(NetworkError, TemporaryServiceError, ConnectionError, YouTubeRateLimitError),
     )

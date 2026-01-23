@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from google.genai import Client, types
 
@@ -341,6 +341,48 @@ RULES:
         segments.sort(key=lambda s: s.relevance_score, reverse=True)
 
         return segments
+
+    def analyze_videos_competitive(
+        self,
+        video_data,  # List[Tuple[VideoSearchResult, str]]
+        search_phrase: str,
+    ) -> Optional[Tuple[Path, ClipSegment]]:
+        """Analyze multiple videos and return single best clip across all.
+
+        This method enables competitive analysis: download multiple preview videos,
+        analyze all of them, and select the single best clip based on relevance scores.
+
+        Args:
+            video_data: List of (video_object, video_file_path) tuples
+            search_phrase: Search phrase for relevance scoring
+
+        Returns:
+            Tuple of (source_video_path, best_segment) or None if no good clips found
+        """
+        all_segments = []
+
+        for video, video_path in video_data:
+            try:
+                analysis = self.analyze_video(
+                    video_path=str(video_path),
+                    search_phrase=search_phrase,
+                    video_id=video.video_id,
+                )
+
+                if analysis.analysis_success and analysis.segments:
+                    for segment in analysis.segments:
+                        all_segments.append((Path(video_path), segment))
+            except Exception as e:
+                logger.warning(f"Failed to analyze {Path(video_path).name}: {e}")
+                continue
+
+        if not all_segments:
+            return None
+
+        # Sort by relevance score (highest first)
+        all_segments.sort(key=lambda x: x[1].relevance_score, reverse=True)
+
+        return all_segments[0]  # Return best clip across all videos
 
     def extract_clip(
         self,

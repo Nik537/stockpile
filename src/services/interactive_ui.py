@@ -85,8 +85,8 @@ class InteractiveUI:
         if hasattr(transcript, 'segments') and transcript.segments:
             # Show first few segments
             for i, segment in enumerate(transcript.segments[:max_lines]):
-                timestamp = f"[dim][{int(segment['start'] // 60):02d}:{int(segment['start'] % 60):02d}][/dim]"
-                text = segment['text'].strip()
+                timestamp = f"[dim][{int(segment.start // 60):02d}:{int(segment.start % 60):02d}][/dim]"
+                text = segment.text.strip()
                 self.console.print(f"  {timestamp} {text}")
 
             if len(transcript.segments) > max_lines:

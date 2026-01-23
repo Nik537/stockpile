@@ -240,11 +240,49 @@ class BRollProcessor:
             )
             logger.info(f"Google Drive structure created: {drive_folder_url}")
 
-        # Step 4: Process each B-roll need
+        # Step 4: Process B-roll needs in parallel batches
         logger.info(f"Processing {len(broll_plan.needs)} B-roll needs")
         need_downloads: Dict[str, List[str]] = {}
         total_clips = 0
 
+        # Get parallel processing config
+        max_concurrent = self.config.get("max_concurrent_needs", 5)
+
+        # Process needs in batches
+        batch_size = max_concurrent
+        for batch_start in range(0, len(broll_plan.needs), batch_size):
+            batch_end = min(batch_start + batch_size, len(broll_plan.needs))
+            batch = broll_plan.needs[batch_start:batch_end]
+
+            logger.info(f"Processing batch {batch_start//batch_size + 1}/{(len(broll_plan.needs) + batch_size - 1)//batch_size} ({len(batch)} needs in parallel)")
+
+            # Process this batch in parallel
+            tasks = []
+            for i, need in enumerate(batch, batch_start + 1):
+                task = self._process_single_need(
+                    need=need,
+                    need_index=i,
+                    total_needs=len(broll_plan.needs),
+                    project_dir=project_dir,
+                    drive_project_folder_id=drive_project_folder_id,
+                )
+                tasks.append(task)
+
+            # Wait for all tasks in this batch to complete
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Collect results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.error(f"Batch task failed: {result}")
+                    continue
+                if result:
+                    folder_name, files = result
+                    need_downloads[folder_name] = files
+                    total_clips += len(files)
+
+        # Original sequential processing (keeping for reference, but replaced above)
+        """
         for i, need in enumerate(broll_plan.needs, 1):
             logger.info(
                 f"[{i}/{len(broll_plan.needs)}] Processing: {need.search_phrase} "
@@ -321,15 +359,15 @@ class BRollProcessor:
                                 video.video_id,
                             )
 
-                            if segments:
-                                logger.info(f"    Found {len(segments)} clips, downloading in high quality...")
+                            if segments and segments.analysis_success and segments.segments:
+                                logger.info(f"    Found {len(segments.segments)} clips, downloading in high quality...")
 
                                 # Pass 2: Download only the identified clips in high quality
                                 clip_files = await loop.run_in_executor(
                                     None,
                                     self.video_downloader.download_clip_sections,
                                     video,
-                                    segments,
+                                    segments.segments,
                                     str(need_folder),
                                     self.config.get(
                                         "clip_download_format",
@@ -427,6 +465,15 @@ class BRollProcessor:
             total_clips += len(final_files)
             logger.info(f"  Completed: {len(final_files)} clips total")
 
+            # Clean up intermediate files (previews, webm, failed downloads) to save disk space
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                self.video_downloader.cleanup_intermediate_files,
+                Path(need_folder),
+            )
+        """
+
         # Clean up empty directories
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -452,6 +499,331 @@ class BRollProcessor:
         # Clean up local output if Google Drive is configured
         if self.drive_service and project_dir:
             await self._cleanup_local_output(project_dir)
+
+    async def _process_single_need(
+        self,
+        need: 'BRollNeed',
+        need_index: int,
+        total_needs: int,
+        project_dir: str,
+        drive_project_folder_id: Optional[str],
+    ) -> Optional[tuple[str, List[str]]]:
+        """Process a single B-roll need: search, evaluate, download, extract clips.
+
+        Args:
+            need: BRollNeed object with search phrase and timestamp
+            need_index: Index of this need (1-based)
+            total_needs: Total number of needs being processed
+            project_dir: Local project directory
+            drive_project_folder_id: Google Drive folder ID for this project
+
+        Returns:
+            Tuple of (folder_name, list of clip files) or None if failed
+        """
+        logger.info(
+            f"[{need_index}/{total_needs}] Processing: {need.search_phrase} "
+            f"at {need.timestamp:.1f}s"
+        )
+
+        try:
+            # Search YouTube
+            video_results = await self.search_youtube_videos(need.search_phrase)
+            logger.info(f"  [{need_index}/{total_needs}] Found {len(video_results)} videos")
+
+            # Evaluate and score videos
+            scored_videos = await self.evaluate_videos(need.search_phrase, video_results)
+            logger.info(f"  [{need_index}/{total_needs}] Selected {len(scored_videos)} top videos")
+
+            if not scored_videos:
+                logger.info(f"  [{need_index}/{total_needs}] No suitable videos found for: {need.search_phrase}")
+                return None
+
+            # Create timestamp-prefixed folder for this need
+            need_folder = self.file_organizer.create_need_folder(project_dir, need)
+            logger.info(f"  [{need_index}/{total_needs}] Output folder: {Path(need_folder).name}")
+
+            # Google Drive folder for this need
+            drive_need_folder_id = None
+            if self.drive_service and drive_project_folder_id:
+                loop = asyncio.get_event_loop()
+                drive_need_folder_id = await loop.run_in_executor(
+                    None,
+                    self.drive_service.create_phrase_folder,
+                    need.folder_name,  # Use timestamp-prefixed name
+                    drive_project_folder_id,
+                )
+
+            # Process videos - stop early if we hit target clip count
+            final_files = []
+            clips_target = self.config.get("clips_per_need_target", 5)
+
+            # Check if competitive analysis is enabled
+            competitive_mode = self.config.get("competitive_analysis_enabled", True)
+            previews_per_need = self.config.get("previews_per_need", 2)
+
+            loop = asyncio.get_event_loop()
+
+            if competitive_mode and self.config.get("use_two_pass_download", True) and self.clip_extractor:
+                # COMPETITIVE ANALYSIS MODE
+                logger.info(f"  [{need_index}/{total_needs}] Competitive analysis: downloading {previews_per_need} previews")
+
+                # Select top N videos for comparison
+                preview_videos = scored_videos[:previews_per_need]
+                preview_files = []
+
+                # Download all previews
+                for video_idx, video in enumerate(preview_videos, 1):
+                    try:
+                        logger.info(f"    [{need_index}/{total_needs}] Downloading preview {video_idx}/{len(preview_videos)}: {video.video_id}")
+
+                        preview_file = await loop.run_in_executor(
+                            None,
+                            self.video_downloader.download_preview,
+                            video,
+                            str(need_folder),
+                            self.config.get("preview_max_height", 360),
+                        )
+
+                        if preview_file:
+                            preview_files.append((video, preview_file))
+                            logger.info(f"    [{need_index}/{total_needs}] Preview {video_idx} downloaded: {Path(preview_file).name}")
+                        else:
+                            logger.warning(f"    [{need_index}/{total_needs}] Preview {video_idx} download failed")
+                    except Exception as e:
+                        logger.error(f"    [{need_index}/{total_needs}] Failed to download preview {video_idx}: {e}")
+                        continue
+
+                if not preview_files:
+                    logger.warning(f"  [{need_index}/{total_needs}] No previews downloaded, skipping need")
+                else:
+                    # Analyze all previews together to find best clip
+                    logger.info(f"  [{need_index}/{total_needs}] Analyzing {len(preview_files)} previews...")
+
+                    try:
+                        result = await loop.run_in_executor(
+                            None,
+                            self.clip_extractor.analyze_videos_competitive,
+                            preview_files,
+                            need.search_phrase,
+                        )
+
+                        if result:
+                            source_video_path, best_segment = result
+
+                            # Find which video the winning segment came from
+                            source_video = None
+                            for video, preview_file in preview_files:
+                                if Path(preview_file) == source_video_path:
+                                    source_video = video
+                                    break
+
+                            if source_video:
+                                logger.info(f"  [{need_index}/{total_needs}] Best clip: {best_segment.start_time:.1f}s-{best_segment.end_time:.1f}s from {source_video.video_id} (score: {best_segment.relevance_score}/10)")
+
+                                # Download winner in high res
+                                clip_files = await loop.run_in_executor(
+                                    None,
+                                    self.video_downloader.download_clip_sections,
+                                    source_video,
+                                    [best_segment],
+                                    str(need_folder),
+                                    self.config.get("clip_download_format", "bestvideo[height<=1080]+bestaudio/best"),
+                                )
+
+                                if clip_files:
+                                    final_files.extend(clip_files)
+                                    logger.info(f"  [{need_index}/{total_needs}] Downloaded winning clip in high quality")
+
+                                    # Upload to Drive if configured
+                                    if self.drive_service and drive_need_folder_id:
+                                        for clip_file in clip_files:
+                                            await loop.run_in_executor(
+                                                None,
+                                                self.drive_service.upload_file,
+                                                clip_file,
+                                                drive_need_folder_id,
+                                            )
+                                else:
+                                    logger.warning(f"  [{need_index}/{total_needs}] Failed to download winning clip")
+                            else:
+                                logger.warning(f"  [{need_index}/{total_needs}] Could not identify source video for best clip")
+                        else:
+                            logger.warning(f"  [{need_index}/{total_needs}] No good clips found in any preview")
+
+                    except Exception as e:
+                        logger.error(f"  [{need_index}/{total_needs}] Competitive analysis failed: {e}")
+
+                    # Cleanup all previews
+                    for video, preview_file in preview_files:
+                        try:
+                            Path(preview_file).unlink()
+                        except Exception as e:
+                            logger.warning(f"  [{need_index}/{total_needs}] Could not delete preview: {e}")
+
+            else:
+                # SEQUENTIAL PROCESSING MODE (Original behavior)
+                logger.info(f"  [{need_index}/{total_needs}] Sequential processing: analyzing videos one by one")
+
+                for video_idx, video in enumerate(scored_videos, 1):
+                    # Early stopping if we have enough clips
+                    if len(final_files) >= clips_target:
+                        logger.info(f"  [{need_index}/{total_needs}] Target of {clips_target} clips reached, stopping early")
+                        break
+
+                    logger.info(f"  [{need_index}/{total_needs}] Video {video_idx}/{len(scored_videos)}: {video.video_id}")
+
+                    try:
+                        # Check if two-pass download is enabled and supported
+                        use_two_pass = (
+                            self.config.get("use_two_pass_download", True)
+                            and self.video_downloader._supports_section_downloads()
+                            and self.clip_extractor is not None
+                        )
+
+                        if use_two_pass:
+                            # TWO-PASS WORKFLOW (OPTIMIZED)
+                            logger.info(f"    [{need_index}/{total_needs}] Using two-pass download (preview + clips)")
+
+                            # Pass 1: Download low-quality preview
+                            preview_file = await loop.run_in_executor(
+                                None,
+                                self.video_downloader.download_preview,
+                                video,
+                                str(need_folder),
+                                self.config.get("preview_max_height", 360),
+                            )
+
+                            if not preview_file:
+                                logger.warning(f"    [{need_index}/{total_needs}] Preview download failed, trying traditional download")
+                                use_two_pass = False
+                            else:
+                                logger.info(f"    [{need_index}/{total_needs}] Preview downloaded, analyzing...")
+
+                                # Analyze preview to get clip segments
+                                segments = await loop.run_in_executor(
+                                    None,
+                                    self.clip_extractor.analyze_video,
+                                    preview_file,
+                                    need.search_phrase,
+                                    video.video_id,
+                                )
+
+                                if segments and segments.analysis_success and segments.segments:
+                                    logger.info(f"    [{need_index}/{total_needs}] Found {len(segments.segments)} clips, downloading in high quality...")
+
+                                    # Pass 2: Download only the identified clips in high quality
+                                    clip_files = await loop.run_in_executor(
+                                        None,
+                                        self.video_downloader.download_clip_sections,
+                                        video,
+                                        segments.segments,
+                                        str(need_folder),
+                                        self.config.get(
+                                            "clip_download_format",
+                                            "bestvideo[height<=1080]+bestaudio/best",
+                                        ),
+                                    )
+
+                                    if clip_files:
+                                        final_files.extend(clip_files)
+                                        logger.info(f"    [{need_index}/{total_needs}] Downloaded {len(clip_files)} clips in high quality")
+
+                                        # Clean up preview
+                                        try:
+                                            Path(preview_file).unlink()
+                                            logger.debug(f"    [{need_index}/{total_needs}] Deleted preview")
+                                        except Exception as e:
+                                            logger.warning(f"    [{need_index}/{total_needs}] Could not delete preview: {e}")
+
+                                        # Upload clips to Drive if configured
+                                        if self.drive_service and drive_need_folder_id:
+                                            for clip_file in clip_files:
+                                                await loop.run_in_executor(
+                                                    None,
+                                                    self.drive_service.upload_file,
+                                                    clip_file,
+                                                    drive_need_folder_id,
+                                                )
+
+                                        continue  # Skip traditional workflow
+                                    else:
+                                        logger.warning(f"    [{need_index}/{total_needs}] No clips downloaded, trying traditional download")
+                                        use_two_pass = False
+                                else:
+                                    logger.warning(f"    [{need_index}/{total_needs}] No clips found in preview, trying traditional download")
+                                    use_two_pass = False
+
+                                # Clean up preview if falling back
+                                if not use_two_pass and preview_file:
+                                    try:
+                                        Path(preview_file).unlink()
+                                    except Exception:
+                                        pass
+
+                        if not use_two_pass:
+                            # TRADITIONAL WORKFLOW (FALLBACK)
+                            logger.info(f"    [{need_index}/{total_needs}] Using traditional download (full video + extraction)")
+
+                            # Download full video
+                            downloaded_file = await loop.run_in_executor(
+                                None,
+                                self.video_downloader.download_single_video_to_folder,
+                                video,
+                                str(need_folder),
+                                self.drive_service,
+                                drive_need_folder_id,
+                            )
+
+                            if not downloaded_file:
+                                logger.warning(f"    [{need_index}/{total_needs}] Failed to download {video.video_id}")
+                                continue
+
+                            logger.info(f"    [{need_index}/{total_needs}] Downloaded: {Path(downloaded_file).name}")
+
+                            # Extract clips from full video
+                            if self.clip_extractor:
+                                clips, should_delete = await loop.run_in_executor(
+                                    None,
+                                    self.clip_extractor.process_downloaded_video,
+                                    downloaded_file,
+                                    need.search_phrase,
+                                    video.video_id,
+                                    None,  # Use same directory as source
+                                )
+
+                                if clips:
+                                    final_files.extend([c.clip_path for c in clips])
+                                    logger.info(f"    [{need_index}/{total_needs}] Extracted {len(clips)} clips")
+
+                                    # Delete original immediately if clips extracted and setting enabled
+                                    if should_delete and self.delete_original_after_extraction:
+                                        self.clip_extractor.cleanup_original_video(downloaded_file)
+                                        logger.info(f"    [{need_index}/{total_needs}] Deleted original: {Path(downloaded_file).name}")
+                                else:
+                                    # Keep original if no clips extracted
+                                    final_files.append(downloaded_file)
+                                    logger.info(f"    [{need_index}/{total_needs}] No clips extracted, keeping original")
+                            else:
+                                final_files.append(downloaded_file)
+
+                    except Exception as e:
+                        logger.error(f"    [{need_index}/{total_needs}] Failed to process video {video.video_id}: {e}")
+                        continue
+
+            logger.info(f"  [{need_index}/{total_needs}] Completed: {len(final_files)} clips total")
+
+            # Clean up intermediate files (previews, webm, failed downloads) to save disk space
+            await loop.run_in_executor(
+                None,
+                self.video_downloader.cleanup_intermediate_files,
+                Path(need_folder),
+            )
+
+            return (need.folder_name, final_files)
+
+        except Exception as e:
+            logger.error(f"[{need_index}/{total_needs}] Failed to process need '{need.search_phrase}': {e}")
+            return None
 
     async def transcribe_audio(self, file_path: str) -> TranscriptResult:
         """Transcribe audio content using Whisper with timestamps.

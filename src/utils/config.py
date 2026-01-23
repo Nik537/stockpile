@@ -72,6 +72,18 @@ def load_config() -> Dict:
         "preview_max_height": int(os.getenv("PREVIEW_MAX_HEIGHT", "360")),
         "clip_download_format": os.getenv("CLIP_DOWNLOAD_FORMAT",
                                            "bestvideo[height<=1080]+bestaudio/best"),
+        # PHASE 1 OPTIMIZATIONS: Parallel processing
+        "max_concurrent_needs": int(os.getenv("MAX_CONCURRENT_NEEDS", "5")),
+        # Competitive analysis: Compare multiple videos per B-roll need
+        "competitive_analysis_enabled": os.getenv("COMPETITIVE_ANALYSIS_ENABLED", "true").lower() == "true",
+        "previews_per_need": int(os.getenv("PREVIEWS_PER_NEED", "2")),
+        "clips_per_need_target": int(os.getenv("CLIPS_PER_NEED_TARGET", "1")),
+        # PHASE 2 OPTIMIZATIONS: YouTube stability & rate limiting
+        "ytdlp_rate_limit": int(os.getenv("YTDLP_RATE_LIMIT", "2000000")),  # 2MB/s default
+        "ytdlp_sleep_interval": int(os.getenv("YTDLP_SLEEP_INTERVAL", "2")),
+        "ytdlp_max_sleep_interval": int(os.getenv("YTDLP_MAX_SLEEP_INTERVAL", "5")),
+        "ytdlp_retries": int(os.getenv("YTDLP_RETRIES", "5")),
+        "ytdlp_cookies_file": os.getenv("YTDLP_COOKIES_FILE"),  # Optional cookie file path
     }
 
     return config
