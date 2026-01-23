@@ -3,7 +3,10 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.broll_need import BRollNeed
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +193,85 @@ class FileOrganizer:
             f"Created project directory: {project_dir} for video {source_filename}"
         )
         return str(project_dir)
+
+    def get_need_folder_path(self, project_dir: str, need: "BRollNeed") -> str:
+        """Get the folder path for a specific BRollNeed.
+
+        Uses the BRollNeed's folder_name property which includes timestamp prefix.
+        Example: "0m30s_city_skyline_aerial"
+
+        Args:
+            project_dir: Path to the project directory
+            need: BRollNeed object with timestamp and description
+
+        Returns:
+            Full path to the need's folder
+        """
+        folder_name = self._sanitize_folder_name(need.folder_name)
+        return str(Path(project_dir) / folder_name)
+
+    def create_need_folder(self, project_dir: str, need: "BRollNeed") -> str:
+        """Create a folder for a specific BRollNeed with timestamp prefix.
+
+        Creates a folder like "0m30s_city_skyline_aerial" inside the project directory.
+
+        Args:
+            project_dir: Path to the project directory
+            need: BRollNeed object with timestamp and description
+
+        Returns:
+            Path to the created folder
+        """
+        folder_path = Path(self.get_need_folder_path(project_dir, need))
+        folder_path.mkdir(parents=True, exist_ok=True)
+
+        logger.debug(
+            f"Created B-roll need folder: {folder_path.name} "
+            f"(timestamp: {need.timestamp:.1f}s)"
+        )
+        return str(folder_path)
+
+    def organize_need_downloads(
+        self,
+        project_dir: str,
+        need: "BRollNeed",
+        downloaded_files: List[str],
+    ) -> List[str]:
+        """Organize downloaded files for a specific BRollNeed.
+
+        Moves files to the need's timestamp-prefixed folder.
+
+        Args:
+            project_dir: Path to the project directory
+            need: BRollNeed object with timestamp and description
+            downloaded_files: List of downloaded file paths
+
+        Returns:
+            List of paths to organized files
+        """
+        if not downloaded_files:
+            logger.warning(f"No files to organize for need: {need.search_phrase}")
+            return []
+
+        # Create need folder
+        need_folder = Path(self.create_need_folder(project_dir, need))
+
+        # Move files to need folder
+        organized_files = []
+        for file_path in downloaded_files:
+            try:
+                moved_file = self._move_file_to_folder(file_path, need_folder)
+                if moved_file:
+                    organized_files.append(moved_file)
+            except Exception as e:
+                logger.error(f"Failed to move file {file_path}: {e}")
+                continue
+
+        logger.info(
+            f"Organized {len(organized_files)} files for '{need.description}' "
+            f"at {need.timestamp:.1f}s -> {need_folder.name}"
+        )
+        return organized_files
 
     def _cleanup_empty_directories(self) -> None:
         """Clean up empty directories in the base output directory."""

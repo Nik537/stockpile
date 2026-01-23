@@ -37,7 +37,7 @@ def load_config() -> Dict:
         "google_drive_output_folder_id": os.getenv("GOOGLE_DRIVE_OUTPUT_FOLDER_ID"),
         # Model configurations
         "whisper_model": os.getenv("WHISPER_MODEL", "base"),
-        "gemini_model": os.getenv("GEMINI_MODEL", "gemma-3-27b-it"),
+        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
         # Google Drive OAuth
         "google_client_id": os.getenv("GOOGLE_CLIENT_ID"),
         "google_client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
@@ -51,6 +51,27 @@ def load_config() -> Dict:
             os.getenv("MAX_VIDEO_DURATION_SECONDS", "600")
         ),
         "max_video_size_mb": int(os.getenv("MAX_VIDEO_SIZE_MB", "100")),
+        # Timeline-aware B-roll planning
+        "clips_per_minute": float(os.getenv("CLIPS_PER_MINUTE", "2")),
+        # Clip extraction settings
+        "clip_extraction_enabled": os.getenv("CLIP_EXTRACTION_ENABLED", "true").lower()
+        == "true",
+        "min_clip_duration": float(os.getenv("MIN_CLIP_DURATION", "4")),
+        "max_clip_duration": float(os.getenv("MAX_CLIP_DURATION", "15")),
+        "max_clips_per_video": int(os.getenv("MAX_CLIPS_PER_VIDEO", "3")),
+        "delete_original_after_extraction": os.getenv(
+            "DELETE_ORIGINAL_AFTER_EXTRACTION", "true"
+        ).lower()
+        == "true",
+        # Content filter for B-roll search (e.g., "men only, no women")
+        "content_filter": os.getenv("CONTENT_FILTER"),
+        # Interactive mode settings
+        "interactive_max_questions": int(os.getenv("INTERACTIVE_MAX_QUESTIONS", "3")),
+        # Two-pass download optimization
+        "use_two_pass_download": os.getenv("USE_TWO_PASS_DOWNLOAD", "true").lower() == "true",
+        "preview_max_height": int(os.getenv("PREVIEW_MAX_HEIGHT", "360")),
+        "clip_download_format": os.getenv("CLIP_DOWNLOAD_FORMAT",
+                                           "bestvideo[height<=1080]+bestaudio/best"),
     }
 
     return config

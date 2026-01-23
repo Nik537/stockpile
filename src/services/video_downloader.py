@@ -73,6 +73,48 @@ class VideoDownloader:
         )
         return downloaded_files
 
+    def download_single_video_to_folder(
+        self,
+        video: ScoredVideo,
+        target_folder: str,
+        drive_service=None,
+        drive_folder_id: str | None = None,
+    ) -> Optional[str]:
+        """Download a single video to a specific target folder.
+
+        Args:
+            video: ScoredVideo to download
+            target_folder: Exact target folder path
+            drive_service: Optional DriveService instance for immediate upload
+            drive_folder_id: Drive folder ID to upload to
+
+        Returns:
+            Path to downloaded file or None if failed
+        """
+        target_path = Path(target_folder)
+        target_path.mkdir(parents=True, exist_ok=True)
+
+        try:
+            downloaded_file = self._download_single_video(video, target_path)
+            if downloaded_file:
+                logger.info(f"Downloaded: {Path(downloaded_file).name}")
+
+                # Upload to Drive if configured
+                if drive_service and drive_folder_id:
+                    try:
+                        drive_service.upload_file(downloaded_file, drive_folder_id)
+                        logger.info(f"Uploaded to Drive: {Path(downloaded_file).name}")
+                    except Exception as e:
+                        logger.error(f"Drive upload failed for {Path(downloaded_file).name}: {e}")
+
+                return downloaded_file
+            else:
+                logger.warning(f"Failed to download video: {video.video_id}")
+                return None
+        except Exception as e:
+            logger.error(f"Error downloading video {video.video_id}: {e}")
+            return None
+
     def download_videos_to_folder(
         self,
         videos: List[ScoredVideo],
@@ -116,14 +158,14 @@ class VideoDownloader:
                     if drive_service and drive_folder_id:
                         from concurrent.futures import ThreadPoolExecutor
                         import threading
-                        
+
                         def upload_task():
                             try:
                                 drive_service.upload_file(downloaded_file, drive_folder_id)
                                 logger.info(f"Uploaded to Drive: {Path(downloaded_file).name}")
                             except Exception as e:
                                 logger.error(f"Drive upload failed for {Path(downloaded_file).name}: {e}")
-                        
+
                         # Use dedicated thread pool for uploads
                         if not hasattr(self, '_upload_executor'):
                             self._upload_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="upload")
@@ -268,6 +310,168 @@ class VideoDownloader:
         except Exception as e:
             logger.error(f"Failed to extract info for {url}: {e}")
             return None
+
+    def download_preview(
+        self,
+        video: ScoredVideo,
+        output_folder: str,
+        max_height: int = 360,
+    ) -> Optional[str]:
+        """Download low-quality preview for AI analysis.
+
+        Downloads worst available quality up to max_height (default 360p).
+        Much faster than full quality - typically 5-10MB vs 50-100MB.
+
+        Args:
+            video: Video to download
+            output_folder: Where to save preview
+            max_height: Maximum video height (default: 360)
+
+        Returns:
+            Path to downloaded preview file, or None if failed
+        """
+        output_dir = Path(output_folder)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use "worst" format with height constraint for fastest download
+        format_selector = f"worst[height<={max_height}]/worst"
+
+        ydl_opts = {
+            "format": format_selector,
+            "outtmpl": str(output_dir / f"preview_{video.video_id}.%(ext)s"),
+            "postprocessors": [
+                {
+                    "key": "FFmpegVideoConvertor",
+                    "preferedformat": "mp4",
+                }
+            ],
+            "quiet": True,
+            "no_progress": True,
+            "retries": 3,
+            "ignoreerrors": True,
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video.video_result.url])
+
+            # Find downloaded preview file
+            preview_files = list(output_dir.glob(f"preview_{video.video_id}.*"))
+            if preview_files:
+                logger.info(f"Downloaded preview: {preview_files[0].name}")
+                return str(preview_files[0])
+            else:
+                logger.warning(f"Preview file not found after download: {video.video_id}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Preview download failed for {video.video_id}: {e}")
+            return None
+
+    def download_clip_sections(
+        self,
+        video: ScoredVideo,
+        segments: List,
+        output_folder: str,
+        format_selector: str = "bestvideo[height<=1080]+bestaudio/best",
+    ) -> List[str]:
+        """Download specific time ranges in high quality.
+
+        Uses yt-dlp --download-sections to download only the needed parts.
+        This is much faster than downloading full video + FFmpeg extraction.
+
+        Args:
+            video: Video to download from
+            segments: List of clip segments with start/end times
+            output_folder: Where to save clips
+            format_selector: Quality format (default: 1080p max)
+
+        Returns:
+            List of successfully downloaded clip paths
+        """
+        output_dir = Path(output_folder)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        downloaded_clips = []
+
+        for idx, segment in enumerate(segments, 1):
+            # Format: "*START-END" (asterisk means download only this section)
+            section = f"*{segment.start_time}-{segment.end_time}"
+
+            clip_basename = (
+                f"clip{idx}_{segment.start_time:.1f}s-{segment.end_time:.1f}s_{video.video_id}"
+            )
+
+            ydl_opts = {
+                "format": format_selector,
+                "download_sections": section,
+                "outtmpl": str(output_dir / f"{clip_basename}.%(ext)s"),
+                "postprocessors": [
+                    {
+                        "key": "FFmpegVideoConvertor",
+                        "preferedformat": "mp4",
+                    }
+                ],
+                "quiet": True,
+                "no_progress": True,
+                "retries": 3,
+                "ignoreerrors": True,
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([video.video_result.url])
+
+                # Find the downloaded clip (extension may vary)
+                clip_files = list(output_dir.glob(f"{clip_basename}.*"))
+                if clip_files:
+                    clip_path = clip_files[0]
+                    downloaded_clips.append(str(clip_path))
+                    logger.info(f"Downloaded clip: {clip_path.name}")
+                else:
+                    logger.warning(f"Clip not found after download: {clip_basename}")
+
+            except Exception as e:
+                logger.error(f"Failed to download clip {idx} for {video.video_id}: {e}")
+                continue
+
+        return downloaded_clips
+
+    def _supports_section_downloads(self) -> bool:
+        """Check if yt-dlp version supports --download-sections.
+
+        Feature was added in yt-dlp 2023.03.04.
+
+        Returns:
+            True if supported, False otherwise
+        """
+        try:
+            import yt_dlp.version
+
+            version = yt_dlp.version.__version__
+
+            # Parse version string (format: YYYY.MM.DD or YYYY.MM.DD.post0)
+            parts = version.split(".")
+            if len(parts) >= 3:
+                year = int(parts[0])
+                month = int(parts[1])
+                day = int(parts[2].split("post")[0])
+
+                # Check if >= 2023.03.04
+                if year > 2023:
+                    return True
+                elif year == 2023:
+                    if month > 3:
+                        return True
+                    elif month == 3 and day >= 4:
+                        return True
+
+            logger.warning(f"yt-dlp version {version} does not support --download-sections")
+            return False
+
+        except Exception as e:
+            logger.warning(f"Could not determine yt-dlp version: {e}")
+            return False  # Assume not supported if can't determine
 
     @staticmethod
     def sanitize_filename(filename: str) -> str:

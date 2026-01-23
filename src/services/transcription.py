@@ -5,8 +5,11 @@ import logging
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Union
+
 import whisper
 
+from models.broll_need import TranscriptResult, TranscriptSegment
 from utils.retry import retry_api_call, retry_file_operation
 from utils.config import get_supported_video_formats, get_supported_audio_formats
 
@@ -40,14 +43,18 @@ class TranscriptionService:
             raise
 
     @retry_api_call(max_retries=3, base_delay=2.0)
-    async def transcribe_audio(self, input_file_path: str) -> str:
-        """Transcribe audio file to text.
+    async def transcribe_audio(
+        self, input_file_path: str, with_timestamps: bool = True
+    ) -> Union[TranscriptResult, str]:
+        """Transcribe audio file to text with optional timestamps.
 
         Args:
-            file_path: Path to audio or video file
+            input_file_path: Path to audio or video file
+            with_timestamps: If True, return full TranscriptResult with segments.
+                           If False, return just the text string (legacy behavior).
 
         Returns:
-            Transcribed text content
+            TranscriptResult with segments and duration, or just text string
         """
         file_path: Path = Path(input_file_path)
 
@@ -72,16 +79,22 @@ class TranscriptionService:
             if cleanup_audio:
                 Path(audio_path).unlink(missing_ok=True)
 
-            return result
+            # Return full result or just text based on flag
+            if with_timestamps:
+                return result
+            else:
+                return result.text
 
         except Exception as e:
             logger.error(f"Transcription failed for {file_path}: {e}")
             raise
 
-    def _transcribe_with_whisper(self, audio_path: str) -> str:
+    def _transcribe_with_whisper(self, audio_path: str) -> TranscriptResult:
+        """Run Whisper transcription and return full result with timestamps."""
         try:
             if not self.model:
                 raise ValueError("Whisper model not loaded")
+
             result = self.model.transcribe(
                 str(audio_path),
                 language=None,
@@ -90,11 +103,45 @@ class TranscriptionService:
                 verbose=False,
             )
 
+            # Extract text
             text = result.get("text", "")
-            if isinstance(text, str):
-                return text.strip()
-            else:
+            if not isinstance(text, str):
                 raise ValueError("Transcription result is not a string")
+
+            # Extract segments with timing info
+            raw_segments = result.get("segments", [])
+            segments = []
+            for seg in raw_segments:
+                segments.append(
+                    TranscriptSegment(
+                        start=float(seg.get("start", 0)),
+                        end=float(seg.get("end", 0)),
+                        text=str(seg.get("text", "")).strip(),
+                    )
+                )
+
+            # Get duration (last segment end time, or explicit duration if available)
+            duration = 0.0
+            if segments:
+                duration = segments[-1].end
+            # Some Whisper versions include duration directly
+            if "duration" in result:
+                duration = float(result["duration"])
+
+            # Get detected language
+            language = result.get("language")
+
+            logger.info(
+                f"Transcription complete: {len(segments)} segments, "
+                f"{duration:.1f}s duration, language: {language}"
+            )
+
+            return TranscriptResult(
+                text=text.strip(),
+                segments=segments,
+                duration=duration,
+                language=language,
+            )
 
         except Exception as e:
             logger.error(f"Whisper transcription failed: {e}")
