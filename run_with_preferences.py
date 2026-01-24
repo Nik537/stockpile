@@ -18,7 +18,7 @@ async def main():
     setup_logging()
 
     # Video path
-    video_path = "/Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C.mp4"
+    video_path = "/Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C_test_2min.mp4"
 
     # Create preferences based on user's answers
     preferences = UserPreferences(

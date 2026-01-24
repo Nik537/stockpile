@@ -1,9 +1,9 @@
 {
-  "video_path": "uploads/descriptS&C_test_2min.mp4",
+  "video_path": "/Users/niknoavak/Desktop/YT/stockpile/input/descriptS&C_test_2min.mp4",
   "output_dir": "/Users/niknoavak/Desktop/YT/stockpile/output",
-  "start_time": 1769234597.563721,
-  "end_time": 1769234758.8382149,
-  "elapsed_seconds": 161.2744960784912,
+  "start_time": 1769247652.3291059,
+  "end_time": 1769248313.1593568,
+  "elapsed_seconds": 660.8307693004608,
   "current_stage": "process_needs",
   "overall_progress": 100.0,
   "overall_eta_seconds": 0.0,
@@ -17,7 +17,7 @@
       "total_items": 1,
       "completed_items": 1,
       "progress_percent": 100.0,
-      "elapsed_seconds": 8.13493275642395,
+      "elapsed_seconds": 8.317119121551514,
       "eta_seconds": 0.0
     },
     "plan": {
@@ -26,7 +26,7 @@
       "total_items": 1,
       "completed_items": 1,
       "progress_percent": 100.0,
-      "elapsed_seconds": 12.044214963912964,
+      "elapsed_seconds": 16.21946907043457,
       "eta_seconds": 0.0
     },
     "project_setup": {
@@ -35,18 +35,18 @@
       "total_items": 1,
       "completed_items": 1,
       "progress_percent": 100.0,
-      "elapsed_seconds": 0.0019698143005371094,
+      "elapsed_seconds": 0.0024368762969970703,
       "eta_seconds": 0.0
     },
     "process_needs": {
       "name": "process_needs",
       "status": "completed",
-      "total_items": 4,
-      "completed_items": 4,
+      "total_items": 6,
+      "completed_items": 6,
       "progress_percent": 100.0,
-      "elapsed_seconds": 141.09007287025452,
+      "elapsed_seconds": 636.2754878997803,
       "eta_seconds": 0.0
     }
   },
-  "timestamp": "2026-01-24T07:05:58.838230"
+  "timestamp": "2026-01-24T10:51:53.159895"
 }

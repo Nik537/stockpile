@@ -1,0 +1,237 @@
+/Users/niknoavak/Desktop/YT/stockpile/.venv/lib/python3.10/site-packages/google/api_core/_python_version_support.py:275: FutureWarning: You are using a Python version (3.10.19) which Google will stop supporting in new releases of google.api_core once it reaches its end of life (2026-10-04). Please upgrade to the latest Python version, or at least Python 3.11, to continue receiving updates for google.api_core past that date.
+  warnings.warn(message, FutureWarning)
+
+======================================================================
+STOCKPILE - Processing with your preferences
+======================================================================
+
+Video: descriptS&C_test_2min.mp4
+
+Preferences:
+  Visual Style: MMA fighting, men only, martial arts focused
+  Pacing: fast
+  Time of Day: any
+  Content Filter: men only, MMA, fighting, martial arts
+
+======================================================================
+
+[01/24/26 10:36:21] INFO     Initialized AI service with model:                 
+                             gemini-3-flash-preview                             
+                    INFO     Initialized video sources: ['youtube']             
+                    INFO     Loading Whisper model: base                        
+[01/24/26 10:36:22] INFO     Loaded multilingual Whisper model with 71,825,920  
+                             parameters                                         
+                    INFO     Initialized video downloader with output dir:      
+                             /Users/niknoavak/Desktop/YT/stockpile/output       
+                    INFO     Initialized file organizer with base dir:          
+                             /Users/niknoavak/Desktop/YT/stockpile/output       
+                    INFO     Initialized ClipExtractor with model:              
+                             gemini-3-flash-preview                             
+                    INFO     Clip extraction enabled                            
+                    INFO     B-roll density: 2.0 clips per minute               
+                    INFO     Parallel processing limits: downloads=3,           
+                             extractions=2, AI calls=5                          
+                    INFO     Cost tracking enabled (no budget limit)            
+                    INFO     stockpile initialized successfully                 
+Starting processing... (this will take 10-15 minutes)
+
+                    INFO     Protected input video:                             
+                             /Users/niknoavak/Desktop/YT/stockpile/input/descrip
+                             tS&C_test_2min.mp4                                 
+                    INFO     Initialized progress tracking for:                 
+                             /Users/niknoavak/Desktop/YT/stockpile/input/descrip
+                             tS&C_test_2min.mp4                                 
+                    INFO     Starting pipeline for:                             
+                             /Users/niknoavak/Desktop/YT/stockpile/input/descrip
+                             tS&C_test_2min.mp4                                 
+                    INFO     Started stage: transcribe                          
+                    INFO     Starting transcription of:                         
+                             descriptS&C_test_2min.mp4                          
+                    INFO     Extracting audio from video:                       
+                             descriptS&C_test_2min.mp4                          
+Detected language: English
+  0%|          | 0/12000 [00:00<?, ?frames/s] 25%|██▍       | 2960/12000 [00:01<00:04, 1823.30frames/s] 49%|████▊     | 5848/12000 [00:03<00:03, 1869.43frames/s] 74%|███████▎  | 8848/12000 [00:04<00:01, 1927.83frames/s] 98%|█████████▊| 11752/12000 [00:06<00:00, 1802.21frames/s]100%|██████████| 12000/12000 [00:06<00:00, 1653.75frames/s]100%|██████████| 12000/12000 [00:06<00:00, 1758.35frames/s]
+[01/24/26 10:36:30] INFO     Transcription complete: 20 segments, 120.0s        
+                             duration, language: en                             
+                    INFO     Completed stage: transcribe (7.9s)                 
+                    INFO     Transcription completed: 1738 chars, 20 segments,  
+                             2.0 min duration                                   
+                    INFO     Started stage: plan                                
+[01/24/26 10:36:55] INFO     B-roll planning complete: 4 needs identified for   
+                             2.0 min video (target: 4)                          
+                    INFO     Completed stage: plan (25.6s)                      
+                    INFO     B-roll planning complete: 4 needs identified       
+                             (target: 4 at 2.0/min)                             
+                    INFO       [1] 6.0s - mma fighter heavy bag (Man hitting    
+                             heavy bag in gym)                                  
+                    INFO       [2] 40.0s - man doing kettlebell swings (Athlete 
+                             training with kettlebells)                         
+                    INFO       [3] 75.0s - man sprinting on treadmill (Male     
+                             athlete sprinting on treadmill)                    
+                    INFO       [4] 110.0s - bjj submission armbar (Man applying 
+                             armbar submission)                                 
+                    INFO     Started stage: project_setup                       
+                    INFO     Created project directory:                         
+                             /Users/niknoavak/Desktop/YT/stockpile/output/descri
+                             ptS&C_test_2min_b70b9654_20260124_103655 for video 
+                             descriptS&C_test_2min.mp4                          
+                    INFO     Project structure created:                         
+                             /Users/niknoavak/Desktop/YT/stockpile/output/descri
+                             ptS&C_test_2min_b70b9654_20260124_103655           
+                    INFO     Completed stage: project_setup (0.0s)              
+                    INFO     Processing 4 B-roll needs                          
+                    INFO     Started stage: process_needs                       
+                    INFO     Processing batch 1/1 (4 needs in parallel)         
+                    INFO     [1/4] Processing: mma fighter heavy bag at 6.0s    
+                    INFO     [2/4] Processing: man doing kettlebell swings at   
+                             40.0s                                              
+                    INFO     [YouTube] Searching for: 'mma fighter heavy bag'   
+                    INFO     [YouTube] Searching for: 'man doing kettlebell     
+                             swings'                                            
+                    INFO     [3/4] Processing: man sprinting on treadmill at    
+                             75.0s                                              
+                    INFO     [YouTube] Searching for: 'man sprinting on         
+                             treadmill'                                         
+                    INFO     [4/4] Processing: bjj submission armbar at 110.0s  
+                    INFO     [YouTube] Searching for: 'bjj submission armbar'   
+[01/24/26 10:37:12] INFO     [YouTube] Filtered out 5 videos that didn't meet   
+                             criteria                                           
+                    INFO     [YouTube] Found 4 videos                           
+                    INFO     Total videos from all sources: 4                   
+                    INFO       [2/4] Found 4 videos                             
+[01/24/26 10:37:13] INFO     [YouTube] Filtered out 1 videos that didn't meet   
+                             criteria                                           
+                    INFO     [YouTube] Found 8 videos                           
+                    INFO     Total videos from all sources: 8                   
+                    INFO       [1/4] Found 8 videos                             
+                    INFO     [YouTube] Found 9 videos                           
+                    INFO     Total videos from all sources: 9                   
+                    INFO       [3/4] Found 9 videos                             
+[01/24/26 10:37:14] INFO     [YouTube] Filtered out 4 videos that didn't meet   
+                             criteria                                           
+                    INFO     [YouTube] Found 5 videos                           
+                    INFO     Total videos from all sources: 5                   
+                    INFO       [4/4] Found 5 videos                             
+[01/24/26 10:37:19] INFO     Evaluated videos for 'man doing kettlebell swings':
+                             3 videos scored >= 6                               
+                    INFO       [2/4] Selected 3 top videos                      
+                    INFO       [2/4] Output folder:                             
+                             0m40s_athlete_training_with_kettlebells            
+                    INFO       [2/4] Competitive analysis: downloading 2        
+                             previews in parallel                               
+                    INFO         [2] Downloading preview 1/2: y_bYjLYXJo0       
+                    INFO         [2] Downloading preview 2/2: YSxHifyI6s8       
+[01/24/26 10:37:21] INFO     Evaluated videos for 'man sprinting on treadmill': 
+                             6 videos scored >= 6                               
+                    INFO       [3/4] Selected 3 top videos                      
+                    INFO       [3/4] Output folder:                             
+                             1m15s_male_athlete_sprinting_on_treadmill          
+                    INFO       [3/4] Competitive analysis: downloading 2        
+                             previews in parallel                               
+                    INFO         [3] Downloading preview 1/2: Ho0sXuKAadE       
+WARNING: [youtube] y_bYjLYXJo0: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+WARNING: [youtube] YSxHifyI6s8: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[01/24/26 10:37:22] INFO     Evaluated videos for 'bjj submission armbar': 3    
+                             videos scored >= 6                                 
+                    INFO       [4/4] Selected 3 top videos                      
+                    INFO       [4/4] Output folder:                             
+                             1m50s_man_applying_armbar_submission               
+                    INFO       [4/4] Competitive analysis: downloading 2        
+                             previews in parallel                               
+[download]   0.0% of    3.63MiB at  Unknown B/s ETA Unknown[download]   0.1% of    3.63MiB at  536.17KiB/s ETA 00:06  [download]   0.2% of    3.63MiB at    1.17MiB/s ETA 00:03[download]   0.4% of    3.63MiB at    1.69MiB/s ETA 00:02[download]   0.8% of    3.63MiB at  376.00KiB/s ETA 00:09[download]   1.7% of    3.63MiB at  546.30KiB/s ETA 00:06[download]   0.0% of    8.57MiB at  Unknown B/s ETA Unknown[download]   0.0% of    8.57MiB at  584.35KiB/s ETA 00:15  [download]   0.1% of    8.57MiB at    1.26MiB/s ETA 00:06[download]   0.2% of    8.57MiB at    1.74MiB/s ETA 00:04[download]   0.4% of    8.57MiB at 1009.54KiB/s ETA 00:08[download]   0.7% of    8.57MiB at    1.23MiB/s ETA 00:06[download]   3.4% of    3.63MiB at  568.17KiB/s ETA 00:06[download]   6.9% of    3.63MiB at  918.69KiB/s ETA 00:03[download]  13.7% of    3.63MiB at    1.54MiB/s ETA 00:02[download]   1.4% of    8.57MiB at  326.47KiB/s ETA 00:26[download]  27.5% of    3.63MiB at    1.68MiB/s ETA 00:01[download]   2.9% of    8.57MiB at  563.66KiB/s ETA 00:15[download]   5.8% of    8.57MiB at  891.15KiB/s ETA 00:09[download]  11.7% of    8.57MiB at    1.50MiB/s ETA 00:05[download]  55.0% of    3.63MiB at    1.90MiB/s ETA 00:00[download]   0.1% of  730.33KiB at  Unknown B/s ETA Unknown[download]   0.4% of  730.33KiB at    1.25MiB/s ETA 00:00  [download]   1.0% of  730.33KiB at  406.58KiB/s ETA 00:01[download]   2.1% of  730.33KiB at  841.64KiB/s ETA 00:00[download]   4.2% of  730.33KiB at  655.24KiB/s ETA 00:01[download]  23.3% of    8.57MiB at    1.72MiB/s ETA 00:03[download]   8.6% of  730.33KiB at  971.19KiB/s ETA 00:00[download]  17.4% of  730.33KiB at    1.28MiB/s ETA 00:00[download]  34.9% of  730.33KiB at    1.35MiB/s ETA 00:00[download]  70.0% of  730.33KiB at    1.35MiB/s ETA 00:00[download] 100.0% of  730.33KiB at    1.75MiB/s ETA 00:00[download] 100% of  730.33KiB in 00:00:00 at 853.82KiB/s                                                         [01/24/26 10:37:26] INFO     Downloaded preview: preview_Ho0sXuKAadE.mp4        
+                    INFO         [3] Preview 1 downloaded:                      
+                             preview_Ho0sXuKAadE.mp4                            
+                    INFO         [3] Downloading preview 2/2: Lw752lYQpSw       
+[download] 100.0% of    3.63MiB at    1.90MiB/s ETA 00:00[download] 100% of    3.63MiB in 00:00:02 at 1.56MiB/s                                                         [01/24/26 10:37:27] INFO     Downloaded preview: preview_YSxHifyI6s8.mp4        
+                    INFO         [2] Preview 2 downloaded:                      
+                             preview_YSxHifyI6s8.mp4                            
+                    INFO         [4] Downloading preview 1/2: 23enzBqgkhs       
+[download]  46.7% of    8.57MiB at    1.90MiB/s ETA 00:02[download]  71.5% of    8.57MiB at    1.90MiB/s ETA 00:01WARNING: [youtube] Lw752lYQpSw: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+WARNING: [youtube] 23enzBqgkhs: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[download]  93.8% of    8.57MiB at    1.90MiB/s ETA 00:00[download] 100.0% of    8.57MiB at    1.90MiB/s ETA 00:00[download] 100% of    8.57MiB in 00:00:04 at 1.75MiB/s                                                         [01/24/26 10:37:29] INFO     Downloaded preview: preview_y_bYjLYXJo0.mp4        
+                    INFO         [2] Preview 1 downloaded:                      
+                             preview_y_bYjLYXJo0.mp4                            
+                    INFO         [4] Downloading preview 2/2: MkYEw7h_KBk       
+                    INFO       [2/4] Analyzing 2 previews...                    
+[01/24/26 10:37:30] INFO     Uploading video to Gemini File API:                
+                             preview_y_bYjLYXJo0.mp4                            
+[download]   0.1% of    1.13MiB at  255.83KiB/s ETA 00:04[download]   0.3% of    1.13MiB at  713.60KiB/s ETA 00:01[download]   0.6% of    1.13MiB at    1.54MiB/s ETA 00:00[download]   1.3% of    1.13MiB at    1.68MiB/s ETA 00:00[download]   2.7% of    1.13MiB at  651.71KiB/s ETA 00:01[download]   5.4% of    1.13MiB at    1.14MiB/s ETA 00:00[download]  11.0% of    1.13MiB at    1.23MiB/s ETA 00:00[download]  22.0% of    1.13MiB at    1.41MiB/s ETA 00:00[download]  44.1% of    1.13MiB at    1.84MiB/s ETA 00:00[download]  88.3% of    1.13MiB at    1.89MiB/s ETA 00:00[download] 100.0% of    1.13MiB at    1.90MiB/s ETA 00:00[download] 100% of    1.13MiB in 00:00:01 at 778.95KiB/s                                                         [01/24/26 10:37:32] INFO     Downloaded preview: preview_23enzBqgkhs.mp4        
+                    INFO         [4] Preview 1 downloaded:                      
+                             preview_23enzBqgkhs.mp4                            
+WARNING: [youtube] MkYEw7h_KBk: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[download]   0.1% of  675.89KiB at  263.43KiB/s ETA 00:02[download]   0.4% of  675.89KiB at  737.14KiB/s ETA 00:00[download]   1.0% of  675.89KiB at  414.74KiB/s ETA 00:01[download]   2.2% of  675.89KiB at  874.99KiB/s ETA 00:00[download]   4.6% of  675.89KiB at  876.00KiB/s ETA 00:00[download]   9.3% of  675.89KiB at    1.15MiB/s ETA 00:00[download]  18.8% of  675.89KiB at    1.16MiB/s ETA 00:00[download]  37.7% of  675.89KiB at    1.53MiB/s ETA 00:00[download]  75.6% of  675.89KiB at    1.64MiB/s ETA 00:00[download] 100.0% of  675.89KiB at    1.90MiB/s ETA 00:00[download] 100% of  675.89KiB in 00:00:02 at 297.64KiB/s                                                         [01/24/26 10:37:35] INFO     Downloaded preview: preview_Lw752lYQpSw.mp4        
+                    INFO         [3] Preview 2 downloaded:                      
+                             preview_Lw752lYQpSw.mp4                            
+                    INFO       [3/4] Analyzing 2 previews...                    
+                    INFO     Uploading video to Gemini File API:                
+                             preview_Ho0sXuKAadE.mp4                            
+[download]   0.1% of    1.76MiB at  Unknown B/s ETA Unknown[download]   0.2% of    1.76MiB at  451.76KiB/s ETA 00:03  [download]   0.4% of    1.76MiB at 1002.15KiB/s ETA 00:01[download]   0.8% of    1.76MiB at  521.38KiB/s ETA 00:03[download]   1.7% of    1.76MiB at  719.39KiB/s ETA 00:02[download]   3.5% of    1.76MiB at  983.04KiB/s ETA 00:01[download]   7.0% of    1.76MiB at    1.28MiB/s ETA 00:01[download]  14.1% of    1.76MiB at    1.25MiB/s ETA 00:01[download]  28.3% of    1.76MiB at    1.86MiB/s ETA 00:00[download]  56.7% of    1.76MiB at    1.78MiB/s ETA 00:00[download] 100.0% of    1.76MiB at    1.89MiB/s ETA 00:00[download] 100% of    1.76MiB in 00:00:02 at 660.19KiB/s                                                         [01/24/26 10:37:39] INFO     Downloaded preview: preview_MkYEw7h_KBk.mp4        
+                    INFO         [4] Preview 2 downloaded:                      
+                             preview_MkYEw7h_KBk.mp4                            
+                    INFO       [4/4] Analyzing 2 previews...                    
+                    INFO     Uploading video to Gemini File API:                
+                             preview_23enzBqgkhs.mp4                            
+[01/24/26 10:37:54] INFO     Evaluated videos for 'mma fighter heavy bag': 1    
+                             videos scored >= 6                                 
+                    INFO       [1/4] Selected 1 top videos                      
+                    INFO       [1/4] Output folder:                             
+                             0m06s_man_hitting_heavy_bag_in_gym                 
+                    INFO       [1/4] Competitive analysis: downloading 2        
+                             previews in parallel                               
+                    INFO         [1] Downloading preview 1/1: gCvYAe99XfI       
+                    INFO     File ready for analysis: files/k1ueqk0hoqu8        
+WARNING: [youtube] gCvYAe99XfI: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[download]   2.3% of   43.82KiB at   74.12KiB/s ETA 00:00[download]   6.8% of   43.82KiB at  217.91KiB/s ETA 00:00[download]  16.0% of   43.82KiB at  502.77KiB/s ETA 00:00[download]  34.2% of   43.82KiB at    1.04MiB/s ETA 00:00[download]  70.7% of   43.82KiB at  784.02KiB/s ETA 00:00[download] 100.0% of   43.82KiB at  936.51KiB/s ETA 00:00[download] 100% of   43.82KiB in 00:00:01 at 31.29KiB/s                                                         [01/24/26 10:38:04] INFO     Downloaded preview: preview_gCvYAe99XfI.mp4        
+                    INFO         [1] Preview 1 downloaded:                      
+                             preview_gCvYAe99XfI.mp4                            
+                    INFO       [1/4] Analyzing 1 previews...                    
+                    INFO     Uploading video to Gemini File API:                
+                             preview_gCvYAe99XfI.mp4                            
+[01/24/26 10:38:06] INFO     Uploading video to Gemini File API:                
+                             preview_Lw752lYQpSw.mp4                            
+[01/24/26 10:38:07] INFO     File ready for analysis: files/nl0sgvlwx33b        
+[01/24/26 10:38:14] ERROR    File processing failed: files/nv0n6m0d8szo         
+                    WARNING    [1/4] No good clips found in any preview         
+                    INFO       [1/4] Completed: 0 clips total                   
+[01/24/26 10:38:16] INFO     File ready for analysis: files/qw7som3vlqss        
+                    INFO     Uploading video to Gemini File API:                
+                             preview_MkYEw7h_KBk.mp4                            
+[01/24/26 10:38:20] INFO     File ready for analysis: files/791ynstibkgl        
+[01/24/26 10:38:29] INFO     File ready for analysis: files/vdeqjofugult        
+[01/24/26 10:38:39] INFO       [3/4] Best clip: 5.5s-11.7s from Ho0sXuKAadE     
+                             (score: 10/10)                                     
+[01/24/26 10:38:43] INFO       [4/4] Best clip: 5.5s-16.0s from MkYEw7h_KBk     
+                             (score: 10/10)                                     
+WARNING: [youtube] MkYEw7h_KBk: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[download] 100% of    2.18MiB in 00:00:04 at 459.86KiB/s                                                        [01/24/26 10:38:52] INFO     Downloaded clip: clip1_5.5s-11.7s_Ho0sXuKAadE.mp4  
+                    INFO       [3/4] Downloaded winning clip in high quality    
+                    INFO       [3/4] Completed: 1 clips total                   
+[01/24/26 10:38:57] INFO     Uploading video to Gemini File API:                
+                             preview_YSxHifyI6s8.mp4                            
+[download] 100% of    1.16MiB in 00:00:11 at 100.21KiB/s                                                        [01/24/26 10:39:02] INFO     Downloaded clip: clip1_5.5s-16.0s_MkYEw7h_KBk.mp4  
+                    INFO       [4/4] Downloaded winning clip in high quality    
+                    INFO       [4/4] Completed: 1 clips total                   
+[01/24/26 10:39:20] INFO     File ready for analysis: files/jiz9b9lerzcg        
+[01/24/26 10:39:31] INFO       [2/4] Best clip: 77.0s-86.0s from YSxHifyI6s8    
+                             (score: 10/10)                                     
+WARNING: [youtube] YSxHifyI6s8: Some web client https formats have been skipped as they are missing a url. YouTube is forcing SABR streaming for this client. See  https://github.com/yt-dlp/yt-dlp/issues/12482  for more details
+[download] 100% of    1.52MiB in 00:00:24 at 64.74KiB/s                                                       [01/24/26 10:40:03] INFO     Downloaded clip: clip1_77.0s-86.0s_YSxHifyI6s8.mp4 
+                    INFO       [2/4] Downloaded winning clip in high quality    
+                    INFO       [2/4] Completed: 1 clips total                   
+                    INFO     Completed stage: process_needs (187.8s)            
+                    INFO     Pipeline complete: 3 clips from 4 B-roll needs     
+                    INFO     Cost report saved:                                 
+                             /Users/niknoavak/Desktop/YT/stockpile/output/descri
+                             ptS&C_test_2min_b70b9654_20260124_103655/cost_repor
+                             t.json (Total: $0.0125, 2 API calls)               
+                    INFO     💰 Total cost: $0.0125 (2 API calls)               
+                    INFO     Processing complete in 221.3s                      
+                    INFO     Processing completed successfully:                 
+                             /Users/niknoavak/Desktop/YT/stockpile/input/descrip
+                             tS&C_test_2min.mp4                                 
+
+======================================================================
+✓ Processing complete!
+Check output folder: /Users/niknoavak/Desktop/YT/stockpile/output
+======================================================================
+

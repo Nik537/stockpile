@@ -1,90 +1,286 @@
+/* ==========================================================================
+   App Layout - Stockpile
+   ========================================================================== */
+
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+/* ==========================================================================
+   Header
+   ========================================================================== */
+
 .app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 2rem;
+  position: relative;
+  padding: var(--space-12) var(--space-8);
   text-align: center;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+/* Gradient orb decoration */
+.app-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.25) 0%,
+    rgba(139, 92, 246, 0.15) 30%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-header-content {
+  position: relative;
+  z-index: 1;
+}
+
+.app-header .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.app-header .logo-icon {
+  font-size: 2.5rem;
+  filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5));
+  animation: bounce 2s ease-in-out infinite;
 }
 
 .app-header h1 {
-  margin: 0;
-  font-size: 2.5rem;
-  font-weight: 700;
+  font-size: var(--text-4xl);
+  font-weight: var(--font-bold);
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-400) 0%,
+    var(--color-accent) 50%,
+    var(--color-primary-300) 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.03em;
 }
 
-.app-header p {
-  margin: 0.5rem 0 0 0;
-  font-size: 1.1rem;
-  opacity: 0.9;
+.app-header .tagline {
+  font-size: var(--text-lg);
+  color: var(--color-text-secondary);
+  margin: 0;
+  font-weight: var(--font-normal);
 }
+
+/* ==========================================================================
+   Main Content
+   ========================================================================== */
 
 .app-main {
   flex: 1;
-  max-width: 1200px;
+  max-width: 1000px;
   width: 100%;
   margin: 0 auto;
-  padding: 2rem;
+  padding: var(--space-10) var(--space-6);
 }
 
+/* Section Cards */
 .upload-section,
 .jobs-section {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 2rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8);
+  margin-bottom: var(--space-8);
+  animation: slideUp 0.4s ease-out;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.upload-section:hover,
+.jobs-section:hover {
+  border-color: var(--color-border-hover);
+}
+
+/* Section Headers */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.section-header .section-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent));
+  border-radius: var(--radius-lg);
+  font-size: 1.25rem;
 }
 
 .upload-section h2,
 .jobs-section h2 {
-  margin: 0 0 1.5rem 0;
-  font-size: 1.5rem;
-  color: #667eea;
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
 }
+
+/* Section Descriptions */
+.section-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
 
 .app-footer {
-  background: #1a1a1a;
-  color: rgba(255, 255, 255, 0.6);
-  padding: 1.5rem;
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-6) var(--space-8);
   text-align: center;
-  font-size: 0.9rem;
 }
 
-@media (prefers-color-scheme: light) {
+.app-footer p {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.app-footer .footer-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.app-footer .version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-tertiary);
+}
+
+/* ==========================================================================
+   Loading State
+   ========================================================================== */
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  gap: var(--space-4);
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-text {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   Responsive Design
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: var(--space-8) var(--space-4);
+  }
+
+  .app-header h1 {
+    font-size: var(--text-2xl);
+  }
+
+  .app-header .tagline {
+    font-size: var(--text-base);
+  }
+
+  .app-main {
+    padding: var(--space-6) var(--space-4);
+  }
+
   .upload-section,
   .jobs-section {
-    background: rgba(0, 0, 0, 0.02);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    padding: var(--space-6);
+    border-radius: var(--radius-xl);
+  }
+
+  .section-header .section-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 1.1rem;
   }
 
   .upload-section h2,
   .jobs-section h2 {
-    color: #5a67d8;
-  }
-
-  .app-footer {
-    background: #f5f5f5;
-    color: rgba(0, 0, 0, 0.6);
+    font-size: var(--text-lg);
   }
 }
 
-@media (max-width: 768px) {
-  .app-header h1 {
+@media (max-width: 480px) {
+  .app-header {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .app-header .logo-icon {
     font-size: 2rem;
   }
 
-  .app-main {
-    padding: 1rem;
+  .app-header h1 {
+    font-size: var(--text-xl);
   }
 
   .upload-section,
   .jobs-section {
-    padding: 1.5rem;
+    padding: var(--space-5);
+    margin-bottom: var(--space-6);
+  }
+
+  .section-header {
+    margin-bottom: var(--space-4);
+  }
+}
+
+/* ==========================================================================
+   Light Mode Adjustments
+   ========================================================================== */
+
+@media (prefers-color-scheme: light) {
+  .app-header::before {
+    background: radial-gradient(
+      circle,
+      rgba(99, 102, 241, 0.12) 0%,
+      rgba(139, 92, 246, 0.08) 30%,
+      transparent 70%
+    );
   }
 }

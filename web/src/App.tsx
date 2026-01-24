@@ -39,20 +39,40 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🎬 Stockpile</h1>
-        <p>AI-Powered B-roll Automation</p>
+        <div className="app-header-content">
+          <div className="logo">
+            <span className="logo-icon">&#x1F3AC;</span>
+            <h1>Stockpile</h1>
+          </div>
+          <p className="tagline">AI-Powered B-roll Automation</p>
+        </div>
       </header>
 
       <main className="app-main">
         <section className="upload-section">
-          <h2>Upload Video</h2>
+          <div className="section-header">
+            <div className="section-icon">&#x1F4E4;</div>
+            <div>
+              <h2>Upload Video</h2>
+              <p className="section-description">Drop your video to generate curated B-roll footage</p>
+            </div>
+          </div>
           <UploadForm onJobCreated={handleJobCreated} />
         </section>
 
         <section className="jobs-section">
-          <h2>Processing Jobs</h2>
+          <div className="section-header">
+            <div className="section-icon">&#x1F4CB;</div>
+            <div>
+              <h2>Processing Jobs</h2>
+              <p className="section-description">Track your video processing in real-time</p>
+            </div>
+          </div>
           {loading ? (
-            <p>Loading jobs...</p>
+            <div className="loading-state">
+              <div className="loading-spinner"></div>
+              <span className="loading-text">Loading jobs...</span>
+            </div>
           ) : (
             <JobList jobs={jobs} onJobDeleted={handleJobDeleted} />
           )}
@@ -60,7 +80,10 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>Stockpile v1.0.0 - Transform your videos with AI-curated B-roll footage</p>
+        <div className="footer-content">
+          <span className="version-badge">v1.0.0</span>
+          <p>Transform your videos with AI-curated B-roll footage</p>
+        </div>
       </footer>
     </div>
   )

@@ -7,16 +7,27 @@ interface ProgressBarProps {
 }
 
 function ProgressBar({ progress, status }: ProgressBarProps) {
-  const getProgressColor = () => {
+  const getProgressClass = () => {
     switch (status) {
       case 'completed':
-        return '#10b981'
+        return 'status-completed'
       case 'failed':
-        return '#ef4444'
+        return 'status-failed'
       case 'processing':
-        return '#667eea'
+        return 'status-processing'
       default:
-        return '#9ca3af'
+        return 'status-queued'
+    }
+  }
+
+  const getPercentageClass = () => {
+    switch (status) {
+      case 'completed':
+        return 'completed'
+      case 'failed':
+        return 'failed'
+      default:
+        return ''
     }
   }
 
@@ -24,14 +35,13 @@ function ProgressBar({ progress, status }: ProgressBarProps) {
     <div className="progress-bar-container">
       <div className="progress-bar-track">
         <div
-          className="progress-bar-fill"
-          style={{
-            width: `${progress}%`,
-            backgroundColor: getProgressColor(),
-          }}
+          className={`progress-bar-fill ${getProgressClass()}`}
+          style={{ width: `${progress}%` }}
         />
       </div>
-      <span className="progress-percentage">{progress}%</span>
+      <span className={`progress-percentage ${getPercentageClass()}`}>
+        {progress}%
+      </span>
     </div>
   )
 }

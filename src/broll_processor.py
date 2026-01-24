@@ -170,7 +170,7 @@ class BRollProcessor:
         user_preferences: UserPreferences = None,
         status_callback=None,
         resume: bool = True,
-    ) -> None:
+    ) -> str | None:
         """Process a video file through the complete B-roll pipeline.
 
         Args:
@@ -178,6 +178,9 @@ class BRollProcessor:
             user_preferences: Optional user preferences for B-roll style customization
             status_callback: Optional callback function for progress updates
             resume: Whether to resume from checkpoint if available (default: True)
+
+        Returns:
+            Path to the output project directory, or None if processing failed
         """
         if file_path in self.processing_files:
             logger.info(f"File already being processed: {file_path}")
@@ -221,7 +224,7 @@ class BRollProcessor:
         )
 
         try:
-            await self._execute_pipeline(
+            project_dir = await self._execute_pipeline(
                 file_path, start_time, user_preferences, status, checkpoint
             )
             status.complete_processing()
@@ -230,6 +233,7 @@ class BRollProcessor:
             cleanup_checkpoint(checkpoint_path)
 
             logger.info(f"Processing completed successfully: {file_path}")
+            return project_dir
 
         except Exception as e:
             logger.error(f"Processing failed for {file_path}: {e}")

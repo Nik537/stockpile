@@ -85,21 +85,36 @@ function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
 
   const statusBadge = getStatusBadge()
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)
+  }
+
   return (
     <div className={`job-card status-${job.status}`}>
       <div className="job-header">
         <div className="job-info">
           <h3>{job.video_filename}</h3>
-          <span className={`status-badge ${statusBadge.className}`}>{statusBadge.label}</span>
+          <span className={`status-badge ${statusBadge.className}`}>
+            <span className="status-dot"></span>
+            {statusBadge.label}
+          </span>
         </div>
         <div className="job-actions">
           {job.status === 'completed' && (
             <button onClick={handleDownload} className="btn-download">
-              ⬇️ Download
+              <span className="btn-icon">&#x2B07;</span>
+              Download
             </button>
           )}
           <button onClick={handleDelete} className="btn-delete">
-            🗑️ Delete
+            <span className="btn-icon">&#x1F5D1;</span>
+            Delete
           </button>
         </div>
       </div>
@@ -110,13 +125,22 @@ function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
 
         {job.error && (
           <div className="error-message">
-            <strong>Error:</strong> {job.error}
+            <span className="error-icon">&#x26A0;</span>
+            <span className="error-text">
+              <strong>Error:</strong> {job.error}
+            </span>
           </div>
         )}
 
         <div className="job-meta">
-          <span>Created: {new Date(job.created_at).toLocaleString()}</span>
-          <span>Updated: {new Date(job.updated_at).toLocaleString()}</span>
+          <span className="job-meta-item">
+            <span className="meta-icon">&#x1F4C5;</span>
+            Created: {formatDate(job.created_at)}
+          </span>
+          <span className="job-meta-item">
+            <span className="meta-icon">&#x1F504;</span>
+            Updated: {formatDate(job.updated_at)}
+          </span>
         </div>
       </div>
     </div>
