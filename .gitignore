@@ -8,5 +8,8 @@ src/token.json
 token.json
 .venv
 
+# S2 IMPROVEMENT: AI response cache directory
+.cache/
+
 *.DS_Store
 test_email.py

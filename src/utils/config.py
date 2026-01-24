@@ -77,11 +77,12 @@ def load_config() -> dict:
         "parallel_downloads": int(os.getenv("PARALLEL_DOWNLOADS", "3")),
         "parallel_extractions": int(os.getenv("PARALLEL_EXTRACTIONS", "2")),
         "parallel_ai_calls": int(os.getenv("PARALLEL_AI_CALLS", "5")),
-        # AI Response Caching
-        "cache_enabled": os.getenv("CACHE_ENABLED", "true").lower() == "true",
-        "cache_ttl_days": int(os.getenv("CACHE_TTL_DAYS", "30")),
-        "cache_max_size_gb": float(os.getenv("CACHE_MAX_SIZE_GB", "1.0")),
-        "cache_dir": resolve_path(os.getenv("CACHE_DIR"), ".cache/ai_responses"),
+        # S2 IMPROVEMENT: AI Response Caching
+        # Caches Gemini API responses keyed by content hash for 100% savings on re-runs
+        "ai_cache_enabled": os.getenv("AI_CACHE_ENABLED", "true").lower() == "true",
+        "ai_cache_ttl_days": int(os.getenv("AI_CACHE_TTL_DAYS", "30")),
+        "ai_cache_max_size_gb": float(os.getenv("AI_CACHE_MAX_SIZE_GB", "1.0")),
+        "ai_cache_dir": resolve_path(os.getenv("AI_CACHE_DIR"), ".cache/ai_responses"),
         # Competitive analysis: Compare multiple videos per B-roll need
         "competitive_analysis_enabled": os.getenv("COMPETITIVE_ANALYSIS_ENABLED", "true").lower() == "true",
         "previews_per_need": int(os.getenv("PREVIEWS_PER_NEED", "2")),
@@ -94,6 +95,16 @@ def load_config() -> dict:
         "ytdlp_cookies_file": os.getenv("YTDLP_COOKIES_FILE"),  # Optional cookie file path
         # PHASE 3 FEATURES: Cost tracking
         "budget_limit_usd": float(os.getenv("BUDGET_LIMIT_USD", "0.0")),
+        # Q4 IMPROVEMENT: Context-aware evaluation settings
+        # Seconds of transcript context to extract around each B-roll timestamp
+        "evaluation_context_seconds": float(os.getenv("EVALUATION_CONTEXT_SECONDS", "30.0")),
+        # S3 IMPROVEMENT: faster-whisper configuration
+        "whisper_device": os.getenv("WHISPER_DEVICE", "auto"),  # "auto", "cpu", "cuda"
+        "whisper_compute_type": os.getenv("WHISPER_COMPUTE_TYPE", "auto"),  # "auto", "int8", "float16", "float32"
+        # S5 IMPROVEMENT: Video pre-filtering settings
+        "min_view_count": int(os.getenv("MIN_VIEW_COUNT", "0")),  # Minimum views for a video
+        "max_prefilter_duration": int(os.getenv("MAX_PREFILTER_DURATION", "600")),  # Max video duration in seconds
+        "blocked_title_keywords": os.getenv("BLOCKED_TITLE_KEYWORDS", "").split(",") if os.getenv("BLOCKED_TITLE_KEYWORDS") else [],
     }
 
     return config

@@ -1,18 +1,36 @@
-"""AI service for phrase extraction and video evaluation using Google GenAI."""
+"""AI service for phrase extraction and video evaluation using Google GenAI.
 
+S2 IMPROVEMENT: AI Response Caching
+- Caches AI responses keyed by content hash + prompt version
+- 100% cost savings on re-runs with same content
+- Increment PROMPT_VERSIONS when prompts change to invalidate cache
+"""
+
+import hashlib
 import json
 import logging
 from typing import List, Optional
+
 from google.genai import Client
 from google.genai import types
 
-from utils.retry import retry_api_call, APIRateLimitError, NetworkError
-from utils.cache import AIResponseCache
-from models.video import VideoResult, ScoredVideo
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
-from models.user_preferences import UserPreferences, GeneratedQuestion
+from models.user_preferences import GeneratedQuestion, UserPreferences
+from models.video import ScoredVideo, VideoResult
+from utils.cache import AIResponseCache, compute_content_hash
+from utils.retry import APIRateLimitError, NetworkError, retry_api_call
 
 logger = logging.getLogger(__name__)
+
+
+# S2 IMPROVEMENT: Prompt version identifiers for cache invalidation
+# IMPORTANT: Increment these when prompts change to invalidate stale cached responses
+PROMPT_VERSIONS = {
+    "extract_search_phrases": "v6",
+    "generate_context_questions": "v1",
+    "plan_broll_needs": "v2",  # B-roll planning with enhanced fields
+    "evaluate_videos": "v2",  # Video evaluation with content filter
+}
 
 
 def strip_markdown_code_blocks(text: str) -> str:
@@ -337,11 +355,15 @@ RULES:
         Analyzes the transcript to identify specific moments that need B-roll,
         returning a BRollPlan with timestamped needs spread across the video.
 
+        S2 IMPROVEMENT: Results are cached by transcript hash for 100% savings on re-runs.
+        Cache key includes prompt version, transcript hash, and parameters.
+
         Args:
             transcript_result: TranscriptResult with text, segments, and duration
             clips_per_minute: Target B-roll density (default: 2 clips per minute)
             source_file: Optional path to source file for reference
             content_filter: Optional filter for content (e.g., "men only, no women")
+            user_preferences: Optional user preferences for B-roll customization
 
         Returns:
             BRollPlan with list of BRollNeed objects
@@ -359,13 +381,59 @@ RULES:
         duration_minutes = transcript_result.duration / 60.0
         total_clips_needed = max(1, int(duration_minutes * clips_per_minute))
 
+        # S2 IMPROVEMENT: Generate cache key from transcript content and parameters
+        # Include user preferences hash if present to ensure different preferences = different cache
+        user_prefs_hash = ""
+        if user_preferences and user_preferences.has_preferences():
+            user_prefs_hash = compute_content_hash(
+                user_preferences.to_prompt_instructions()
+            )[:16]
+
+        cache_key_content = (
+            f"{PROMPT_VERSIONS['plan_broll_needs']}|"
+            f"{self._generate_transcript_hash(transcript_result)}|"
+            f"{clips_per_minute}|{content_filter or ''}|{user_prefs_hash}"
+        )
+
+        # S2 IMPROVEMENT: Check cache before making API call
+        if self.cache:
+            cached_response = self.cache.get(cache_key_content, self.model_name)
+            if cached_response:
+                try:
+                    cached_data = json.loads(cached_response)
+                    needs = self._parse_broll_needs_from_data(
+                        cached_data, transcript_result.duration
+                    )
+                    logger.info(
+                        f"[CACHE HIT] B-roll planning: {len(needs)} needs from cache "
+                        f"(saved ~$0.01 API cost)"
+                    )
+                    return BRollPlan(
+                        source_duration=transcript_result.duration,
+                        needs=needs,
+                        clips_per_minute=clips_per_minute,
+                        source_file=source_file,
+                    )
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Failed to parse cached B-roll plan: {e}")
+                    # Continue to make fresh API call
+
         # Format transcript with timestamps for AI analysis
         timestamped_transcript = transcript_result.format_with_timestamps()
 
-        prompt = f"""You are B-RollPlanner v1.
+        # Q2 ENHANCEMENT: Enhanced planning prompt with alternate searches, negatives, and visual metadata
+        prompt = f"""You are B-RollPlanner v2 (Enhanced).
 
 GOAL
 Identify specific moments in this video that need B-roll footage. You must identify approximately {total_clips_needed} B-roll opportunities spread across the video.
+
+For each moment, provide ENHANCED search metadata:
+- Primary search phrase (most specific)
+- 2-3 alternate search phrases (synonyms, related terms)
+- Negative keywords (what should NOT appear in results)
+- Visual style preference (cinematic, documentary, raw, vlog)
+- Time of day if relevant (golden hour, night, day)
+- Camera movement preference (static, pan, drone, handheld, tracking)
 
 INPUT
 - Source video duration: {transcript_result.duration:.1f} seconds ({duration_minutes:.1f} minutes)
@@ -382,29 +450,46 @@ Return ONLY a JSON array with this exact structure:
 [
   {{
     "timestamp": 30.5,
-    "search_phrase": "city skyline sunset aerial",
+    "search_phrase": "city skyline aerial drone golden hour",
     "description": "Establishing shot for urban segment",
     "context": "talking about life in the city and how it changed",
-    "suggested_duration": 5
+    "suggested_duration": 5,
+    "alternate_searches": [
+      "urban landscape drone sunset",
+      "downtown buildings aerial view",
+      "metropolitan skyline from above"
+    ],
+    "negative_keywords": ["night", "rain", "text overlay", "logo", "watermark"],
+    "visual_style": "cinematic",
+    "time_of_day": "golden hour",
+    "movement": "slow drone push-in"
   }}
 ]
 
 RULES
-1. Identify exactly {total_clips_needed} B-roll needs (±2 is acceptable)
+1. Identify exactly {total_clips_needed} B-roll needs (+-2 is acceptable)
 2. Spread clips EVENLY across the video timeline:
    - First clip around {transcript_result.duration * 0.05:.0f}s
    - Last clip before {transcript_result.duration * 0.95:.0f}s
    - Even spacing between clips
 3. timestamp: Specific moment in source video (seconds) where B-roll should appear
 4. search_phrase: 2-6 words, MUST name tangible scenes/objects/events for YouTube search
-   - GOOD: "Berlin Wall falling", "vintage CRT monitor", "coffee shop interior"
+   - Include visual descriptors (aerial, close-up, wide shot)
+   - GOOD: "Berlin Wall falling", "vintage CRT monitor close-up", "coffee shop interior"
    - BAD: "power dynamics", "abstract concept", "feeling of change"
-5. description: What the editor should see (under 40 characters)
-6. context: 10-20 words from the transcript around this moment
-7. suggested_duration: How long the B-roll should play (4-15 seconds)
-8. NO duplicates or very similar search phrases
-9. Return ONLY the JSON array, no markdown, no extra text
-{f'10. CONTENT FILTER: {content_filter}' if content_filter else ''}
+5. alternate_searches: 2-3 synonym or related search phrases for fallback
+6. negative_keywords: 3-5 terms that should NOT appear in video titles/descriptions
+   - Always include: "watermark", "logo", "text overlay" for stock footage
+   - Add content-specific exclusions based on context
+7. visual_style: One of "cinematic", "documentary", "raw", "vlog", or null if any
+8. time_of_day: "golden hour", "night", "day", or null if doesn't matter
+9. movement: "static", "pan", "drone", "handheld", "tracking", or null if any
+10. description: What the editor should see (under 40 characters)
+11. context: 10-20 words from the transcript around this moment
+12. suggested_duration: How long the B-roll should play (4-15 seconds)
+13. NO duplicates or very similar search phrases
+14. Return ONLY the JSON array, no markdown, no extra text
+{f'15. CONTENT FILTER: {content_filter}' if content_filter else ''}
 
 {self._format_user_preferences(user_preferences) if user_preferences and user_preferences.has_preferences() else ''}"""
 
@@ -463,6 +548,31 @@ RULES
                     context = str(item.get("context", "")).strip()
                     suggested_duration = float(item.get("suggested_duration", 5.0))
 
+                    # Q2 ENHANCEMENT: Parse enhanced metadata fields
+                    alternate_searches = item.get("alternate_searches", [])
+                    if isinstance(alternate_searches, list):
+                        alternate_searches = [str(s).strip().lower() for s in alternate_searches if s]
+                    else:
+                        alternate_searches = []
+
+                    negative_keywords = item.get("negative_keywords", [])
+                    if isinstance(negative_keywords, list):
+                        negative_keywords = [str(k).strip().lower() for k in negative_keywords if k]
+                    else:
+                        negative_keywords = []
+
+                    visual_style = item.get("visual_style")
+                    if visual_style:
+                        visual_style = str(visual_style).strip().lower()
+
+                    time_of_day = item.get("time_of_day")
+                    if time_of_day:
+                        time_of_day = str(time_of_day).strip().lower()
+
+                    movement = item.get("movement")
+                    if movement:
+                        movement = str(movement).strip().lower()
+
                     # Validate required fields
                     if not search_phrase or not description:
                         logger.warning(f"Skipping B-roll need with missing fields: {item}")
@@ -480,6 +590,12 @@ RULES
                         description=description,
                         context=context,
                         suggested_duration=suggested_duration,
+                        # Q2 ENHANCEMENT: Enhanced metadata fields
+                        alternate_searches=alternate_searches,
+                        negative_keywords=negative_keywords,
+                        visual_style=visual_style,
+                        time_of_day=time_of_day,
+                        movement=movement,
                     )
                     needs.append(need)
 
@@ -494,6 +610,11 @@ RULES
                 f"B-roll planning complete: {len(needs)} needs identified "
                 f"for {duration_minutes:.1f} min video (target: {total_clips_needed})"
             )
+
+            # S2 IMPROVEMENT: Cache the successful response
+            if self.cache and response_text:
+                self.cache.set(cache_key_content, self.model_name, response_text)
+                logger.debug("[CACHE SAVE] B-roll planning response cached")
 
             return BRollPlan(
                 source_duration=transcript_result.duration,
@@ -562,14 +683,28 @@ RULES
 
     @retry_api_call(max_retries=3, base_delay=1.0)
     def evaluate_videos(
-        self, search_phrase: str, video_results: List[VideoResult], content_filter: str = None
+        self,
+        search_phrase: str,
+        video_results: List[VideoResult],
+        content_filter: str = None,
+        transcript_segment: str = None,
+        broll_need: Optional[BRollNeed] = None,
+        user_preferences: Optional[UserPreferences] = None,
     ) -> List[ScoredVideo]:
         """Evaluate YouTube videos for B-roll suitability using Gemini.
+
+        S2 IMPROVEMENT: Results are cached by video list hash for 100% savings on re-runs.
+        Q2 ENHANCEMENT: Optionally uses BRollNeed metadata for context-aware evaluation.
+        Q4 IMPROVEMENT: Context-aware evaluation with transcript segment and user preferences.
+        Cache key includes prompt version, search phrase, video list hash, and content filter.
 
         Args:
             search_phrase: The search phrase used to find videos
             video_results: List of video search results
             content_filter: Optional filter for content (e.g., "men only, no women")
+            transcript_segment: Optional transcript context for evaluation
+            broll_need: Optional BRollNeed with enhanced metadata (visual_style, etc.)
+            user_preferences: Optional UserPreferences for style customization
 
         Returns:
             List of scored videos (score >= 6 only)
@@ -589,8 +724,44 @@ RULES
             video_results = filtered_results
 
             if not video_results:
-                logger.info(f"No videos remaining after content filter for: {search_phrase}")
+                logger.info(
+                    f"No videos remaining after content filter for: {search_phrase}"
+                )
                 return []
+
+        # S2 IMPROVEMENT: Generate cache key from video list and parameters
+        cache_key_content = (
+            f"{PROMPT_VERSIONS['evaluate_videos']}|"
+            f"{compute_content_hash(search_phrase)[:16]}|"
+            f"{self._generate_video_list_hash(video_results)}|"
+            f"{content_filter or ''}"
+        )
+
+        # S2 IMPROVEMENT: Check cache before making API call
+        if self.cache:
+            cached_response = self.cache.get(cache_key_content, self.model_name)
+            if cached_response:
+                try:
+                    cached_data = json.loads(cached_response)
+                    # Reconstruct ScoredVideo objects from cached data
+                    video_lookup = {v.video_id: v for v in video_results}
+                    scored_videos = []
+                    for item in cached_data:
+                        if item.get("video_id") in video_lookup:
+                            scored_video = ScoredVideo(
+                                video_id=item["video_id"],
+                                score=int(item["score"]),
+                                video_result=video_lookup[item["video_id"]],
+                            )
+                            scored_videos.append(scored_video)
+                    logger.info(
+                        f"[CACHE HIT] Video evaluation: {len(scored_videos)} videos "
+                        f"for '{search_phrase}' (saved ~$0.003 API cost)"
+                    )
+                    return scored_videos
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Failed to parse cached video evaluation: {e}")
+                    # Continue to make fresh API call
 
         # Format video results for AI evaluation
         results_text = "\n".join(
@@ -605,7 +776,29 @@ RULES
             ]
         )
 
-        evaluator_prompt = f"""You are B-Roll Evaluator. Your goal is to select the most visually relevant YouTube videos for a given search phrase.
+        # Q4 IMPROVEMENT: Use enhanced prompt if BRollNeed metadata or user preferences available
+        has_context = (
+            (broll_need and broll_need.has_enhanced_metadata())
+            or transcript_segment
+            or (user_preferences and user_preferences.has_preferences())
+        )
+        if has_context:
+            evaluator_prompt = self._build_enhanced_evaluation_prompt(
+                search_phrase=search_phrase,
+                results_text=results_text,
+                broll_need=broll_need,
+                transcript_segment=transcript_segment,
+                user_preferences=user_preferences,
+            )
+            logger.debug(
+                f"Using context-aware evaluation prompt: "
+                f"broll_need={broll_need is not None}, "
+                f"transcript_segment={bool(transcript_segment)}, "
+                f"user_prefs={user_preferences.has_preferences() if user_preferences else False}"
+            )
+        else:
+            # Original evaluation prompt (fallback for non-enhanced needs)
+            evaluator_prompt = f"""You are B-Roll Evaluator. Your goal is to select the most visually relevant YouTube videos for a given search phrase.
 
 You will be given a search phrase and a list of YouTube search results including their titles and descriptions.
 
@@ -707,8 +900,23 @@ Return only the JSON array, nothing else."""
             # Sort by score (highest first)
             scored_videos.sort(key=lambda x: x.score, reverse=True)
 
+            # S2 IMPROVEMENT: Cache the successful response
+            if self.cache and scored_videos:
+                # Cache the scored results as JSON for later retrieval
+                cache_data = [
+                    {"video_id": sv.video_id, "score": sv.score}
+                    for sv in scored_videos
+                ]
+                self.cache.set(
+                    cache_key_content, self.model_name, json.dumps(cache_data)
+                )
+                logger.debug(
+                    f"[CACHE SAVE] Video evaluation cached ({len(scored_videos)} results)"
+                )
+
             logger.info(
-                f"Evaluated videos for '{search_phrase}': {len(scored_videos)} videos scored >= 6"
+                f"Evaluated videos for '{search_phrase}': "
+                f"{len(scored_videos)} videos scored >= 6"
             )
             return scored_videos
 
@@ -746,3 +954,224 @@ USER PREFERENCES
 Apply these preferences when selecting B-roll:
 {preferences_text}
 """
+
+    # S2 IMPROVEMENT: Cache helper methods
+
+    def _generate_transcript_hash(self, transcript_result: TranscriptResult) -> str:
+        """Generate a hash of transcript content for cache keying.
+
+        Args:
+            transcript_result: TranscriptResult with text and segments
+
+        Returns:
+            SHA-256 hash of transcript content (first 32 chars)
+        """
+        # Use transcript text plus duration as the content to hash
+        content = f"{transcript_result.text}|{transcript_result.duration}"
+        return compute_content_hash(content)[:32]
+
+    def _generate_video_list_hash(self, video_results: List[VideoResult]) -> str:
+        """Generate a hash of video list for cache keying.
+
+        Args:
+            video_results: List of VideoResult objects
+
+        Returns:
+            SHA-256 hash of video IDs (first 32 chars)
+        """
+        # Hash the sorted list of video IDs
+        video_ids = sorted([v.video_id for v in video_results])
+        content = "|".join(video_ids)
+        return compute_content_hash(content)[:32]
+
+    def _parse_broll_needs_from_data(
+        self, needs_data: list, duration: float
+    ) -> List[BRollNeed]:
+        """Parse B-roll needs from cached JSON data.
+
+        Args:
+            needs_data: List of dicts with B-roll need data
+            duration: Video duration for validation
+
+        Returns:
+            List of BRollNeed objects
+        """
+        needs = []
+        for item in needs_data:
+            try:
+                if not isinstance(item, dict):
+                    continue
+
+                timestamp = float(item.get("timestamp", 0))
+                search_phrase = str(item.get("search_phrase", "")).strip()
+                description = str(item.get("description", "")).strip()
+                context = str(item.get("context", "")).strip()
+                suggested_duration = float(item.get("suggested_duration", 5.0))
+
+                # Validate required fields
+                if not search_phrase or not description:
+                    continue
+
+                # Validate timestamp is within video duration
+                if timestamp < 0:
+                    timestamp = 0
+                if timestamp > duration:
+                    timestamp = duration * 0.9
+
+                need = BRollNeed(
+                    timestamp=timestamp,
+                    search_phrase=search_phrase.lower(),
+                    description=description,
+                    context=context,
+                    suggested_duration=suggested_duration,
+                )
+                needs.append(need)
+
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid B-roll need data in cache: {item}, error: {e}")
+                continue
+
+        # Sort by timestamp
+        needs.sort(key=lambda n: n.timestamp)
+        return needs
+
+    def filter_by_negative_keywords(
+        self, video_results: List[VideoResult], negative_keywords: List[str]
+    ) -> List[VideoResult]:
+        """Filter video results by negative keywords.
+
+        Part of Q2 Enhanced Search Phrase Generation improvement.
+
+        Args:
+            video_results: List of video results to filter
+            negative_keywords: Keywords that should NOT appear
+
+        Returns:
+            Filtered list of video results
+        """
+        if not negative_keywords:
+            return video_results
+
+        filtered = []
+        for video in video_results:
+            # Combine title and description for checking
+            text = f"{video.title} {video.description or ''}".lower()
+
+            # Check if any negative keyword is present
+            has_negative = any(kw.lower() in text for kw in negative_keywords)
+
+            if not has_negative:
+                filtered.append(video)
+            else:
+                logger.debug(
+                    f"Filtered out video (negative keyword): {video.title[:50]}..."
+                )
+
+        if len(filtered) < len(video_results):
+            logger.info(
+                f"Negative keyword filter removed {len(video_results) - len(filtered)} videos"
+            )
+
+        return filtered
+
+    def _build_enhanced_evaluation_prompt(
+        self,
+        search_phrase: str,
+        results_text: str,
+        broll_need: Optional[BRollNeed] = None,
+        transcript_segment: Optional[str] = None,
+        user_preferences: Optional[UserPreferences] = None,
+    ) -> str:
+        """Build a context-aware evaluation prompt using all available context.
+
+        Q2 ENHANCEMENT: Uses visual_style, time_of_day, movement, and negative_keywords
+        to create a more targeted evaluation prompt.
+
+        Q4 IMPROVEMENT: Now includes transcript context and user preferences for
+        more relevant scoring based on what the narrator is discussing and user's
+        style preferences.
+
+        Args:
+            search_phrase: The search phrase used to find videos
+            results_text: Formatted text of video results
+            broll_need: Optional BRollNeed with enhanced metadata
+            transcript_segment: Optional transcript context around B-roll timestamp
+            user_preferences: Optional UserPreferences for style customization
+
+        Returns:
+            Context-aware evaluator prompt string
+        """
+        # Build visual preference section from BRollNeed metadata
+        visual_preferences = ""
+        if broll_need and broll_need.has_enhanced_metadata():
+            prefs = []
+            if broll_need.visual_style:
+                prefs.append(f"- Preferred style: {broll_need.visual_style}")
+            if broll_need.time_of_day:
+                prefs.append(f"- Preferred time of day: {broll_need.time_of_day}")
+            if broll_need.movement:
+                prefs.append(f"- Preferred camera movement: {broll_need.movement}")
+            if broll_need.negative_keywords:
+                prefs.append(
+                    f"- AVOID videos with: {', '.join(broll_need.negative_keywords)}"
+                )
+
+            if prefs:
+                visual_preferences = (
+                    "\nVISUAL PREFERENCES (use these to boost/penalize scores):\n"
+                    + "\n".join(prefs)
+                )
+
+        # Q4 IMPROVEMENT: Build transcript context section
+        context_section = ""
+        if transcript_segment:
+            context_section = f"""
+TRANSCRIPT CONTEXT (what is being discussed at this moment):
+"{transcript_segment[:300]}"
+
+Consider: Does the video match the TOPIC and TONE of what's being discussed?
+"""
+
+        # Q4 IMPROVEMENT: Build user preferences section
+        user_prefs_section = ""
+        if user_preferences and user_preferences.has_preferences():
+            prefs_text = user_preferences.to_prompt_instructions()
+            user_prefs_section = f"""
+USER PREFERENCES (apply these as scoring criteria):
+{prefs_text}
+"""
+
+        return f"""You are B-Roll Evaluator v3 (Context-Aware). Select the most visually relevant videos for professional B-roll.
+
+SEARCH PHRASE: "{search_phrase}"
+
+YOUTUBE RESULTS:
+---
+{results_text}
+---
+{visual_preferences}
+{context_section}
+{user_prefs_section}
+SCORING CRITERIA:
+1. **Relevance to transcript context** - Does the video match what's being discussed?
+2. **Match to visual style requirements** - Does it fit the preferred style/mood/era?
+3. **Technical quality indicators** - Resolution, stability, lighting, production value
+4. **Absence of unwanted elements** - No text overlays, logos, watermarks, branding
+5. **Emotional tone match** - Does the footage convey the right feeling?
+
+RATING SCALE:
+- 9-10: Perfect match for search phrase, context, AND all preferences
+- 7-8: Good match for search phrase and context, partial preference match
+- 6: Acceptable match for basic needs
+- <6: Not suitable (don't include in output)
+
+PENALTIES:
+- Videos mentioning negative keywords in title/description
+- Vlogs, talk shows, tutorials, reaction videos
+- Prominent branding or advertising content
+
+OUTPUT FORMAT:
+Return a JSON array of objects with video_id and score for videos scoring 6 or higher.
+Order by score (highest first).
+Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
+Return ONLY the JSON array, nothing else."""

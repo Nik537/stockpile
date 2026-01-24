@@ -1,12 +1,18 @@
 """Shared pytest fixtures for stockpile tests."""
 
 import asyncio
+import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, Generator
 from unittest.mock import Mock
 
 import pytest
+
+# Add src directory to path for imports
+src_path = Path(__file__).parent.parent / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
 
 
 @pytest.fixture

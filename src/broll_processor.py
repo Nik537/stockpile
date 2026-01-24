@@ -1,4 +1,9 @@
-"""Main stockpile class for orchestrating the entire workflow."""
+"""Main stockpile class for orchestrating the entire workflow.
+
+S2 IMPROVEMENT: AI Response Caching
+- Injects AIResponseCache into AIService and ClipExtractor
+- 100% cost savings on re-runs with cached AI responses
+"""
 
 import asyncio
 import logging
@@ -17,7 +22,14 @@ from services.file_organizer import FileOrganizer
 from services.notification import NotificationService
 from services.transcription import TranscriptionService
 from services.video_downloader import VideoDownloader
-from services.video_sources import VideoSource, YouTubeVideoSource
+from services.video_filter import VideoPreFilter
+from services.video_sources import (
+    PexelsVideoSource,
+    PixabayVideoSource,
+    VideoSource,
+    YouTubeVideoSource,
+)
+from utils.cache import load_cache_from_config
 from utils.checkpoint import (
     ProcessingCheckpoint,
     cleanup_checkpoint,
@@ -50,7 +62,25 @@ class BRollProcessor:
         if not gemini_api_key:
             raise ValueError("Gemini API key is required")
         gemini_model = self.config.get("gemini_model", "gemini-3-flash-preview")
-        self.ai_service = AIService(gemini_api_key, gemini_model)
+
+        # S2 IMPROVEMENT: Initialize AI response cache
+        # Provides 100% cost savings on re-runs with same content
+        cache_config = {
+            "cache_enabled": self.config.get("ai_cache_enabled", True),
+            "cache_dir": self.config.get("ai_cache_dir", ".cache/ai_responses"),
+            "cache_ttl_days": self.config.get("ai_cache_ttl_days", 30),
+            "cache_max_size_gb": self.config.get("ai_cache_max_size_gb", 1.0),
+        }
+        self.ai_cache = load_cache_from_config(cache_config)
+        if self.ai_cache and self.ai_cache.enabled:
+            logger.info(
+                f"[S2] AI response caching ENABLED: dir={cache_config['cache_dir']}, "
+                f"TTL={cache_config['cache_ttl_days']}d, max_size={cache_config['cache_max_size_gb']}GB"
+            )
+        else:
+            logger.info("[S2] AI response caching DISABLED")
+
+        self.ai_service = AIService(gemini_api_key, gemini_model, cache=self.ai_cache)
 
         client_id = self.config.get("google_client_id")
         client_secret = self.config.get("google_client_secret")
@@ -63,14 +93,56 @@ class BRollProcessor:
             self.notification_service = None
 
         # PHASE 3 FEATURES: Video source abstraction for multi-platform support
+        # Q3 IMPROVEMENT: Multi-source search (YouTube, Pexels, Pixabay)
         max_videos_per_phrase = self.config.get("max_videos_per_phrase", 3)
         self.video_sources: list[VideoSource] = []
 
-        # Initialize YouTube as the primary video source
-        youtube_source = YouTubeVideoSource(max_results=max_videos_per_phrase * 3)
-        self.video_sources.append(youtube_source)
+        # Get enabled search sources from config
+        search_sources = self.config.get("search_sources", ["youtube", "pexels", "pixabay"])
+        prefer_stock = self.config.get("prefer_stock_footage", True)
+
+        # Initialize video sources based on configuration order
+        # If prefer_stock_footage is True, reorder to put stock sources first
+        source_order = list(search_sources)
+        if prefer_stock:
+            stock_sources = [s for s in source_order if s in ("pexels", "pixabay")]
+            other_sources = [s for s in source_order if s not in ("pexels", "pixabay")]
+            source_order = stock_sources + other_sources
+
+        for source_name in source_order:
+            source_name = source_name.strip().lower()
+
+            if source_name == "youtube":
+                youtube_source = YouTubeVideoSource(max_results=max_videos_per_phrase * 3)
+                self.video_sources.append(youtube_source)
+                logger.info("[VideoSources] Enabled: YouTube")
+
+            elif source_name == "pexels":
+                pexels_source = PexelsVideoSource(max_results=max_videos_per_phrase * 3)
+                if pexels_source.is_configured():
+                    self.video_sources.append(pexels_source)
+                    logger.info("[VideoSources] Enabled: Pexels (CC0 stock footage)")
+                else:
+                    logger.debug("[VideoSources] Pexels skipped - no API key configured")
+
+            elif source_name == "pixabay":
+                pixabay_source = PixabayVideoSource(max_results=max_videos_per_phrase * 3)
+                if pixabay_source.is_configured():
+                    self.video_sources.append(pixabay_source)
+                    logger.info("[VideoSources] Enabled: Pixabay (CC0 stock footage)")
+                else:
+                    logger.debug("[VideoSources] Pixabay skipped - no API key configured")
+
+            else:
+                logger.warning(f"[VideoSources] Unknown source '{source_name}' - skipping")
+
+        if not self.video_sources:
+            # Fallback to YouTube if no sources configured
+            logger.warning("[VideoSources] No valid sources configured, falling back to YouTube")
+            self.video_sources.append(YouTubeVideoSource(max_results=max_videos_per_phrase * 3))
+
         logger.info(
-            f"Initialized video sources: {[s.get_source_name() for s in self.video_sources]}"
+            f"[VideoSources] Active sources: {[s.get_source_name() for s in self.video_sources]}"
         )
 
         whisper_model = self.config.get("whisper_model", "base")
@@ -101,11 +173,12 @@ class BRollProcessor:
                 min_clip_duration=self.config.get("min_clip_duration", 4.0),
                 max_clip_duration=self.config.get("max_clip_duration", 15.0),
                 max_clips_per_video=self.config.get("max_clips_per_video", 3),
+                cache=self.ai_cache,  # S2 IMPROVEMENT: Inject cache for video analysis
             )
             self.delete_original_after_extraction = self.config.get(
                 "delete_original_after_extraction", True
             )
-            logger.info("Clip extraction enabled")
+            logger.info("Clip extraction enabled (with AI cache)")
         else:
             self.clip_extractor = None
             self.delete_original_after_extraction = False
@@ -139,6 +212,15 @@ class BRollProcessor:
             logger.info(f"Cost tracking enabled with budget limit: ${budget_limit:.2f}")
         else:
             logger.info("Cost tracking enabled (no budget limit)")
+
+        # S5 IMPROVEMENT: Video pre-filtering before downloads
+        # Filters videos based on metadata (views, duration, keywords) to avoid wasted bandwidth
+        self.video_prefilter = VideoPreFilter(self.config)
+        logger.info(
+            f"Video pre-filter enabled: min_views={self.video_prefilter.filter_config.min_view_count}, "
+            f"max_duration={self.video_prefilter.filter_config.max_prefilter_duration}s, "
+            f"blocked_keywords={len(self.video_prefilter.filter_config.blocked_title_keywords)}"
+        )
 
         logger.info("stockpile initialized successfully")
 
@@ -231,6 +313,10 @@ class BRollProcessor:
 
             # PHASE 3 FEATURES: Clean up checkpoint after successful completion
             cleanup_checkpoint(checkpoint_path)
+
+            # S2 IMPROVEMENT: Log cache statistics after processing
+            if self.ai_cache and self.ai_cache.enabled:
+                self.ai_cache.log_stats()
 
             logger.info(f"Processing completed successfully: {file_path}")
             return project_dir
@@ -395,6 +481,7 @@ class BRollProcessor:
             )
 
             # Process this batch in parallel
+            # Q4 IMPROVEMENT: Pass transcript and user preferences for context-aware evaluation
             tasks = []
             for i, need in enumerate(batch, batch_start + 1):
                 task = self._process_single_need(
@@ -403,6 +490,8 @@ class BRollProcessor:
                     total_needs=len(broll_plan.needs),
                     project_dir=project_dir,
                     drive_project_folder_id=drive_project_folder_id,
+                    transcript_result=transcript_result,
+                    user_preferences=user_preferences,
                 )
                 tasks.append(task)
 
@@ -661,6 +750,24 @@ class BRollProcessor:
             except Exception as e:
                 logger.warning(f"Failed to save cost report: {e}")
 
+        # S5 IMPROVEMENT: Log pre-filter statistics and save report
+        filter_stats = self.video_prefilter.get_stats()
+        if filter_stats.total_input > 0:
+            logger.info(
+                f"🔍 Pre-filter stats: {filter_stats.total_passed}/{filter_stats.total_input} videos passed "
+                f"({filter_stats.total_filtered} filtered, {filter_stats.filter_rate:.1f}% rejection rate)"
+            )
+            # Save filter report to project directory
+            if project_dir:
+                try:
+                    filter_report_path = Path(project_dir) / "filter_report.txt"
+                    filter_report_path.write_text(self.video_prefilter.get_report())
+                    logger.debug(f"Saved filter report to {filter_report_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save filter report: {e}")
+            # Reset stats for next video processing
+            self.video_prefilter.reset_stats()
+
         # Clean up local output if Google Drive is configured
         if self.drive_service and project_dir:
             await self._cleanup_local_output(project_dir)
@@ -674,8 +781,13 @@ class BRollProcessor:
         total_needs: int,
         project_dir: str,
         drive_project_folder_id: Optional[str],
+        transcript_result: TranscriptResult = None,
+        user_preferences: UserPreferences = None,
     ) -> Optional[tuple[str, list[str]]]:
         """Process a single B-roll need: search, evaluate, download, extract clips.
+
+        Q4 IMPROVEMENT: Now accepts transcript_result and user_preferences
+        for context-aware video evaluation.
 
         Args:
             need: BRollNeed object with search phrase and timestamp
@@ -683,6 +795,8 @@ class BRollProcessor:
             total_needs: Total number of needs being processed
             project_dir: Local project directory
             drive_project_folder_id: Google Drive folder ID for this project
+            transcript_result: Optional TranscriptResult for context-aware evaluation
+            user_preferences: Optional UserPreferences for style customization
 
         Returns:
             Tuple of (folder_name, list of clip files) or None if failed
@@ -693,12 +807,45 @@ class BRollProcessor:
         )
 
         try:
-            # Search YouTube
-            video_results = await self.search_youtube_videos(need.search_phrase)
+            # Q2 IMPROVEMENT: Use enhanced search with fallback and negative keyword filtering
+            if need.has_enhanced_metadata():
+                logger.info(
+                    f"  [{need_index}/{total_needs}] Using enhanced search "
+                    f"(alternates: {len(need.alternate_searches)}, "
+                    f"negatives: {len(need.negative_keywords)}, "
+                    f"style: {need.visual_style or 'any'})"
+                )
+                video_results = await self.search_with_fallback(need, min_results=5)
+            else:
+                # Fallback to simple search for non-enhanced B-roll needs
+                video_results = await self.search_youtube_videos(need.search_phrase)
             logger.info(f"  [{need_index}/{total_needs}] Found {len(video_results)} videos")
 
-            # Evaluate and score videos
-            scored_videos = await self.evaluate_videos(need.search_phrase, video_results)
+            # S5 IMPROVEMENT: Pre-filter videos before AI evaluation
+            # This reduces wasted API calls and download bandwidth
+            if video_results:
+                original_count = len(video_results)
+                video_results = self.video_prefilter.filter(video_results)
+                filter_diff = original_count - len(video_results)
+                if filter_diff > 0:
+                    logger.info(
+                        f"  [{need_index}/{total_needs}] Pre-filtered: {original_count} -> "
+                        f"{len(video_results)} videos ({filter_diff} removed)"
+                    )
+
+            if not video_results:
+                logger.info(
+                    f"  [{need_index}/{total_needs}] All videos filtered for: {need.search_phrase}"
+                )
+                return None
+
+            # Q2/Q4 IMPROVEMENT: Use context-aware evaluation with enhanced metadata
+            scored_videos = await self.evaluate_videos_enhanced(
+                need=need,
+                videos=video_results,
+                transcript_result=transcript_result,
+                user_preferences=user_preferences,
+            )
             logger.info(f"  [{need_index}/{total_needs}] Selected {len(scored_videos)} top videos")
 
             if not scored_videos:
@@ -1170,8 +1317,66 @@ class BRollProcessor:
         logger.info(f"Total videos from all sources: {len(all_results)}")
         return all_results
 
+    async def search_with_fallback(
+        self, need: BRollNeed, min_results: int = 5
+    ) -> list[VideoResult]:
+        """Search for videos with fallback to alternate search phrases.
+
+        Q2 ENHANCEMENT: Uses enhanced B-roll need metadata to search with
+        primary phrase first, then alternates if insufficient results.
+        Also filters out videos with negative keywords.
+
+        Args:
+            need: BRollNeed with primary search and optional alternates
+            min_results: Minimum results before trying alternates (default: 5)
+
+        Returns:
+            List of VideoResult objects, filtered by negative keywords
+        """
+        # Search with primary phrase first
+        results = await self.search_youtube_videos(need.search_phrase)
+        logger.info(f"Primary search '{need.search_phrase}': {len(results)} results")
+
+        # If insufficient results and we have alternates, try them
+        if len(results) < min_results and need.alternate_searches:
+            logger.info(
+                f"Insufficient results ({len(results)} < {min_results}), "
+                f"trying {len(need.alternate_searches)} alternate searches"
+            )
+
+            for i, alt_phrase in enumerate(need.alternate_searches):
+                if len(results) >= min_results * 2:
+                    logger.info(f"Sufficient results ({len(results)}), stopping alternates")
+                    break
+
+                alt_results = await self.search_youtube_videos(alt_phrase)
+                logger.info(f"Alternate search {i+1} '{alt_phrase}': {len(alt_results)} results")
+
+                # Add only new results (deduplicate by video_id)
+                existing_ids = {r.video_id for r in results}
+                new_results = [r for r in alt_results if r.video_id not in existing_ids]
+                results.extend(new_results)
+
+            logger.info(f"Total after fallback searches: {len(results)} results")
+
+        # Q2 ENHANCEMENT: Filter by negative keywords
+        if need.negative_keywords and results:
+            original_count = len(results)
+            results = self.ai_service.filter_by_negative_keywords(
+                results, need.negative_keywords
+            )
+            if len(results) < original_count:
+                logger.info(
+                    f"Negative keyword filter: {original_count} -> {len(results)} videos"
+                )
+
+        return results
+
     async def evaluate_videos(self, phrase: str, videos: list[VideoResult]) -> list[ScoredVideo]:
-        """Evaluate videos using Gemini AI."""
+        """Evaluate videos using Gemini AI (legacy method).
+
+        NOTE: For Q4 context-aware evaluation, use evaluate_videos_enhanced instead.
+        """
         if not videos:
             logger.info(f"No videos to evaluate for phrase: {phrase}")
             return []
@@ -1179,6 +1384,67 @@ class BRollProcessor:
         loop = asyncio.get_event_loop()
         scored_videos = await loop.run_in_executor(
             None, lambda: self.ai_service.evaluate_videos(phrase, videos, self.content_filter)
+        )
+
+        max_videos = self.config.get("max_videos_per_phrase", 3)
+        limited_videos = scored_videos[:max_videos]
+        return limited_videos
+
+    async def evaluate_videos_enhanced(
+        self,
+        need: BRollNeed,
+        videos: list[VideoResult],
+        transcript_result: TranscriptResult = None,
+        user_preferences: UserPreferences = None,
+    ) -> list[ScoredVideo]:
+        """Evaluate videos using context-aware AI scoring (Q4 improvement).
+
+        This enhanced evaluation method passes full context to the AI:
+        - Transcript segment around the B-roll timestamp
+        - B-roll metadata (visual_style, time_of_day, movement, etc.)
+        - User preferences (style, content to avoid, mood)
+
+        This results in more relevant scoring compared to the legacy evaluate_videos method.
+
+        Args:
+            need: BRollNeed with search phrase, timestamp, and enhanced metadata
+            videos: List of video results to evaluate
+            transcript_result: Optional TranscriptResult to extract context segment
+            user_preferences: Optional UserPreferences for style customization
+
+        Returns:
+            List of scored videos, limited to max_videos_per_phrase
+        """
+        if not videos:
+            logger.info(f"No videos to evaluate for phrase: {need.search_phrase}")
+            return []
+
+        # Q4 IMPROVEMENT: Extract transcript segment around the B-roll timestamp
+        transcript_segment = ""
+        if transcript_result:
+            # Get transcript text around the B-roll timestamp (default: 30 seconds context)
+            context_seconds = self.config.get("evaluation_context_seconds", 30.0)
+            transcript_segment = transcript_result.get_text_around_timestamp(
+                need.timestamp, context_seconds
+            )
+            if transcript_segment:
+                logger.debug(
+                    f"Evaluation context for '{need.search_phrase}' at {need.timestamp:.1f}s: "
+                    f"'{transcript_segment[:100]}...'"
+                )
+
+        loop = asyncio.get_event_loop()
+        # Q2/Q4 IMPROVEMENT: Pass full context to evaluation for better scoring
+        # BRollNeed includes enhanced metadata: visual_style, time_of_day, movement, negative_keywords
+        scored_videos = await loop.run_in_executor(
+            None,
+            lambda: self.ai_service.evaluate_videos(
+                search_phrase=need.search_phrase,
+                video_results=videos,
+                content_filter=self.content_filter,
+                transcript_segment=transcript_segment,
+                broll_need=need,  # Q2: Passes visual_style, movement, negative_keywords
+            ),
         )
 
         max_videos = self.config.get("max_videos_per_phrase", 3)

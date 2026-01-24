@@ -34,3 +34,14 @@ class VideoSource(ABC):
         Returns:
             True if source supports downloading clip sections, False otherwise
         """
+
+    def is_configured(self) -> bool:
+        """Check if this source has required configuration (API keys, etc.).
+
+        Default implementation returns True (no config required).
+        Override in subclasses that require API keys.
+
+        Returns:
+            True if source is properly configured and ready to use
+        """
+        return True

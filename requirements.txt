@@ -10,6 +10,15 @@ watchdog
 python-dotenv
 rich
 
+# Q1 IMPROVEMENT: CLIP Visual Matching (SINGLE BIGGEST quality improvement)
+# Uses OpenAI CLIP to compare video frames against text descriptions
+# Provides visual relevance scoring independent of metadata
+transformers>=4.35.0
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+
 # Development dependencies
 ruff==0.1.15
 mypy==1.8.0
@@ -33,3 +42,6 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 aiofiles==23.2.1
 pyyaml==6.0.1
+# Q3: Multi-source video search (Pexels, Pixabay)
+# Required for async HTTP requests to stock footage APIs
+aiohttp>=3.9.0

@@ -6,18 +6,48 @@ from typing import List, Optional
 
 @dataclass
 class BRollNeed:
-    """A specific B-roll need at a point in the source video."""
+    """A specific B-roll need at a point in the source video.
+
+    Q2 Enhancement: Extended with metadata fields for smarter search and evaluation:
+    - primary_search: Main search phrase (uses search_phrase for backwards compatibility)
+    - alternate_searches: 2-3 synonym/related search phrases for fallback
+    - negative_keywords: Terms to exclude from search results
+    - visual_style: Preferred style (cinematic, documentary, raw, vlog)
+    - time_of_day: Preferred lighting (golden hour, night, day)
+    - movement: Camera movement preference (static, pan, drone, handheld)
+    """
 
     timestamp: float  # When in source video this B-roll is needed (seconds)
-    search_phrase: str  # YouTube search query
+    search_phrase: str  # YouTube search query (primary search)
     description: str  # What this B-roll should show
     context: str  # Surrounding transcript text for reference
     suggested_duration: float = 5.0  # How long the B-roll should be (4-15s)
+
+    # Q2 Enhanced search metadata fields
+    alternate_searches: List[str] = field(default_factory=list)  # 2-3 synonym phrases
+    negative_keywords: List[str] = field(default_factory=list)  # Terms to exclude
+    visual_style: Optional[str] = None  # cinematic, documentary, raw, vlog
+    time_of_day: Optional[str] = None  # golden hour, night, day, doesn't matter
+    movement: Optional[str] = None  # static, pan, drone, handheld, tracking
 
     def __post_init__(self):
         """Validate and clamp values."""
         self.suggested_duration = max(4.0, min(15.0, self.suggested_duration))
         self.timestamp = max(0.0, self.timestamp)
+
+    @property
+    def primary_search(self) -> str:
+        """Return primary search phrase (same as search_phrase for compatibility)."""
+        return self.search_phrase
+
+    @property
+    def all_search_phrases(self) -> List[str]:
+        """Return all search phrases including alternates."""
+        return [self.search_phrase] + list(self.alternate_searches)
+
+    def has_enhanced_metadata(self) -> bool:
+        """Check if this need has enhanced Q2 metadata (alternates/negatives)."""
+        return bool(self.alternate_searches or self.negative_keywords or self.visual_style)
 
     @property
     def folder_name(self) -> str:

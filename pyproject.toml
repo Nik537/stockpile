@@ -108,9 +108,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+pythonpath = ["src"]
 
-# Asyncio mode
-asyncio_mode = "auto"
+# Note: asyncio_mode removed due to pytest-asyncio version incompatibility
+# Use @pytest.mark.asyncio decorator on individual async tests instead
 
 # Coverage settings
 addopts = [
