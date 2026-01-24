@@ -1,25 +1,31 @@
 """Main stockpile class for orchestrating the entire workflow."""
 
+import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import List, Dict, Optional, Set
-import asyncio
+from typing import Optional
 
-from models.video import VideoResult, ScoredVideo
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
 from models.user_preferences import UserPreferences
-from utils.config import load_config, validate_config
-from utils.progress import ProcessingStatus
-from services.transcription import TranscriptionService
+from models.video import ScoredVideo, VideoResult
 from services.ai_service import AIService
-from services.youtube_service import YouTubeService
-from services.video_downloader import VideoDownloader
-from services.file_organizer import FileOrganizer
-from services.notification import NotificationService
+from services.clip_extractor import ClipExtractor
 from services.drive_service import DriveService
 from services.file_monitor import FileMonitor
-from services.clip_extractor import ClipExtractor
+from services.file_organizer import FileOrganizer
+from services.notification import NotificationService
+from services.transcription import TranscriptionService
+from services.video_downloader import VideoDownloader
+from services.video_sources import VideoSource, YouTubeVideoSource
+from utils.checkpoint import (
+    ProcessingCheckpoint,
+    cleanup_checkpoint,
+    get_checkpoint_path,
+)
+from utils.config import load_config, validate_config
+from utils.cost_tracker import CostTracker
+from utils.progress import ProcessingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +33,11 @@ logger = logging.getLogger(__name__)
 class BRollProcessor:
     """Central orchestrator for stockpile."""
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[dict] = None):
         """Initialize the stockpile with configuration."""
         self.config = config or load_config()
-        self.processing_files: Set[str] = set()
-        self.protected_input_files: Set[str] = set()  # Input videos that must NEVER be deleted
+        self.processing_files: set[str] = set()
+        self.protected_input_files: set[str] = set()  # Input videos that must NEVER be deleted
         self.event_loop = None
 
         config_errors = validate_config(self.config)
@@ -56,8 +62,16 @@ class BRollProcessor:
         else:
             self.notification_service = None
 
+        # PHASE 3 FEATURES: Video source abstraction for multi-platform support
         max_videos_per_phrase = self.config.get("max_videos_per_phrase", 3)
-        self.youtube_service = YouTubeService(max_results=max_videos_per_phrase * 3)
+        self.video_sources: list[VideoSource] = []
+
+        # Initialize YouTube as the primary video source
+        youtube_source = YouTubeVideoSource(max_results=max_videos_per_phrase * 3)
+        self.video_sources.append(youtube_source)
+        logger.info(
+            f"Initialized video sources: {[s.get_source_name() for s in self.video_sources]}"
+        )
 
         whisper_model = self.config.get("whisper_model", "base")
         self.transcription_service = TranscriptionService(whisper_model)
@@ -69,16 +83,10 @@ class BRollProcessor:
         output_folder_id = self.config.get("google_drive_output_folder_id")
         if output_folder_id:
             if not client_id:
-                raise ValueError(
-                    "Google Drive requires GOOGLE_CLIENT_ID environment variable"
-                )
+                raise ValueError("Google Drive requires GOOGLE_CLIENT_ID environment variable")
             if not client_secret:
-                raise ValueError(
-                    "Google Drive requires GOOGLE_CLIENT_SECRET environment variable"
-                )
-            self.drive_service = DriveService(
-                client_id, client_secret, output_folder_id
-            )
+                raise ValueError("Google Drive requires GOOGLE_CLIENT_SECRET environment variable")
+            self.drive_service = DriveService(client_id, client_secret, output_folder_id)
         else:
             self.drive_service = None
 
@@ -112,6 +120,26 @@ class BRollProcessor:
         if self.content_filter:
             logger.info(f"Content filter active: {self.content_filter}")
 
+        # PHASE 2 PERFORMANCE: Resource limiting with semaphores
+        self.download_semaphore = asyncio.Semaphore(self.config.get("parallel_downloads", 3))
+        self.extraction_semaphore = asyncio.Semaphore(self.config.get("parallel_extractions", 2))
+        self.ai_semaphore = asyncio.Semaphore(self.config.get("parallel_ai_calls", 5))
+        logger.info(
+            f"Parallel processing limits: downloads={self.config.get('parallel_downloads', 3)}, "
+            f"extractions={self.config.get('parallel_extractions', 2)}, "
+            f"AI calls={self.config.get('parallel_ai_calls', 5)}"
+        )
+
+        # PHASE 3 FEATURES: Cost tracking
+        budget_limit = self.config.get("budget_limit_usd", 0.0)
+        self.cost_tracker = CostTracker(
+            budget_limit_usd=budget_limit if budget_limit > 0 else None
+        )
+        if budget_limit > 0:
+            logger.info(f"Cost tracking enabled with budget limit: ${budget_limit:.2f}")
+        else:
+            logger.info("Cost tracking enabled (no budget limit)")
+
         logger.info("stockpile initialized successfully")
 
     def start(self) -> None:
@@ -132,19 +160,24 @@ class BRollProcessor:
             return
 
         if self.event_loop and not self.event_loop.is_closed():
-            asyncio.run_coroutine_threadsafe(
-                self.process_video(file_path), self.event_loop
-            )
+            asyncio.run_coroutine_threadsafe(self.process_video(file_path), self.event_loop)
         else:
             logger.error("No event loop available to schedule file processing")
 
-    async def process_video(self, file_path: str, user_preferences: UserPreferences = None, status_callback=None) -> None:
+    async def process_video(
+        self,
+        file_path: str,
+        user_preferences: UserPreferences = None,
+        status_callback=None,
+        resume: bool = True,
+    ) -> None:
         """Process a video file through the complete B-roll pipeline.
 
         Args:
             file_path: Path to the video file to process
             user_preferences: Optional user preferences for B-roll style customization
             status_callback: Optional callback function for progress updates
+            resume: Whether to resume from checkpoint if available (default: True)
         """
         if file_path in self.processing_files:
             logger.info(f"File already being processed: {file_path}")
@@ -158,18 +191,44 @@ class BRollProcessor:
         self.protected_input_files.add(str(input_path))
         logger.info(f"Protected input video: {input_path}")
 
+        # PHASE 3 FEATURES: Load checkpoint if resuming
+        output_dir = self.config.get("local_output_folder", "../output")
+        checkpoint_path = get_checkpoint_path(file_path, output_dir)
+        checkpoint = None
+
+        if resume and checkpoint_path.exists():
+            checkpoint = ProcessingCheckpoint.load(checkpoint_path)
+            if checkpoint:
+                logger.info(
+                    f"📍 Resuming from checkpoint (stage: {checkpoint.stage}, "
+                    f"completed: {len(checkpoint.completed_needs)}/{checkpoint.total_needs} needs)"
+                )
+        else:
+            # Initialize new checkpoint
+            checkpoint = ProcessingCheckpoint(
+                video_path=file_path,
+                stage="initialized",
+            )
+            checkpoint.save(checkpoint_path)
+
         start_time = time.time()
 
         # Initialize progress tracking
         status = ProcessingStatus(
             video_path=file_path,
-            output_dir=self.config.get("local_output_folder", "../output"),
+            output_dir=output_dir,
             update_callback=status_callback,
         )
 
         try:
-            await self._execute_pipeline(file_path, start_time, user_preferences, status)
+            await self._execute_pipeline(
+                file_path, start_time, user_preferences, status, checkpoint
+            )
             status.complete_processing()
+
+            # PHASE 3 FEATURES: Clean up checkpoint after successful completion
+            cleanup_checkpoint(checkpoint_path)
+
             logger.info(f"Processing completed successfully: {file_path}")
 
         except Exception as e:
@@ -184,7 +243,14 @@ class BRollProcessor:
         finally:
             self.processing_files.discard(file_path)
 
-    async def _execute_pipeline(self, file_path: str, start_time: float, user_preferences: UserPreferences = None, status: ProcessingStatus = None) -> None:
+    async def _execute_pipeline(
+        self,
+        file_path: str,
+        start_time: float,
+        user_preferences: UserPreferences = None,
+        status: ProcessingStatus = None,
+        checkpoint: ProcessingCheckpoint | None = None,
+    ) -> str | None:
         """Execute the complete timeline-aware B-roll processing pipeline.
 
         Args:
@@ -218,6 +284,16 @@ class BRollProcessor:
 
         transcript_result = await self.transcribe_audio(file_path)
 
+        # PHASE 3 FEATURES: Track transcription cost
+        if self.cost_tracker:
+            duration_minutes = transcript_result.duration / 60.0
+            self.cost_tracker.track_whisper_call(duration_minutes)
+
+        # PHASE 3 FEATURES: Save checkpoint after transcription
+        if checkpoint:
+            checkpoint.stage = "transcribed"
+            checkpoint.save(get_checkpoint_path(file_path, self.config.get("local_output_folder", "../output")))
+
         if status:
             status.update_stage("transcribe", completed=1)
             status.complete_stage("transcribe")
@@ -232,6 +308,20 @@ class BRollProcessor:
             status.start_stage("plan")
 
         broll_plan = await self.plan_broll_needs(transcript_result, file_path, user_preferences)
+
+        # PHASE 3 FEATURES: Track planning cost (estimated tokens)
+        # TODO: Get actual token counts from AI service
+        if self.cost_tracker:
+            # Estimate: planning uses ~1000 input tokens + ~500 output tokens per minute of video
+            estimated_input = int(duration_minutes * 1000)
+            estimated_output = int(duration_minutes * 500)
+            self.cost_tracker.track_gemini_call("plan_broll_needs", estimated_input, estimated_output)
+
+        # PHASE 3 FEATURES: Save checkpoint after planning
+        if checkpoint:
+            checkpoint.stage = "planned"
+            checkpoint.total_needs = len(broll_plan.needs)
+            checkpoint.save(get_checkpoint_path(file_path, self.config.get("local_output_folder", "../output")))
 
         if status:
             status.update_stage("plan", completed=1)
@@ -248,8 +338,7 @@ class BRollProcessor:
         # Log the planned needs for debugging
         for i, need in enumerate(broll_plan.needs, 1):
             logger.info(
-                f"  [{i}] {need.timestamp:.1f}s - {need.search_phrase} "
-                f"({need.description})"
+                f"  [{i}] {need.timestamp:.1f}s - {need.search_phrase} " f"({need.description})"
             )
 
         # Step 3: Create project structure
@@ -275,14 +364,12 @@ class BRollProcessor:
                 self.drive_service.create_project_structure,
                 project_name,
             )
-            drive_folder_url = (
-                f"https://drive.google.com/drive/folders/{drive_project_folder_id}"
-            )
+            drive_folder_url = f"https://drive.google.com/drive/folders/{drive_project_folder_id}"
             logger.info(f"Google Drive structure created: {drive_folder_url}")
 
         # Step 4: Process B-roll needs in parallel batches
         logger.info(f"Processing {len(broll_plan.needs)} B-roll needs")
-        need_downloads: Dict[str, List[str]] = {}
+        need_downloads: dict[str, list[str]] = {}
         total_clips = 0
 
         # Register B-roll processing stage
@@ -299,7 +386,9 @@ class BRollProcessor:
             batch_end = min(batch_start + batch_size, len(broll_plan.needs))
             batch = broll_plan.needs[batch_start:batch_end]
 
-            logger.info(f"Processing batch {batch_start//batch_size + 1}/{(len(broll_plan.needs) + batch_size - 1)//batch_size} ({len(batch)} needs in parallel)")
+            logger.info(
+                f"Processing batch {batch_start//batch_size + 1}/{(len(broll_plan.needs) + batch_size - 1)//batch_size} ({len(batch)} needs in parallel)"
+            )
 
             # Process this batch in parallel
             tasks = []
@@ -551,18 +640,37 @@ class BRollProcessor:
             f"Pipeline complete: {total_clips} clips from {len(broll_plan.needs)} B-roll needs"
         )
 
+        # PHASE 3 FEATURES: Mark checkpoint as completed
+        if checkpoint:
+            checkpoint.stage = "completed"
+            checkpoint.project_dir = project_dir
+            checkpoint.save(get_checkpoint_path(file_path, self.config.get("local_output_folder", "../output")))
+
+        # PHASE 3 FEATURES: Save cost report BEFORE cleanup
+        if project_dir and self.cost_tracker:
+            try:
+                self.cost_tracker.save_report(Path(project_dir), file_path)
+                logger.info(
+                    f"💰 Total cost: ${self.cost_tracker.total_cost:.4f} "
+                    f"({len(self.cost_tracker.api_calls)} API calls)"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save cost report: {e}")
+
         # Clean up local output if Google Drive is configured
         if self.drive_service and project_dir:
             await self._cleanup_local_output(project_dir)
 
+        return project_dir
+
     async def _process_single_need(
         self,
-        need: 'BRollNeed',
+        need: "BRollNeed",
         need_index: int,
         total_needs: int,
         project_dir: str,
         drive_project_folder_id: Optional[str],
-    ) -> Optional[tuple[str, List[str]]]:
+    ) -> Optional[tuple[str, list[str]]]:
         """Process a single B-roll need: search, evaluate, download, extract clips.
 
         Args:
@@ -590,7 +698,9 @@ class BRollProcessor:
             logger.info(f"  [{need_index}/{total_needs}] Selected {len(scored_videos)} top videos")
 
             if not scored_videos:
-                logger.info(f"  [{need_index}/{total_needs}] No suitable videos found for: {need.search_phrase}")
+                logger.info(
+                    f"  [{need_index}/{total_needs}] No suitable videos found for: {need.search_phrase}"
+                )
                 return None
 
             # Create timestamp-prefixed folder for this need
@@ -618,41 +728,50 @@ class BRollProcessor:
 
             loop = asyncio.get_event_loop()
 
-            if competitive_mode and self.config.get("use_two_pass_download", True) and self.clip_extractor:
+            if (
+                competitive_mode
+                and self.config.get("use_two_pass_download", True)
+                and self.clip_extractor
+            ):
                 # COMPETITIVE ANALYSIS MODE
-                logger.info(f"  [{need_index}/{total_needs}] Competitive analysis: downloading {previews_per_need} previews")
+                logger.info(
+                    f"  [{need_index}/{total_needs}] Competitive analysis: downloading {previews_per_need} previews in parallel"
+                )
 
                 # Select top N videos for comparison
                 preview_videos = scored_videos[:previews_per_need]
-                preview_files = []
 
-                # Download all previews
-                for video_idx, video in enumerate(preview_videos, 1):
-                    try:
-                        logger.info(f"    [{need_index}/{total_needs}] Downloading preview {video_idx}/{len(preview_videos)}: {video.video_id}")
+                # PHASE 2 PERFORMANCE: Download all previews in parallel
+                download_tasks = [
+                    self._download_preview_with_limit(
+                        video=video,
+                        need_folder=str(need_folder),
+                        need_index=need_index,
+                        video_idx=idx,
+                        total_videos=len(preview_videos),
+                    )
+                    for idx, video in enumerate(preview_videos, 1)
+                ]
 
-                        preview_file = await loop.run_in_executor(
-                            None,
-                            self.video_downloader.download_preview,
-                            video,
-                            str(need_folder),
-                            self.config.get("preview_max_height", 360),
-                        )
+                # Wait for all downloads to complete
+                download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
-                        if preview_file:
-                            preview_files.append((video, preview_file))
-                            logger.info(f"    [{need_index}/{total_needs}] Preview {video_idx} downloaded: {Path(preview_file).name}")
-                        else:
-                            logger.warning(f"    [{need_index}/{total_needs}] Preview {video_idx} download failed")
-                    except Exception as e:
-                        logger.error(f"    [{need_index}/{total_needs}] Failed to download preview {video_idx}: {e}")
-                        continue
+                # Filter out failures and exceptions
+                preview_files = [
+                    result
+                    for result in download_results
+                    if result is not None and not isinstance(result, Exception)
+                ]
 
                 if not preview_files:
-                    logger.warning(f"  [{need_index}/{total_needs}] No previews downloaded, skipping need")
+                    logger.warning(
+                        f"  [{need_index}/{total_needs}] No previews downloaded, skipping need"
+                    )
                 else:
                     # Analyze all previews together to find best clip
-                    logger.info(f"  [{need_index}/{total_needs}] Analyzing {len(preview_files)} previews...")
+                    logger.info(
+                        f"  [{need_index}/{total_needs}] Analyzing {len(preview_files)} previews..."
+                    )
 
                     try:
                         result = await loop.run_in_executor(
@@ -673,7 +792,9 @@ class BRollProcessor:
                                     break
 
                             if source_video:
-                                logger.info(f"  [{need_index}/{total_needs}] Best clip: {best_segment.start_time:.1f}s-{best_segment.end_time:.1f}s from {source_video.video_id} (score: {best_segment.relevance_score}/10)")
+                                logger.info(
+                                    f"  [{need_index}/{total_needs}] Best clip: {best_segment.start_time:.1f}s-{best_segment.end_time:.1f}s from {source_video.video_id} (score: {best_segment.relevance_score}/10)"
+                                )
 
                                 # Download winner in high res
                                 clip_files = await loop.run_in_executor(
@@ -682,12 +803,17 @@ class BRollProcessor:
                                     source_video,
                                     [best_segment],
                                     str(need_folder),
-                                    self.config.get("clip_download_format", "bestvideo[height<=1080]+bestaudio/best"),
+                                    self.config.get(
+                                        "clip_download_format",
+                                        "bestvideo[height<=1080]+bestaudio/best",
+                                    ),
                                 )
 
                                 if clip_files:
                                     final_files.extend(clip_files)
-                                    logger.info(f"  [{need_index}/{total_needs}] Downloaded winning clip in high quality")
+                                    logger.info(
+                                        f"  [{need_index}/{total_needs}] Downloaded winning clip in high quality"
+                                    )
 
                                     # Upload to Drive if configured
                                     if self.drive_service and drive_need_folder_id:
@@ -699,33 +825,49 @@ class BRollProcessor:
                                                 drive_need_folder_id,
                                             )
                                 else:
-                                    logger.warning(f"  [{need_index}/{total_needs}] Failed to download winning clip")
+                                    logger.warning(
+                                        f"  [{need_index}/{total_needs}] Failed to download winning clip"
+                                    )
                             else:
-                                logger.warning(f"  [{need_index}/{total_needs}] Could not identify source video for best clip")
+                                logger.warning(
+                                    f"  [{need_index}/{total_needs}] Could not identify source video for best clip"
+                                )
                         else:
-                            logger.warning(f"  [{need_index}/{total_needs}] No good clips found in any preview")
+                            logger.warning(
+                                f"  [{need_index}/{total_needs}] No good clips found in any preview"
+                            )
 
                     except Exception as e:
-                        logger.error(f"  [{need_index}/{total_needs}] Competitive analysis failed: {e}")
+                        logger.error(
+                            f"  [{need_index}/{total_needs}] Competitive analysis failed: {e}"
+                        )
 
                     # Cleanup all previews
                     for video, preview_file in preview_files:
                         try:
                             Path(preview_file).unlink()
                         except Exception as e:
-                            logger.warning(f"  [{need_index}/{total_needs}] Could not delete preview: {e}")
+                            logger.warning(
+                                f"  [{need_index}/{total_needs}] Could not delete preview: {e}"
+                            )
 
             else:
                 # SEQUENTIAL PROCESSING MODE (Original behavior)
-                logger.info(f"  [{need_index}/{total_needs}] Sequential processing: analyzing videos one by one")
+                logger.info(
+                    f"  [{need_index}/{total_needs}] Sequential processing: analyzing videos one by one"
+                )
 
                 for video_idx, video in enumerate(scored_videos, 1):
                     # Early stopping if we have enough clips
                     if len(final_files) >= clips_target:
-                        logger.info(f"  [{need_index}/{total_needs}] Target of {clips_target} clips reached, stopping early")
+                        logger.info(
+                            f"  [{need_index}/{total_needs}] Target of {clips_target} clips reached, stopping early"
+                        )
                         break
 
-                    logger.info(f"  [{need_index}/{total_needs}] Video {video_idx}/{len(scored_videos)}: {video.video_id}")
+                    logger.info(
+                        f"  [{need_index}/{total_needs}] Video {video_idx}/{len(scored_videos)}: {video.video_id}"
+                    )
 
                     try:
                         # Check if two-pass download is enabled and supported
@@ -737,7 +879,9 @@ class BRollProcessor:
 
                         if use_two_pass:
                             # TWO-PASS WORKFLOW (OPTIMIZED)
-                            logger.info(f"    [{need_index}/{total_needs}] Using two-pass download (preview + clips)")
+                            logger.info(
+                                f"    [{need_index}/{total_needs}] Using two-pass download (preview + clips)"
+                            )
 
                             # Pass 1: Download low-quality preview
                             preview_file = await loop.run_in_executor(
@@ -749,10 +893,14 @@ class BRollProcessor:
                             )
 
                             if not preview_file:
-                                logger.warning(f"    [{need_index}/{total_needs}] Preview download failed, trying traditional download")
+                                logger.warning(
+                                    f"    [{need_index}/{total_needs}] Preview download failed, trying traditional download"
+                                )
                                 use_two_pass = False
                             else:
-                                logger.info(f"    [{need_index}/{total_needs}] Preview downloaded, analyzing...")
+                                logger.info(
+                                    f"    [{need_index}/{total_needs}] Preview downloaded, analyzing..."
+                                )
 
                                 # Analyze preview to get clip segments
                                 segments = await loop.run_in_executor(
@@ -764,7 +912,9 @@ class BRollProcessor:
                                 )
 
                                 if segments and segments.analysis_success and segments.segments:
-                                    logger.info(f"    [{need_index}/{total_needs}] Found {len(segments.segments)} clips, downloading in high quality...")
+                                    logger.info(
+                                        f"    [{need_index}/{total_needs}] Found {len(segments.segments)} clips, downloading in high quality..."
+                                    )
 
                                     # Pass 2: Download only the identified clips in high quality
                                     clip_files = await loop.run_in_executor(
@@ -781,14 +931,20 @@ class BRollProcessor:
 
                                     if clip_files:
                                         final_files.extend(clip_files)
-                                        logger.info(f"    [{need_index}/{total_needs}] Downloaded {len(clip_files)} clips in high quality")
+                                        logger.info(
+                                            f"    [{need_index}/{total_needs}] Downloaded {len(clip_files)} clips in high quality"
+                                        )
 
                                         # Clean up preview
                                         try:
                                             Path(preview_file).unlink()
-                                            logger.debug(f"    [{need_index}/{total_needs}] Deleted preview")
+                                            logger.debug(
+                                                f"    [{need_index}/{total_needs}] Deleted preview"
+                                            )
                                         except Exception as e:
-                                            logger.warning(f"    [{need_index}/{total_needs}] Could not delete preview: {e}")
+                                            logger.warning(
+                                                f"    [{need_index}/{total_needs}] Could not delete preview: {e}"
+                                            )
 
                                         # Upload clips to Drive if configured
                                         if self.drive_service and drive_need_folder_id:
@@ -802,10 +958,14 @@ class BRollProcessor:
 
                                         continue  # Skip traditional workflow
                                     else:
-                                        logger.warning(f"    [{need_index}/{total_needs}] No clips downloaded, trying traditional download")
+                                        logger.warning(
+                                            f"    [{need_index}/{total_needs}] No clips downloaded, trying traditional download"
+                                        )
                                         use_two_pass = False
                                 else:
-                                    logger.warning(f"    [{need_index}/{total_needs}] No clips found in preview, trying traditional download")
+                                    logger.warning(
+                                        f"    [{need_index}/{total_needs}] No clips found in preview, trying traditional download"
+                                    )
                                     use_two_pass = False
 
                                 # Clean up preview if falling back
@@ -817,7 +977,9 @@ class BRollProcessor:
 
                         if not use_two_pass:
                             # TRADITIONAL WORKFLOW (FALLBACK)
-                            logger.info(f"    [{need_index}/{total_needs}] Using traditional download (full video + extraction)")
+                            logger.info(
+                                f"    [{need_index}/{total_needs}] Using traditional download (full video + extraction)"
+                            )
 
                             # Download full video
                             downloaded_file = await loop.run_in_executor(
@@ -830,10 +992,14 @@ class BRollProcessor:
                             )
 
                             if not downloaded_file:
-                                logger.warning(f"    [{need_index}/{total_needs}] Failed to download {video.video_id}")
+                                logger.warning(
+                                    f"    [{need_index}/{total_needs}] Failed to download {video.video_id}"
+                                )
                                 continue
 
-                            logger.info(f"    [{need_index}/{total_needs}] Downloaded: {Path(downloaded_file).name}")
+                            logger.info(
+                                f"    [{need_index}/{total_needs}] Downloaded: {Path(downloaded_file).name}"
+                            )
 
                             # Extract clips from full video
                             if self.clip_extractor:
@@ -848,21 +1014,29 @@ class BRollProcessor:
 
                                 if clips:
                                     final_files.extend([c.clip_path for c in clips])
-                                    logger.info(f"    [{need_index}/{total_needs}] Extracted {len(clips)} clips")
+                                    logger.info(
+                                        f"    [{need_index}/{total_needs}] Extracted {len(clips)} clips"
+                                    )
 
                                     # Delete original immediately if clips extracted and setting enabled
                                     if should_delete and self.delete_original_after_extraction:
                                         self.clip_extractor.cleanup_original_video(downloaded_file)
-                                        logger.info(f"    [{need_index}/{total_needs}] Deleted original: {Path(downloaded_file).name}")
+                                        logger.info(
+                                            f"    [{need_index}/{total_needs}] Deleted original: {Path(downloaded_file).name}"
+                                        )
                                 else:
                                     # Keep original if no clips extracted
                                     final_files.append(downloaded_file)
-                                    logger.info(f"    [{need_index}/{total_needs}] No clips extracted, keeping original")
+                                    logger.info(
+                                        f"    [{need_index}/{total_needs}] No clips extracted, keeping original"
+                                    )
                             else:
                                 final_files.append(downloaded_file)
 
                     except Exception as e:
-                        logger.error(f"    [{need_index}/{total_needs}] Failed to process video {video.video_id}: {e}")
+                        logger.error(
+                            f"    [{need_index}/{total_needs}] Failed to process video {video.video_id}: {e}"
+                        )
                         continue
 
             logger.info(f"  [{need_index}/{total_needs}] Completed: {len(final_files)} clips total")
@@ -877,7 +1051,9 @@ class BRollProcessor:
             return (need.folder_name, final_files)
 
         except Exception as e:
-            logger.error(f"[{need_index}/{total_needs}] Failed to process need '{need.search_phrase}': {e}")
+            logger.error(
+                f"[{need_index}/{total_needs}] Failed to process need '{need.search_phrase}': {e}"
+            )
             return None
 
     async def transcribe_audio(self, file_path: str) -> TranscriptResult:
@@ -895,7 +1071,7 @@ class BRollProcessor:
         )
         return transcript_result
 
-    async def extract_search_phrases(self, transcript: str) -> List[str]:
+    async def extract_search_phrases(self, transcript: str) -> list[str]:
         """Extract relevant search phrases using Gemini AI (legacy method)."""
         if not transcript or not transcript.strip():
             logger.warning("Empty transcript provided for phrase extraction")
@@ -908,7 +1084,10 @@ class BRollProcessor:
         return search_phrases
 
     async def plan_broll_needs(
-        self, transcript_result: TranscriptResult, source_file: str, user_preferences: UserPreferences = None
+        self,
+        transcript_result: TranscriptResult,
+        source_file: str,
+        user_preferences: UserPreferences = None,
     ) -> BRollPlan:
         """Plan timeline-aware B-roll needs from transcript.
 
@@ -960,21 +1139,34 @@ class BRollProcessor:
         """
         return await self.transcribe_audio(file_path)
 
-    async def search_youtube_videos(self, phrase: str) -> List[VideoResult]:
-        """Search YouTube for videos matching the phrase."""
+    async def search_youtube_videos(self, phrase: str) -> list[VideoResult]:
+        """Search video sources for videos matching the phrase.
+
+        Currently searches YouTube only, but abstraction allows for multi-source search.
+        """
         if not phrase or not phrase.strip():
             logger.warning("Empty search phrase provided")
             return []
 
-        loop = asyncio.get_event_loop()
-        video_results = await loop.run_in_executor(
-            None, self.youtube_service.search_videos, phrase
-        )
-        return video_results
+        # PHASE 3 FEATURES: Multi-source video search
+        # For now, search all sources and combine results
+        # Future: add source priority, deduplication, etc.
+        all_results = []
 
-    async def evaluate_videos(
-        self, phrase: str, videos: List[VideoResult]
-    ) -> List[ScoredVideo]:
+        for source in self.video_sources:
+            try:
+                loop = asyncio.get_event_loop()
+                results = await loop.run_in_executor(None, source.search_videos, phrase)
+                all_results.extend(results)
+                logger.debug(f"Source '{source.get_source_name()}' returned {len(results)} videos")
+            except Exception as e:
+                logger.warning(f"Search failed for source '{source.get_source_name()}': {e}")
+                continue
+
+        logger.info(f"Total videos from all sources: {len(all_results)}")
+        return all_results
+
+    async def evaluate_videos(self, phrase: str, videos: list[VideoResult]) -> list[ScoredVideo]:
         """Evaluate videos using Gemini AI."""
         if not videos:
             logger.info(f"No videos to evaluate for phrase: {phrase}")
@@ -982,17 +1174,14 @@ class BRollProcessor:
 
         loop = asyncio.get_event_loop()
         scored_videos = await loop.run_in_executor(
-            None,
-            lambda: self.ai_service.evaluate_videos(phrase, videos, self.content_filter)
+            None, lambda: self.ai_service.evaluate_videos(phrase, videos, self.content_filter)
         )
 
         max_videos = self.config.get("max_videos_per_phrase", 3)
         limited_videos = scored_videos[:max_videos]
         return limited_videos
 
-    async def _create_project_structure(
-        self, file_path: str, source_filename: str
-    ) -> str:
+    async def _create_project_structure(self, file_path: str, source_filename: str) -> str:
         """Create the project folder structure upfront."""
         loop = asyncio.get_event_loop()
         project_path = await loop.run_in_executor(
@@ -1005,8 +1194,8 @@ class BRollProcessor:
 
     def _generate_project_name(self, file_path: str, source_filename: str) -> str:
         """Generate a consistent project name for both local and Drive folders."""
-        from datetime import datetime
         import hashlib
+        from datetime import datetime
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1074,10 +1263,10 @@ class BRollProcessor:
 
     async def _extract_clips_from_videos(
         self,
-        downloaded_files: List[str],
+        downloaded_files: list[str],
         phrase: str,
-        scored_videos: List[ScoredVideo],
-    ) -> List[str]:
+        scored_videos: list[ScoredVideo],
+    ) -> list[str]:
         """Extract clips from downloaded videos using AI analysis.
 
         Args:
@@ -1103,46 +1292,38 @@ class BRollProcessor:
                 # Fallback: extract from filename pattern
                 video_id_lookup[video_path] = "unknown"
 
+        # PHASE 2 PERFORMANCE: Extract clips from all videos in parallel
+        extraction_tasks = [
+            self._extract_clips_from_single_video(
+                video_path=video_path,
+                video_id=video_id_lookup.get(video_path, "unknown"),
+                phrase=phrase,
+            )
+            for video_path in downloaded_files
+        ]
+
+        # Wait for all extractions to complete
+        extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+
+        # Collect results
         final_files = []
         originals_to_delete = []
 
-        for video_path in downloaded_files:
-            video_id = video_id_lookup.get(video_path, "unknown")
+        for result in extraction_results:
+            if isinstance(result, Exception):
+                logger.error(f"Clip extraction task failed: {result}")
+                continue
 
-            logger.info(f"Extracting clips from: {Path(video_path).name}")
-
-            loop = asyncio.get_event_loop()
-            clips, should_delete = await loop.run_in_executor(
-                None,
-                self.clip_extractor.process_downloaded_video,
-                video_path,
-                phrase,
-                video_id,
-                None,  # Use same directory as source
-            )
-
-            if clips:
-                # Add clip paths to final files
-                final_files.extend([c.clip_path for c in clips])
-                if should_delete and self.delete_original_after_extraction:
-                    originals_to_delete.append(video_path)
-                logger.info(
-                    f"Extracted {len(clips)} clips from {Path(video_path).name}"
-                )
-            else:
-                # Keep original if no clips extracted
-                final_files.append(video_path)
-                logger.info(
-                    f"No clips extracted, keeping original: {Path(video_path).name}"
-                )
+            clip_paths, original_to_delete = result
+            final_files.extend(clip_paths)
+            if original_to_delete:
+                originals_to_delete.append(original_to_delete)
 
         # Clean up original videos (with input protection check)
         for original_path in originals_to_delete:
             # CRITICAL: Never delete protected input files
             if self._is_protected_file(original_path):
-                logger.warning(
-                    f"BLOCKED deletion of protected input file: {original_path}"
-                )
+                logger.warning(f"BLOCKED deletion of protected input file: {original_path}")
                 continue
 
             loop = asyncio.get_event_loop()
@@ -1151,6 +1332,102 @@ class BRollProcessor:
             )
 
         return final_files
+
+    async def _download_preview_with_limit(
+        self,
+        video: "ScoredVideo",
+        need_folder: str,
+        need_index: int,
+        video_idx: int,
+        total_videos: int,
+    ) -> Optional[tuple["ScoredVideo", str]]:
+        """Download a single preview video with semaphore limiting.
+
+        Args:
+            video: Video to download
+            need_folder: Output folder
+            need_index: Index of current need
+            video_idx: Index of this video (1-based)
+            total_videos: Total number of videos being downloaded
+
+        Returns:
+            Tuple of (video, preview_file_path) or None if download failed
+        """
+        async with self.download_semaphore:
+            try:
+                logger.info(
+                    f"    [{need_index}] Downloading preview {video_idx}/{total_videos}: {video.video_id}"
+                )
+
+                loop = asyncio.get_event_loop()
+                preview_file = await loop.run_in_executor(
+                    None,
+                    self.video_downloader.download_preview,
+                    video,
+                    str(need_folder),
+                    self.config.get("preview_max_height", 360),
+                )
+
+                if preview_file:
+                    logger.info(
+                        f"    [{need_index}] Preview {video_idx} downloaded: {Path(preview_file).name}"
+                    )
+                    return (video, preview_file)
+                else:
+                    logger.warning(f"    [{need_index}] Preview {video_idx} download failed")
+                    return None
+
+            except Exception as e:
+                logger.error(f"    [{need_index}] Failed to download preview {video_idx}: {e}")
+                return None
+
+    async def _extract_clips_from_single_video(
+        self,
+        video_path: str,
+        video_id: str,
+        phrase: str,
+    ) -> tuple[list[str], Optional[str]]:
+        """Extract clips from a single video with semaphore limiting.
+
+        Args:
+            video_path: Path to video file
+            video_id: Video ID for identification
+            phrase: Search phrase for context
+
+        Returns:
+            Tuple of (list of clip paths, original path to delete or None)
+        """
+        async with self.extraction_semaphore:
+            try:
+                logger.info(f"Extracting clips from: {Path(video_path).name}")
+
+                loop = asyncio.get_event_loop()
+                clips, should_delete = await loop.run_in_executor(
+                    None,
+                    self.clip_extractor.process_downloaded_video,
+                    video_path,
+                    phrase,
+                    video_id,
+                    None,  # Use same directory as source
+                )
+
+                if clips:
+                    clip_paths = [c.clip_path for c in clips]
+                    logger.info(f"Extracted {len(clips)} clips from {Path(video_path).name}")
+                    return (
+                        clip_paths,
+                        video_path
+                        if should_delete and self.delete_original_after_extraction
+                        else None,
+                    )
+                else:
+                    logger.info(f"No clips extracted, keeping original: {Path(video_path).name}")
+                    return ([video_path], None)
+
+            except Exception as e:
+                logger.error(f"Failed to extract clips from {Path(video_path).name}: {e}")
+                # On error, keep the original file
+                return ([video_path], None)
 
     def _is_protected_file(self, file_path: str) -> bool:
         """Check if a file path is a protected input file that must NOT be deleted.

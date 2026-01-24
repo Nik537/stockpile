@@ -1,12 +1,11 @@
 """Configuration loading and validation for stockpile."""
 
-import os
 import logging
-from typing import Dict, List
+import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 from rich.logging import RichHandler
-
 
 # Get the project root directory (parent of src)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -15,7 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
-def load_config() -> Dict:
+def load_config() -> dict:
     """Load configuration from environment variables."""
 
     # Helper function to resolve paths relative to project root
@@ -74,6 +73,15 @@ def load_config() -> Dict:
                                            "bestvideo[height<=1080]+bestaudio/best"),
         # PHASE 1 OPTIMIZATIONS: Parallel processing
         "max_concurrent_needs": int(os.getenv("MAX_CONCURRENT_NEEDS", "5")),
+        # PHASE 2 PERFORMANCE: Granular parallelization
+        "parallel_downloads": int(os.getenv("PARALLEL_DOWNLOADS", "3")),
+        "parallel_extractions": int(os.getenv("PARALLEL_EXTRACTIONS", "2")),
+        "parallel_ai_calls": int(os.getenv("PARALLEL_AI_CALLS", "5")),
+        # AI Response Caching
+        "cache_enabled": os.getenv("CACHE_ENABLED", "true").lower() == "true",
+        "cache_ttl_days": int(os.getenv("CACHE_TTL_DAYS", "30")),
+        "cache_max_size_gb": float(os.getenv("CACHE_MAX_SIZE_GB", "1.0")),
+        "cache_dir": resolve_path(os.getenv("CACHE_DIR"), ".cache/ai_responses"),
         # Competitive analysis: Compare multiple videos per B-roll need
         "competitive_analysis_enabled": os.getenv("COMPETITIVE_ANALYSIS_ENABLED", "true").lower() == "true",
         "previews_per_need": int(os.getenv("PREVIEWS_PER_NEED", "2")),
@@ -84,12 +92,14 @@ def load_config() -> Dict:
         "ytdlp_max_sleep_interval": int(os.getenv("YTDLP_MAX_SLEEP_INTERVAL", "5")),
         "ytdlp_retries": int(os.getenv("YTDLP_RETRIES", "5")),
         "ytdlp_cookies_file": os.getenv("YTDLP_COOKIES_FILE"),  # Optional cookie file path
+        # PHASE 3 FEATURES: Cost tracking
+        "budget_limit_usd": float(os.getenv("BUDGET_LIMIT_USD", "0.0")),
     }
 
     return config
 
 
-def validate_config(config: Dict) -> List[str]:
+def validate_config(config: dict) -> list[str]:
     """Validate configuration and return list of errors."""
     errors = []
 
@@ -185,11 +195,11 @@ def setup_logging(log_level: str = "INFO") -> None:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
-def get_supported_video_formats() -> List[str]:
+def get_supported_video_formats() -> list[str]:
     """Return list of supported video file extensions."""
     return [".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm", ".m4v"]
 
 
-def get_supported_audio_formats() -> List[str]:
+def get_supported_audio_formats() -> list[str]:
     """Return list of supported audio file extensions."""
     return [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"]

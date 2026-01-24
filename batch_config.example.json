@@ -1,0 +1,25 @@
+{
+  "_comment": "Example batch processing configuration",
+  "_usage": "python batch_process.py batch_config.json",
+
+  "videos": [
+    "input/sample1.mp4",
+    "input/sample2.mp4",
+    "input/sample3.mp4"
+  ],
+
+  "preferences": {
+    "style": "cinematic",
+    "avoid": "text overlays, logos",
+    "time_of_day": "golden hour",
+    "preferred_sources": "nature footage, city aerials"
+  },
+
+  "concurrency": 2,
+
+  "_notes": [
+    "concurrency: Number of videos to process simultaneously (default: 2)",
+    "preferences: User preferences for B-roll style (optional)",
+    "videos: List of video file paths to process (required)"
+  ]
+}
