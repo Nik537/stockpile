@@ -1,0 +1,37 @@
+.progress-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.progress-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: 4px;
+}
+
+.progress-percentage {
+  font-size: 0.9rem;
+  font-weight: 600;
+  min-width: 3rem;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+@media (prefers-color-scheme: light) {
+  .progress-bar-track {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  .progress-percentage {
+    color: rgba(0, 0, 0, 0.8);
+  }
+}

@@ -1,0 +1,172 @@
+.job-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.job-card:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.job-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.job-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.job-info h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-queued {
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
+}
+
+.status-processing {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.status-completed {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.status-failed {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.job-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-download,
+.btn-delete {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-download {
+  background: #667eea;
+  color: white;
+  border: none;
+}
+
+.btn-download:hover {
+  background: #5a67d8;
+}
+
+.btn-delete {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.job-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.progress-message {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+.error-message {
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #ef4444;
+  font-size: 0.9rem;
+}
+
+.job-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.5rem;
+}
+
+@media (prefers-color-scheme: light) {
+  .job-card {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .job-card:hover {
+    border-color: rgba(90, 103, 216, 0.4);
+  }
+
+  .progress-message {
+    color: rgba(0, 0, 0, 0.8);
+  }
+
+  .job-meta {
+    color: rgba(0, 0, 0, 0.5);
+  }
+
+  .btn-download {
+    background: #5a67d8;
+  }
+
+  .btn-download:hover {
+    background: #4c51bf;
+  }
+}
+
+@media (max-width: 768px) {
+  .job-header {
+    flex-direction: column;
+  }
+
+  .job-actions {
+    width: 100%;
+  }
+
+  .btn-download,
+  .btn-delete {
+    flex: 1;
+  }
+
+  .job-meta {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+}
