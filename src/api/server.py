@@ -165,12 +165,18 @@ async def process_job(job_id: str, video_path: str) -> None:
             video_path, user_preferences, status_callback=status_callback
         )
 
+        # Convert result to absolute path for reliable access
+        output_dir_path = None
+        if result:
+            output_dir_path = Path(result).resolve()
+            logger.info(f"Processing completed. Output directory: {output_dir_path}")
+
         # Update job with success
         await update_job_status(
             job_id,
             status=JobStatus.COMPLETED,
             progress={"stage": "completed", "percent": 100, "message": "Processing completed"},
-            output_dir=str(result) if result else None,
+            output_dir=str(output_dir_path) if output_dir_path else None,
         )
 
     except Exception as e:

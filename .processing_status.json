@@ -2,12 +2,12 @@
   "video_path": "uploads/descriptS&C_test_2min.mp4",
   "output_dir": "/Users/niknoavak/Desktop/YT/stockpile/output",
   "start_time": 1769234597.563721,
-  "end_time": null,
-  "elapsed_seconds": 20.183463096618652,
+  "end_time": 1769234758.8382149,
+  "elapsed_seconds": 161.2744960784912,
   "current_stage": "process_needs",
-  "overall_progress": 42.86,
-  "overall_eta_seconds": 26.911297480265297,
-  "is_complete": false,
+  "overall_progress": 100.0,
+  "overall_eta_seconds": 0.0,
+  "is_complete": true,
   "has_failed": false,
   "error_message": null,
   "stages": {
@@ -40,13 +40,13 @@
     },
     "process_needs": {
       "name": "process_needs",
-      "status": "in_progress",
+      "status": "completed",
       "total_items": 4,
-      "completed_items": 0,
-      "progress_percent": 0.0,
-      "elapsed_seconds": 2.6941299438476562e-05,
-      "eta_seconds": null
+      "completed_items": 4,
+      "progress_percent": 100.0,
+      "elapsed_seconds": 141.09007287025452,
+      "eta_seconds": 0.0
     }
   },
-  "timestamp": "2026-01-24T07:03:37.747212"
+  "timestamp": "2026-01-24T07:05:58.838230"
 }
