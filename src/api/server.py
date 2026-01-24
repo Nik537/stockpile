@@ -4,10 +4,16 @@
 import asyncio
 import json
 import logging
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Add src directory to Python path for imports
+src_dir = Path(__file__).parent.parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
