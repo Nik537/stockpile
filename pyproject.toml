@@ -1,0 +1,154 @@
+[project]
+name = "stockpile"
+version = "0.1.0"
+description = "AI-powered B-roll automation pipeline"
+requires-python = ">=3.10"
+
+[tool.ruff]
+# Target Python 3.10+
+target-version = "py310"
+
+# Set line length
+line-length = 100
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".cache",
+]
+
+[tool.ruff.lint]
+# Enable linting rules
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade (modernize Python code)
+    "B",   # flake8-bugbear (detect common bugs)
+    "C4",  # flake8-comprehensions
+    "DTZ", # flake8-datetimez
+    "T10", # flake8-debugger
+    "EM",  # flake8-errmsg
+    "ISC", # flake8-implicit-str-concat
+    "ICN", # flake8-import-conventions
+    "PIE", # flake8-pie
+    "PT",  # flake8-pytest-style
+    "Q",   # flake8-quotes
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+]
+
+# Ignore specific rules
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "ISC001", # Conflicts with formatter
+    "COM812", # Conflicts with formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have unused arguments, assertions, etc.
+"tests/**/*.py" = ["ARG", "PT"]
+
+[tool.ruff.format]
+# Use double quotes
+quote-style = "double"
+
+# Indent with 4 spaces
+indent-style = "space"
+
+# Keep magic trailing commas
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.10"
+
+# Strictness settings
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+check_untyped_defs = true
+
+# Import discovery
+mypy_path = "src"
+namespace_packages = true
+
+# Suppress errors for missing imports (common with third-party libs)
+ignore_missing_imports = true
+
+# Incremental mode
+incremental = true
+cache_dir = ".mypy_cache"
+
+# Exclude directories
+exclude = [
+    "venv/",
+    ".venv/",
+    "tests/",
+]
+
+[tool.pytest.ini_options]
+# Pytest configuration
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Asyncio mode
+asyncio_mode = "auto"
+
+# Coverage settings
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",  # Show summary of all test outcomes
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+
+# Markers for organizing tests
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]

@@ -6,13 +6,81 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
+
+from tqdm import tqdm
 
 from broll_processor import BRollProcessor
 from services.interactive_ui import InteractiveUI
 from utils.config import setup_logging, load_config
+from utils.progress import ProcessingStatus, format_eta
 
 logger = logging.getLogger(__name__)
+
+
+class ProgressBarCallback:
+    """Progress bar callback for displaying real-time progress."""
+
+    def __init__(self):
+        """Initialize progress bars."""
+        self.progress_bars: Dict[str, tqdm] = {}
+        self.overall_bar: Optional[tqdm] = None
+
+    def __call__(self, status: ProcessingStatus):
+        """Update progress bars based on status.
+
+        Args:
+            status: ProcessingStatus object with current progress
+        """
+        # Create or update overall progress bar
+        if self.overall_bar is None:
+            self.overall_bar = tqdm(
+                total=100,
+                desc="Overall Progress",
+                unit="%",
+                position=0,
+                leave=True,
+                bar_format="{l_bar}{bar}| {n:.1f}/{total:.1f}% [{elapsed}<{remaining}, {rate_fmt}]",
+            )
+
+        # Update overall progress
+        self.overall_bar.n = status.overall_progress
+        self.overall_bar.refresh()
+
+        # Create or update stage-specific progress bars
+        for stage_name, stage in status.stages.items():
+            if stage_name not in self.progress_bars:
+                # Create new progress bar for this stage
+                self.progress_bars[stage_name] = tqdm(
+                    total=stage.total_items,
+                    desc=f"  {stage_name.replace('_', ' ').title()}",
+                    unit="items",
+                    position=len(self.progress_bars) + 1,
+                    leave=False,
+                )
+
+            # Update stage progress
+            bar = self.progress_bars[stage_name]
+            bar.n = stage.completed_items
+            bar.total = stage.total_items
+
+            # Update description with ETA
+            if stage.status == "in_progress" and stage.eta_seconds:
+                eta_str = format_eta(stage.eta_seconds)
+                bar.set_description(f"  {stage_name.replace('_', ' ').title()} (ETA: {eta_str})")
+            elif stage.status == "completed":
+                bar.set_description(f"  {stage_name.replace('_', ' ').title()} ✓")
+            elif stage.status == "failed":
+                bar.set_description(f"  {stage_name.replace('_', ' ').title()} ✗")
+
+            bar.refresh()
+
+    def close(self):
+        """Close all progress bars."""
+        if self.overall_bar:
+            self.overall_bar.close()
+        for bar in self.progress_bars.values():
+            bar.close()
 
 
 class StockpileApp:
@@ -115,9 +183,20 @@ class StockpileApp:
             self.ui.display_processing_status("Processing video with your preferences...")
             self.ui.display_processing_status("This may take several minutes...")
 
-            await self.processor.process_video(str(video_path), preferences)
+            # Create progress callback
+            progress_callback = ProgressBarCallback()
 
-            self.ui.display_success("Processing complete! Check output folder for organized B-roll clips.")
+            try:
+                await self.processor.process_video(
+                    str(video_path),
+                    preferences,
+                    status_callback=progress_callback
+                )
+            finally:
+                # Close progress bars
+                progress_callback.close()
+
+            self.ui.display_success("\nProcessing complete! Check output folder for organized B-roll clips.")
 
         except KeyboardInterrupt:
             self.ui.display_error("Interrupted by user")

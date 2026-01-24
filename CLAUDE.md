@@ -14,6 +14,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - FFmpeg (clip extraction)
 - Google Drive API (optional cloud workflow)
 
+**Development Status:** See `UPGRADE_PLAN.md` for the roadmap transforming stockpile from working prototype to production-ready tool. Key improvements in progress:
+- ✅ Testing infrastructure (pytest, coverage, fixtures)
+- ✅ Code quality tools (ruff, mypy, pre-commit hooks)
+- 🔄 AI response caching (100% cost savings on re-processing)
+- 🔄 Progress tracking and parallel processing (5-10x speed improvement)
+- 📋 Web UI, checkpointing, batch processing (planned)
+
 ## Development Commands
 
 ### Environment Setup
@@ -49,7 +56,44 @@ python run_with_preferences.py
 
 ### Testing
 
-**No formal test framework exists.** Testing is manual/integration-focused:
+**Test framework:** pytest with pytest-asyncio, pytest-cov, pytest-mock
+
+**Running tests:**
+```bash
+# Run all tests with coverage
+pytest
+
+# Run specific test file
+pytest tests/unit/test_models.py
+
+# Run only unit tests
+pytest -m unit
+
+# Run only integration tests
+pytest -m integration
+
+# Skip slow tests
+pytest -m "not slow"
+
+# Generate HTML coverage report
+pytest --cov-report=html
+```
+
+**Test structure:**
+```
+tests/
+├── __init__.py
+├── conftest.py              # Shared fixtures
+├── unit/                    # Unit tests for individual components
+│   ├── test_models.py
+│   ├── test_clip_extractor.py
+│   ├── test_ai_service.py
+│   └── test_video_downloader.py
+└── integration/             # End-to-end workflow tests
+    └── test_broll_processor.py
+```
+
+**Manual testing checklist:**
 - Drop test videos in `input/` folder
 - Verify output quality in `output/` folder
 - Check log file: `src/broll_processor.log`
@@ -59,6 +103,42 @@ python run_with_preferences.py
 - Clip duration matches `MIN_CLIP_DURATION` and `MAX_CLIP_DURATION` settings
 - Output folder structure follows `{timestamp}_{description}/` pattern
 - AI scoring appears in filenames: `clip1_5.2s-12.8s_score09_video.mp4`
+
+### Code Quality Tools
+
+**Development dependencies installed:**
+- **ruff**: Fast Python linter and formatter (replaces black, isort, flake8)
+- **mypy**: Static type checker
+- **pre-commit**: Git hooks for automated quality checks
+
+**Running quality checks:**
+```bash
+# Lint code (with auto-fix)
+ruff check src/ --fix
+
+# Format code
+ruff format src/
+
+# Type check
+mypy src/
+
+# Run all pre-commit hooks manually
+pre-commit run --all-files
+
+# Install pre-commit hooks (run once)
+pre-commit install
+```
+
+**Pre-commit hooks automatically run on every commit:**
+- Ruff linting and formatting
+- Type checking with mypy
+- File checks (trailing whitespace, EOF newlines, YAML/TOML/JSON syntax)
+- Secret detection
+- Prevents commits to main branch (use feature branches)
+
+**Configuration files:**
+- `pyproject.toml`: Ruff, mypy, pytest, coverage configuration
+- `.pre-commit-config.yaml`: Pre-commit hook definitions
 
 ### Troubleshooting Commands
 
@@ -368,28 +448,44 @@ NOTIFICATION_EMAIL=                   # Email for completion notifications
 ## File Organization
 
 ```
-src/
-├── broll_processor.py       # Central orchestrator (1,450 lines)
-├── main.py                  # Application entry point
-├── models/                  # Data structures
-│   ├── broll_need.py        # Timeline-aware planning
-│   ├── clip.py              # Extraction results
-│   ├── user_preferences.py  # Interactive mode
-│   └── video.py             # Search results
-├── services/                # Business logic layer
-│   ├── ai_service.py        # Gemini integration (planning, evaluation)
-│   ├── clip_extractor.py    # Video analysis + FFmpeg extraction
-│   ├── drive_service.py     # Google Drive API
-│   ├── file_monitor.py      # Watchdog + Drive polling
-│   ├── file_organizer.py    # Output folder structure
-│   ├── interactive_ui.py    # Terminal UI
-│   ├── notification.py      # Gmail API
-│   ├── transcription.py     # Whisper API
-│   ├── video_downloader.py  # yt-dlp wrapper
-│   └── youtube_service.py   # YouTube search API
-└── utils/
-    ├── config.py            # .env loader and validator
-    └── retry.py             # Exponential backoff decorators
+stockpile/
+├── src/
+│   ├── broll_processor.py       # Central orchestrator (1,450 lines)
+│   ├── main.py                  # Application entry point
+│   ├── models/                  # Data structures
+│   │   ├── broll_need.py        # Timeline-aware planning
+│   │   ├── clip.py              # Extraction results
+│   │   ├── user_preferences.py  # Interactive mode
+│   │   └── video.py             # Search results
+│   ├── services/                # Business logic layer
+│   │   ├── ai_service.py        # Gemini integration (planning, evaluation)
+│   │   ├── clip_extractor.py    # Video analysis + FFmpeg extraction
+│   │   ├── drive_service.py     # Google Drive API
+│   │   ├── file_monitor.py      # Watchdog + Drive polling
+│   │   ├── file_organizer.py    # Output folder structure
+│   │   ├── interactive_ui.py    # Terminal UI
+│   │   ├── notification.py      # Gmail API
+│   │   ├── transcription.py     # Whisper API
+│   │   ├── video_downloader.py  # yt-dlp wrapper
+│   │   └── youtube_service.py   # YouTube search API
+│   └── utils/
+│       ├── config.py            # .env loader and validator
+│       └── retry.py             # Exponential backoff decorators
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py              # Shared pytest fixtures
+│   ├── unit/                    # Unit tests for components
+│   │   ├── test_models.py
+│   │   ├── test_clip_extractor.py
+│   │   ├── test_ai_service.py
+│   │   └── test_video_downloader.py
+│   └── integration/             # End-to-end workflow tests
+│       └── test_broll_processor.py
+├── pyproject.toml               # Project config, ruff, mypy, pytest settings
+├── .pre-commit-config.yaml      # Git hook configuration
+├── requirements.txt             # Python dependencies
+├── UPGRADE_PLAN.md              # Development roadmap
+└── CLAUDE.md                    # This file - AI assistant guidance
 ```
 
 ## Common Development Tasks
@@ -493,13 +589,22 @@ docker run -v $(pwd)/input:/app/input \
 
 ## Known Limitations
 
-1. **YouTube-only source:** No support for other video platforms yet
-2. **No batch processing UI:** Can only monitor single input folder
-3. **Limited error recovery:** Some failure modes require manual intervention
+1. **YouTube-only source:** No support for other video platforms yet (Pexels/Vimeo planned in Phase 3)
+2. **No batch processing UI:** Can only monitor single input folder (batch processing planned in Phase 3)
+3. **Limited error recovery:** Some failure modes require manual intervention (checkpointing system planned in Phase 3)
 4. **No local LLM support:** Requires cloud AI APIs (Gemini, OpenAI)
-5. **Manual testing:** No automated test suite
+5. ~~**Manual testing:** No automated test suite~~ **RESOLVED** - Automated testing infrastructure added in Phase 1
 
 ## Recent Bug Fixes & Improvements
+
+**Jan 24, 2026 - Development Infrastructure (Phase 1):**
+- Added pytest testing framework with coverage tracking
+- Implemented code quality tools (ruff, mypy, pre-commit hooks)
+- Created `tests/` directory with unit and integration test structure
+- Added `pyproject.toml` with comprehensive linting/formatting/testing configuration
+- Created `.pre-commit-config.yaml` with automated quality checks
+- Updated `requirements.txt` with development and testing dependencies
+- Created `UPGRADE_PLAN.md` documenting 10 improvements across 3 phases
 
 **Jan 23, 2026 - Competitive Analysis:**
 - Implemented multi-video comparison per B-roll need

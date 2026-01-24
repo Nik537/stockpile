@@ -10,6 +10,7 @@ from models.video import VideoResult, ScoredVideo
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
 from models.user_preferences import UserPreferences
 from utils.config import load_config, validate_config
+from utils.progress import ProcessingStatus
 from services.transcription import TranscriptionService
 from services.ai_service import AIService
 from services.youtube_service import YouTubeService
@@ -137,12 +138,13 @@ class BRollProcessor:
         else:
             logger.error("No event loop available to schedule file processing")
 
-    async def process_video(self, file_path: str, user_preferences: UserPreferences = None) -> None:
+    async def process_video(self, file_path: str, user_preferences: UserPreferences = None, status_callback=None) -> None:
         """Process a video file through the complete B-roll pipeline.
 
         Args:
             file_path: Path to the video file to process
             user_preferences: Optional user preferences for B-roll style customization
+            status_callback: Optional callback function for progress updates
         """
         if file_path in self.processing_files:
             logger.info(f"File already being processed: {file_path}")
@@ -158,12 +160,21 @@ class BRollProcessor:
 
         start_time = time.time()
 
+        # Initialize progress tracking
+        status = ProcessingStatus(
+            video_path=file_path,
+            output_dir=self.config.get("local_output_folder", "../output"),
+            update_callback=status_callback,
+        )
+
         try:
-            await self._execute_pipeline(file_path, start_time, user_preferences)
+            await self._execute_pipeline(file_path, start_time, user_preferences, status)
+            status.complete_processing()
             logger.info(f"Processing completed successfully: {file_path}")
 
         except Exception as e:
             logger.error(f"Processing failed for {file_path}: {e}")
+            status.fail_processing(str(e))
             processing_time = self._format_processing_time(time.time() - start_time)
             await self._send_notification(
                 "failed", str(e), processing_time=processing_time, input_file=file_path
@@ -173,13 +184,14 @@ class BRollProcessor:
         finally:
             self.processing_files.discard(file_path)
 
-    async def _execute_pipeline(self, file_path: str, start_time: float, user_preferences: UserPreferences = None) -> None:
+    async def _execute_pipeline(self, file_path: str, start_time: float, user_preferences: UserPreferences = None, status: ProcessingStatus = None) -> None:
         """Execute the complete timeline-aware B-roll processing pipeline.
 
         Args:
             file_path: Path to the video file to process
             start_time: Start time for processing metrics
             user_preferences: Optional user preferences for B-roll customization
+            status: Optional ProcessingStatus for progress tracking
 
         Pipeline steps:
         1. Transcribe audio with timestamps
@@ -193,8 +205,22 @@ class BRollProcessor:
         """
         logger.info(f"Starting pipeline for: {file_path}")
 
+        # Register processing stages
+        if status:
+            status.register_stage("transcribe", total_items=1)
+            status.register_stage("plan", total_items=1)
+            status.register_stage("project_setup", total_items=1)
+            # B-roll processing will be registered after we know the count
+
         # Step 1: Transcribe with timestamps
+        if status:
+            status.start_stage("transcribe")
+
         transcript_result = await self.transcribe_audio(file_path)
+
+        if status:
+            status.update_stage("transcribe", completed=1)
+            status.complete_stage("transcribe")
         duration_minutes = transcript_result.duration / 60.0
         logger.info(
             f"Transcription completed: {len(transcript_result.text)} chars, "
@@ -202,7 +228,14 @@ class BRollProcessor:
         )
 
         # Step 2: Plan B-roll needs (timeline-aware)
+        if status:
+            status.start_stage("plan")
+
         broll_plan = await self.plan_broll_needs(transcript_result, file_path, user_preferences)
+
+        if status:
+            status.update_stage("plan", completed=1)
+            status.complete_stage("plan")
         logger.info(
             f"B-roll planning complete: {len(broll_plan.needs)} needs identified "
             f"(target: {broll_plan.expected_clip_count} at {self.clips_per_minute}/min)"
@@ -220,9 +253,16 @@ class BRollProcessor:
             )
 
         # Step 3: Create project structure
+        if status:
+            status.start_stage("project_setup")
+
         source_filename = Path(file_path).name
         project_dir = await self._create_project_structure(file_path, source_filename)
         logger.info(f"Project structure created: {project_dir}")
+
+        if status:
+            status.update_stage("project_setup", completed=1)
+            status.complete_stage("project_setup")
 
         # Google Drive setup if configured
         drive_project_folder_id = None
@@ -244,6 +284,11 @@ class BRollProcessor:
         logger.info(f"Processing {len(broll_plan.needs)} B-roll needs")
         need_downloads: Dict[str, List[str]] = {}
         total_clips = 0
+
+        # Register B-roll processing stage
+        if status:
+            status.register_stage("process_needs", total_items=len(broll_plan.needs))
+            status.start_stage("process_needs")
 
         # Get parallel processing config
         max_concurrent = self.config.get("max_concurrent_needs", 5)
@@ -275,11 +320,17 @@ class BRollProcessor:
             for result in batch_results:
                 if isinstance(result, Exception):
                     logger.error(f"Batch task failed: {result}")
+                    # Still update progress even for failures
+                    if status:
+                        status.update_stage("process_needs", increment=1)
                     continue
                 if result:
                     folder_name, files = result
                     need_downloads[folder_name] = files
                     total_clips += len(files)
+                # Update progress
+                if status:
+                    status.update_stage("process_needs", increment=1)
 
         # Original sequential processing (keeping for reference, but replaced above)
         """
@@ -473,6 +524,10 @@ class BRollProcessor:
                 Path(need_folder),
             )
         """
+
+        # Complete the processing stage
+        if status:
+            status.complete_stage("process_needs")
 
         # Clean up empty directories
         loop = asyncio.get_event_loop()

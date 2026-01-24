@@ -2,11 +2,12 @@
 
 import json
 import logging
-from typing import List
+from typing import List, Optional
 from google.genai import Client
 from google.genai import types
 
 from utils.retry import retry_api_call, APIRateLimitError, NetworkError
+from utils.cache import AIResponseCache
 from models.video import VideoResult, ScoredVideo
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
 from models.user_preferences import UserPreferences, GeneratedQuestion
@@ -36,18 +37,30 @@ def strip_markdown_code_blocks(text: str) -> str:
 class AIService:
     """Service for AI-powered phrase extraction and video evaluation using Gemini."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-3-flash-preview"):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "gemini-3-flash-preview",
+        cache: Optional[AIResponseCache] = None,
+    ):
         """Initialize Google GenAI client.
 
         Args:
             api_key: Google GenAI API key
             model_name: Gemini model to use
+            cache: Optional AIResponseCache for caching responses
         """
         self.api_key = api_key
         self.model_name = model_name
         self.client = Client(api_key=api_key)
+        self.cache = cache
 
-        logger.info(f"Initialized AI service with model: {model_name}")
+        if cache:
+            logger.info(
+                f"Initialized AI service with model: {model_name} (caching enabled)"
+            )
+        else:
+            logger.info(f"Initialized AI service with model: {model_name}")
 
     @retry_api_call(max_retries=5, base_delay=2.0)
     def extract_search_phrases(self, transcript: str) -> List[str]:

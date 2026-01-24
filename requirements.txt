@@ -1,3 +1,4 @@
+# Core dependencies
 openai-whisper
 google-genai
 yt-dlp
@@ -8,3 +9,20 @@ google-auth-httplib2
 watchdog
 python-dotenv
 rich
+
+# Development dependencies
+ruff==0.1.15
+mypy==1.8.0
+pre-commit==3.6.0
+
+# Testing dependencies
+pytest==8.0.0
+pytest-asyncio==0.23.0
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Caching
+diskcache==5.6.3
+
+# Progress tracking
+tqdm==4.66.1
