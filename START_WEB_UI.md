@@ -10,21 +10,21 @@ Quick guide to run the full-stack application (backend API + frontend web UI).
 
 ## Step-by-Step Instructions
 
-### 1. Install Frontend Dependencies (First Time Only)
+### 1. Activate Virtual Environment
 
 ```bash
-cd web
-npm install
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 ```
 
-### 2. Start the Backend API
+### 2. Start the Backend API (Terminal 1)
 
-Open a terminal and run:
-
+**Easy way (recommended):**
 ```bash
-# From project root
-cd /path/to/stockpile
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+./start_backend.sh
+```
+
+**Manual way:**
+```bash
 python src/api/server.py
 ```
 
@@ -38,13 +38,17 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 
 **Backend is now running at `http://localhost:8000`**
 
-### 3. Start the Frontend Dev Server
+### 3. Start the Frontend Dev Server (Terminal 2)
 
-Open a **second terminal** and run:
-
+**Easy way (recommended):**
 ```bash
-# From project root
+./start_frontend.sh
+```
+
+**Manual way:**
+```bash
 cd web
+npm install  # First time only
 npm run dev
 ```
 
