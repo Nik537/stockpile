@@ -138,7 +138,10 @@ async def process_job(job_id: str, video_path: str) -> None:
         # Load configuration
         config = load_config()
 
-        # Create processor with status callback
+        # Create processor
+        processor = BRollProcessor(config)
+
+        # Create status callback for progress updates
         def status_callback(stage: str, percent: int, message: str) -> None:
             """Callback for progress updates."""
             asyncio.create_task(
@@ -147,14 +150,14 @@ async def process_job(job_id: str, video_path: str) -> None:
                 )
             )
 
-        processor = BRollProcessor(config, status_callback=status_callback)
-
         # Get user preferences
         prefs_dict = jobs[job_id].get("preferences", {})
         user_preferences = UserPreferences(**prefs_dict) if prefs_dict else None
 
-        # Process video
-        result = await processor.process_video(video_path, user_preferences)
+        # Process video with status callback
+        result = await processor.process_video(
+            video_path, user_preferences, status_callback=status_callback
+        )
 
         # Update job with success
         await update_job_status(
