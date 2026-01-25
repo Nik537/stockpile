@@ -110,8 +110,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 pythonpath = ["src"]
 
-# Note: asyncio_mode removed due to pytest-asyncio version incompatibility
-# Use @pytest.mark.asyncio decorator on individual async tests instead
 
 # Coverage settings
 addopts = [
@@ -128,6 +126,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "asyncio: marks tests as async tests",
+    "anyio: marks tests as async tests using anyio",
 ]
 
 [tool.coverage.run]

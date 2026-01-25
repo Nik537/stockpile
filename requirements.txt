@@ -1,5 +1,6 @@
 # Core dependencies
-openai-whisper
+# faster-whisper is a CTranslate2 reimplementation of OpenAI Whisper (4x faster)
+faster-whisper>=0.10.0
 google-genai
 yt-dlp
 google-api-python-client

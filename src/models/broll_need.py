@@ -93,7 +93,7 @@ class BRollNeed:
         # Replace spaces with underscores
         sanitized = re.sub(r"\s+", "_", sanitized)
         # Limit length
-        return sanitized[:40].strip("_").lower()
+        return sanitized[:55].strip("_").lower()
 
 
 @dataclass

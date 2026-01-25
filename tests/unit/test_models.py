@@ -91,8 +91,8 @@ class TestBRollNeed:
             context="test",
         )
         folder_name = need.folder_name
-        # Should be trimmed (prefix + 40 chars + underscores)
-        assert len(folder_name) < 60
+        # Should be trimmed (prefix + 55 chars + underscores)
+        assert len(folder_name) < 75
 
 
 class TestBRollPlan:

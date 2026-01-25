@@ -1,21 +1,27 @@
 """Unit tests for TranscriptionService with faster-whisper."""
 
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-# Mock the faster_whisper module before importing TranscriptionService
-# This allows tests to run without actually installing faster-whisper
+# Add src directory to path for imports
+src_path = Path(__file__).parent.parent.parent / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
 
 
-@pytest.fixture
-def mock_whisper_model():
-    """Create a mock WhisperModel."""
-    mock_model = MagicMock()
+# Create a mock for the faster_whisper module before any tests run
+mock_faster_whisper = MagicMock()
+mock_faster_whisper.WhisperModel = MagicMock()
+sys.modules["faster_whisper"] = mock_faster_whisper
 
-    # Mock transcribe method to return segments generator and info
+
+def create_mock_transcription_result():
+    """Create mock segments and info for transcription results."""
     mock_segment1 = MagicMock()
     mock_segment1.start = 0.0
     mock_segment1.end = 5.0
@@ -30,62 +36,53 @@ def mock_whisper_model():
     mock_info.duration = 10.0
     mock_info.language = "en"
 
-    # Return generator-like object and info
-    mock_model.transcribe.return_value = (
-        iter([mock_segment1, mock_segment2]),
-        mock_info,
-    )
+    return [mock_segment1, mock_segment2], mock_info
 
+
+@pytest.fixture(autouse=True)
+def reset_modules():
+    """Reset module cache before each test."""
+    # Clear the transcription module from cache so each test gets fresh import
+    if "services.transcription" in sys.modules:
+        del sys.modules["services.transcription"]
+    yield
+
+
+@pytest.fixture
+def mock_whisper_model():
+    """Create a mock WhisperModel."""
+    mock_model = MagicMock()
+    segments, info = create_mock_transcription_result()
+    mock_model.transcribe.return_value = (iter(segments), info)
     return mock_model
-
-
-@pytest.fixture
-def mock_whisper_model_class(mock_whisper_model):
-    """Patch the WhisperModel class to return our mock."""
-    with patch("services.transcription.WhisperModel") as mock_class:
-        mock_class.return_value = mock_whisper_model
-        yield mock_class
-
-
-@pytest.fixture
-def transcription_service(mock_whisper_model_class):
-    """Create a TranscriptionService with mocked WhisperModel."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-    from services.transcription import TranscriptionService
-
-    service = TranscriptionService(
-        model_name="base",
-        device="cpu",
-        compute_type="int8"
-    )
-    return service
 
 
 class TestTranscriptionServiceInit:
     """Tests for TranscriptionService initialization."""
 
-    def test_init_with_defaults(self, mock_whisper_model_class):
+    def test_init_with_defaults(self):
         """Test service initializes with default parameters."""
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-        from services.transcription import TranscriptionService
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+        mock_faster_whisper.WhisperModel.reset_mock()
 
+        from services.transcription import TranscriptionService
         service = TranscriptionService()
 
         assert service.model_name == "base"
         assert service.device == "auto"
         assert service.compute_type == "auto"
-        mock_whisper_model_class.assert_called_once_with(
+        mock_faster_whisper.WhisperModel.assert_called_once_with(
             "base", device="auto", compute_type="auto"
         )
 
-    def test_init_with_custom_params(self, mock_whisper_model_class):
+    def test_init_with_custom_params(self):
         """Test service initializes with custom parameters."""
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-        from services.transcription import TranscriptionService
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+        mock_faster_whisper.WhisperModel.reset_mock()
 
+        from services.transcription import TranscriptionService
         service = TranscriptionService(
             model_name="large-v3",
             device="cuda",
@@ -95,35 +92,43 @@ class TestTranscriptionServiceInit:
         assert service.model_name == "large-v3"
         assert service.device == "cuda"
         assert service.compute_type == "float16"
-        mock_whisper_model_class.assert_called_with(
+        mock_faster_whisper.WhisperModel.assert_called_with(
             "large-v3", device="cuda", compute_type="float16"
         )
 
-    def test_init_model_load_failure(self, mock_whisper_model_class):
+    def test_init_model_load_failure(self):
         """Test service handles model load failure gracefully."""
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-        from services.transcription import TranscriptionService
+        mock_faster_whisper.WhisperModel.side_effect = RuntimeError("Failed to load model")
 
-        mock_whisper_model_class.side_effect = RuntimeError("Failed to load model")
+        from services.transcription import TranscriptionService
 
         with pytest.raises(RuntimeError, match="Failed to load model"):
             TranscriptionService()
+
+        # Reset side_effect for other tests
+        mock_faster_whisper.WhisperModel.side_effect = None
 
 
 class TestTranscriptionServiceTranscribe:
     """Tests for transcription functionality."""
 
-    @pytest.mark.asyncio
-    async def test_transcribe_audio_with_timestamps(
-        self, transcription_service, mock_whisper_model, temp_dir
-    ):
+    @pytest.mark.anyio
+    async def test_transcribe_audio_with_timestamps(self, temp_dir):
         """Test transcription returns TranscriptResult with segments."""
+        # Create mock segments
+        segments, info = create_mock_transcription_result()
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (iter(segments), info)
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         # Create a dummy audio file
         audio_file = temp_dir / "test.wav"
         audio_file.write_bytes(b"dummy audio data")
 
-        result = await transcription_service.transcribe_audio(
+        result = await service.transcribe_audio(
             str(audio_file), with_timestamps=True
         )
 
@@ -143,32 +148,58 @@ class TestTranscriptionServiceTranscribe:
         assert result.segments[1].end == 10.0
         assert result.segments[1].text == "This is the second segment."
 
-    @pytest.mark.asyncio
-    async def test_transcribe_audio_without_timestamps(
-        self, transcription_service, temp_dir
-    ):
+    @pytest.mark.anyio
+    async def test_transcribe_audio_without_timestamps(self, temp_dir):
         """Test transcription returns just text when with_timestamps=False."""
+        segments, info = create_mock_transcription_result()
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (iter(segments), info)
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         audio_file = temp_dir / "test.wav"
         audio_file.write_bytes(b"dummy audio data")
 
-        result = await transcription_service.transcribe_audio(
+        result = await service.transcribe_audio(
             str(audio_file), with_timestamps=False
         )
 
         assert isinstance(result, str)
         assert result == "Hello, this is a test. This is the second segment."
 
-    @pytest.mark.asyncio
-    async def test_transcribe_file_not_found(self, transcription_service):
+    @pytest.mark.anyio
+    async def test_transcribe_file_not_found(self):
         """Test transcription raises error for non-existent file."""
-        with pytest.raises(FileNotFoundError):
-            await transcription_service.transcribe_audio("/nonexistent/file.wav")
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
 
-    @pytest.mark.asyncio
-    async def test_transcribe_video_file(
-        self, transcription_service, mock_whisper_model, temp_dir
-    ):
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
+        with pytest.raises(FileNotFoundError):
+            await service.transcribe_audio("/nonexistent/file.wav")
+
+    @pytest.mark.anyio
+    async def test_transcribe_video_file(self, temp_dir):
         """Test transcription of video file extracts audio first."""
+        mock_segment = MagicMock()
+        mock_segment.start = 0.0
+        mock_segment.end = 5.0
+        mock_segment.text = " Test text."
+
+        mock_info = MagicMock()
+        mock_info.duration = 5.0
+        mock_info.language = "en"
+
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = (iter([mock_segment]), mock_info)
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         video_file = temp_dir / "test.mp4"
         video_file.write_bytes(b"dummy video data")
 
@@ -178,7 +209,7 @@ class TestTranscriptionServiceTranscribe:
 
             # The file will be deleted by cleanup, so we need to create it
             with patch.object(Path, "unlink"):
-                result = await transcription_service.transcribe_audio(str(video_file))
+                result = await service.transcribe_audio(str(video_file))
 
                 # Verify ffmpeg was called for audio extraction
                 mock_run.assert_called_once()
@@ -191,36 +222,54 @@ class TestTranscriptionServiceTranscribe:
 class TestTranscriptionServiceHelpers:
     """Tests for helper methods."""
 
-    def test_is_video_file(self, transcription_service):
+    def test_is_video_file(self):
         """Test video file detection."""
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm", ".m4v"]
 
         for ext in video_extensions:
             path = Path(f"/test/video{ext}")
-            assert transcription_service._is_video_file(path) is True
+            assert service._is_video_file(path) is True
 
         # Non-video files
         non_video = [".mp3", ".wav", ".txt", ".pdf"]
         for ext in non_video:
             path = Path(f"/test/file{ext}")
-            assert transcription_service._is_video_file(path) is False
+            assert service._is_video_file(path) is False
 
-    def test_is_audio_file(self, transcription_service):
+    def test_is_audio_file(self):
         """Test audio file detection."""
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         audio_extensions = [".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"]
 
         for ext in audio_extensions:
             path = Path(f"/test/audio{ext}")
-            assert transcription_service._is_audio_file(path) is True
+            assert service._is_audio_file(path) is True
 
         # Non-audio files
         non_audio = [".mp4", ".txt", ".pdf"]
         for ext in non_audio:
             path = Path(f"/test/file{ext}")
-            assert transcription_service._is_audio_file(path) is False
+            assert service._is_audio_file(path) is False
 
-    def test_is_supported_file(self, transcription_service):
+    def test_is_supported_file(self):
         """Test supported file detection."""
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         # Supported files
         supported = [
             "/test/video.mp4",
@@ -229,26 +278,32 @@ class TestTranscriptionServiceHelpers:
             "/test/audio.wav"
         ]
         for path in supported:
-            assert transcription_service.is_supported_file(path) is True
+            assert service.is_supported_file(path) is True
 
         # Unsupported files
         unsupported = ["/test/doc.txt", "/test/data.json", "/test/image.jpg"]
         for path in unsupported:
-            assert transcription_service.is_supported_file(path) is False
+            assert service.is_supported_file(path) is False
 
 
 class TestAudioExtraction:
     """Tests for audio extraction from video."""
 
-    def test_extract_audio_success(self, transcription_service, temp_dir):
+    def test_extract_audio_success(self, temp_dir):
         """Test successful audio extraction from video."""
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
         video_file = temp_dir / "test.mp4"
         video_file.write_bytes(b"dummy video data")
 
         with patch("services.transcription.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
-            audio_path = transcription_service._extract_audio_from_video(video_file)
+            audio_path = service._extract_audio_from_video(video_file)
 
             # Verify ffmpeg was called with correct arguments
             mock_run.assert_called_once()
@@ -268,9 +323,13 @@ class TestAudioExtraction:
             # Cleanup
             Path(audio_path).unlink(missing_ok=True)
 
-    def test_extract_audio_ffmpeg_failure(self, transcription_service, temp_dir):
+    def test_extract_audio_ffmpeg_failure(self, temp_dir):
         """Test audio extraction handles ffmpeg failure."""
-        import subprocess
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
 
         video_file = temp_dir / "test.mp4"
         video_file.write_bytes(b"dummy video data")
@@ -281,27 +340,42 @@ class TestAudioExtraction:
             )
 
             with pytest.raises(RuntimeError, match="Audio extraction failed"):
-                transcription_service._extract_audio_from_video(video_file)
+                service._extract_audio_from_video(video_file)
 
 
 class TestCudaDetection:
     """Tests for CUDA availability detection."""
 
-    def test_cuda_available_with_torch(self, transcription_service):
+    def test_cuda_available_with_torch(self):
         """Test CUDA detection when torch is available."""
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
+        # Test when torch.cuda.is_available() returns True
         with patch.dict("sys.modules", {"torch": MagicMock()}):
-            import sys
             mock_torch = sys.modules["torch"]
             mock_torch.cuda.is_available.return_value = True
-
-            assert transcription_service._cuda_available() is True
+            assert service._cuda_available() is True
 
             mock_torch.cuda.is_available.return_value = False
-            assert transcription_service._cuda_available() is False
+            assert service._cuda_available() is False
 
-    def test_cuda_available_without_torch(self, transcription_service):
+    def test_cuda_available_without_torch(self):
         """Test CUDA detection returns False when torch not installed."""
-        with patch.dict("sys.modules", {"torch": None}):
-            # Import error should return False
-            with patch("builtins.__import__", side_effect=ImportError):
-                assert transcription_service._cuda_available() is False
+        mock_model = MagicMock()
+        mock_faster_whisper.WhisperModel.return_value = mock_model
+
+        from services.transcription import TranscriptionService
+        service = TranscriptionService()
+
+        # Simulate torch not being installed
+        def import_error_side_effect(name, *args, **kwargs):
+            if name == "torch":
+                raise ImportError("No module named 'torch'")
+            return MagicMock()
+
+        with patch("builtins.__import__", side_effect=import_error_side_effect):
+            assert service._cuda_available() is False

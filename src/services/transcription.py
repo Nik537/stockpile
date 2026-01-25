@@ -1,4 +1,4 @@
-"""Audio transcription service using OpenAI Whisper."""
+"""Audio transcription service using Whisper (faster-whisper or openai-whisper)."""
 
 import asyncio
 import logging
@@ -7,40 +7,75 @@ import tempfile
 from pathlib import Path
 from typing import Union
 
-import whisper
-
 from models.broll_need import TranscriptResult, TranscriptSegment
+from utils.config import get_supported_audio_formats, get_supported_video_formats
 from utils.retry import retry_api_call, retry_file_operation
-from utils.config import get_supported_video_formats, get_supported_audio_formats
 
 logger = logging.getLogger(__name__)
 
+# Try to import faster-whisper first, fall back to regular whisper
+_USE_FASTER_WHISPER = False
+try:
+    from faster_whisper import WhisperModel
+    _USE_FASTER_WHISPER = True
+    logger.debug("Using faster-whisper backend")
+except ImportError:
+    import whisper
+    logger.debug("Using openai-whisper backend (faster-whisper not available)")
+
 
 class TranscriptionService:
-    """Service for transcribing audio content using OpenAI Whisper."""
+    """Service for transcribing audio content using Whisper."""
 
-    def __init__(self, model_name: str = "base"):
+    def __init__(
+        self,
+        model_name: str = "base",
+        device: str = "auto",
+        compute_type: str = "auto",
+    ):
         self.model_name = model_name
+        self.device = device
+        self.compute_type = compute_type
         self.model = None
         self._transcription_lock = asyncio.Lock()
+        self._use_faster_whisper = _USE_FASTER_WHISPER
         self._load_model()
 
     def _load_model(self) -> None:
         try:
             logger.info(f"Loading Whisper model: {self.model_name}")
-            self.model = whisper.load_model(self.model_name)
 
-            is_multilingual = (
-                "multilingual" if self.model.is_multilingual else "English-only"
-            )
-            param_count = sum(p.numel() for p in self.model.parameters())
-            logger.info(
-                f"Loaded {is_multilingual} Whisper model with {param_count:,} parameters"
-            )
+            if self._use_faster_whisper:
+                self.model = WhisperModel(
+                    self.model_name,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                )
+                logger.info(
+                    f"Loaded faster-whisper model {self.model_name} "
+                    f"(device={self.device}, compute_type={self.compute_type})"
+                )
+            else:
+                self.model = whisper.load_model(self.model_name)
+                is_multilingual = (
+                    "multilingual" if self.model.is_multilingual else "English-only"
+                )
+                param_count = sum(p.numel() for p in self.model.parameters())
+                logger.info(
+                    f"Loaded {is_multilingual} Whisper model with {param_count:,} parameters"
+                )
 
         except Exception as e:
             logger.error(f"Failed to load Whisper model '{self.model_name}': {e}")
             raise
+
+    def _cuda_available(self) -> bool:
+        """Check if CUDA is available for GPU acceleration."""
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except ImportError:
+            return False
 
     @retry_api_call(max_retries=3, base_delay=2.0)
     async def transcribe_audio(
@@ -95,57 +130,100 @@ class TranscriptionService:
             if not self.model:
                 raise ValueError("Whisper model not loaded")
 
-            result = self.model.transcribe(
-                str(audio_path),
-                language=None,
-                task="transcribe",
-                fp16=False,
-                verbose=False,
-            )
-
-            # Extract text
-            text = result.get("text", "")
-            if not isinstance(text, str):
-                raise ValueError("Transcription result is not a string")
-
-            # Extract segments with timing info
-            raw_segments = result.get("segments", [])
-            segments = []
-            for seg in raw_segments:
-                segments.append(
-                    TranscriptSegment(
-                        start=float(seg.get("start", 0)),
-                        end=float(seg.get("end", 0)),
-                        text=str(seg.get("text", "")).strip(),
-                    )
-                )
-
-            # Get duration (last segment end time, or explicit duration if available)
-            duration = 0.0
-            if segments:
-                duration = segments[-1].end
-            # Some Whisper versions include duration directly
-            if "duration" in result:
-                duration = float(result["duration"])
-
-            # Get detected language
-            language = result.get("language")
-
-            logger.info(
-                f"Transcription complete: {len(segments)} segments, "
-                f"{duration:.1f}s duration, language: {language}"
-            )
-
-            return TranscriptResult(
-                text=text.strip(),
-                segments=segments,
-                duration=duration,
-                language=language,
-            )
+            if self._use_faster_whisper:
+                return self._transcribe_faster_whisper(audio_path)
+            else:
+                return self._transcribe_openai_whisper(audio_path)
 
         except Exception as e:
             logger.error(f"Whisper transcription failed: {e}")
             raise
+
+    def _transcribe_faster_whisper(self, audio_path: str) -> TranscriptResult:
+        """Transcribe using faster-whisper backend."""
+        # faster-whisper returns a generator of segments and info
+        segments_generator, info = self.model.transcribe(audio_path)
+
+        # Collect segments from generator
+        segments = []
+        text_parts = []
+        for seg in segments_generator:
+            segments.append(
+                TranscriptSegment(
+                    start=float(seg.start),
+                    end=float(seg.end),
+                    text=str(seg.text).strip(),
+                )
+            )
+            text_parts.append(str(seg.text).strip())
+
+        # Combine all segment texts
+        text = " ".join(text_parts)
+
+        # Get duration and language from info
+        duration = float(info.duration)
+        language = info.language
+
+        logger.info(
+            f"Transcription complete: {len(segments)} segments, "
+            f"{duration:.1f}s duration, language: {language}"
+        )
+
+        return TranscriptResult(
+            text=text.strip(),
+            segments=segments,
+            duration=duration,
+            language=language,
+        )
+
+    def _transcribe_openai_whisper(self, audio_path: str) -> TranscriptResult:
+        """Transcribe using openai-whisper backend."""
+        result = self.model.transcribe(
+            str(audio_path),
+            language=None,
+            task="transcribe",
+            fp16=False,
+            verbose=False,
+        )
+
+        # Extract text
+        text = result.get("text", "")
+        if not isinstance(text, str):
+            raise ValueError("Transcription result is not a string")
+
+        # Extract segments with timing info
+        raw_segments = result.get("segments", [])
+        segments = []
+        for seg in raw_segments:
+            segments.append(
+                TranscriptSegment(
+                    start=float(seg.get("start", 0)),
+                    end=float(seg.get("end", 0)),
+                    text=str(seg.get("text", "")).strip(),
+                )
+            )
+
+        # Get duration (last segment end time, or explicit duration if available)
+        duration = 0.0
+        if segments:
+            duration = segments[-1].end
+        if "duration" in result:
+            duration = float(result["duration"])
+
+        # Get detected language
+        language = result.get("language")
+
+        logger.info(
+            f"Transcription complete: {len(segments)} segments, "
+            f"{duration:.1f}s duration, language: {language}"
+        )
+
+        return TranscriptResult(
+            text=text.strip(),
+            segments=segments,
+            duration=duration,
+            language=language,
+        )
 
     @retry_file_operation(max_retries=3, base_delay=1.0)
     def _extract_audio_from_video(self, video_path: Path) -> str:

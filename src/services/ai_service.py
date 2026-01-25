@@ -486,7 +486,7 @@ RULES
 7. visual_style: One of "cinematic", "documentary", "raw", "vlog", or null if any
 8. time_of_day: "golden hour", "night", "day", "morning", or null if doesn't matter
 9. movement: "static", "pan", "drone", "handheld", "tracking", or null if any
-10. description: What the editor should see (under 40 characters)
+10. description: What the editor should see (40-55 characters, be descriptive)
 11. context: 10-20 words summary from the transcript around this moment
 12. suggested_duration: How long the B-roll should play (4-15 seconds)
 13. original_context: CRITICAL - The EXACT transcript segment (50-150 chars) that this B-roll supports.
