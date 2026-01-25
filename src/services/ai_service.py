@@ -6,14 +6,11 @@ S2 IMPROVEMENT: AI Response Caching
 - Increment PROMPT_VERSIONS when prompts change to invalidate cache
 """
 
-import hashlib
 import json
 import logging
-from typing import List, Optional
+from typing import Optional
 
-from google.genai import Client
-from google.genai import types
-
+from google.genai import Client, types
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
 from models.user_preferences import GeneratedQuestion, UserPreferences
 from models.video import ScoredVideo, VideoResult
@@ -28,8 +25,8 @@ logger = logging.getLogger(__name__)
 PROMPT_VERSIONS = {
     "extract_search_phrases": "v6",
     "generate_context_questions": "v1",
-    "plan_broll_needs": "v2",  # B-roll planning with enhanced fields
-    "evaluate_videos": "v2",  # Video evaluation with content filter
+    "plan_broll_needs": "v3",  # B-roll planning with original_context and required_elements
+    "evaluate_videos": "v4",  # Video evaluation with semantic context scoring + negative examples
 }
 
 
@@ -74,14 +71,12 @@ class AIService:
         self.cache = cache
 
         if cache:
-            logger.info(
-                f"Initialized AI service with model: {model_name} (caching enabled)"
-            )
+            logger.info(f"Initialized AI service with model: {model_name} (caching enabled)")
         else:
             logger.info(f"Initialized AI service with model: {model_name}")
 
     @retry_api_call(max_retries=5, base_delay=2.0)
-    def extract_search_phrases(self, transcript: str) -> List[str]:
+    def extract_search_phrases(self, transcript: str) -> list[str]:
         """Extract B-roll search phrases from transcript using Gemini.
 
         Args:
@@ -208,7 +203,7 @@ TRANSCRIPT ↓
         self,
         transcript_result: TranscriptResult,
         max_questions: int = 3,
-    ) -> List[GeneratedQuestion]:
+    ) -> list[GeneratedQuestion]:
         """Generate context-aware questions based on transcript content.
 
         Analyzes the transcript to generate relevant questions about B-roll preferences
@@ -317,9 +312,13 @@ RULES:
                         question_id=str(item.get("question_id", f"q{len(questions) + 1}")),
                         question_text=str(item.get("question_text", "")).strip(),
                         preference_field=str(item.get("preference_field", "custom_notes")).strip(),
-                        options=item.get("options") if isinstance(item.get("options"), list) else None,
+                        options=item.get("options")
+                        if isinstance(item.get("options"), list)
+                        else None,
                         allows_custom=bool(item.get("allows_custom", True)),
-                        context_reason=str(item.get("context_reason", "")).strip() if item.get("context_reason") else None,
+                        context_reason=str(item.get("context_reason", "")).strip()
+                        if item.get("context_reason")
+                        else None,
                     )
 
                     if question.question_text:  # Only add if question text is not empty
@@ -385,9 +384,7 @@ RULES:
         # Include user preferences hash if present to ensure different preferences = different cache
         user_prefs_hash = ""
         if user_preferences and user_preferences.has_preferences():
-            user_prefs_hash = compute_content_hash(
-                user_preferences.to_prompt_instructions()
-            )[:16]
+            user_prefs_hash = compute_content_hash(user_preferences.to_prompt_instructions())[:16]
 
         cache_key_content = (
             f"{PROMPT_VERSIONS['plan_broll_needs']}|"
@@ -422,18 +419,21 @@ RULES:
         timestamped_transcript = transcript_result.format_with_timestamps()
 
         # Q2 ENHANCEMENT: Enhanced planning prompt with alternate searches, negatives, and visual metadata
-        prompt = f"""You are B-RollPlanner v2 (Enhanced).
+        # Fix 4: Added original_context and required_elements for semantic context preservation
+        prompt = f"""You are B-RollPlanner v3 (Semantic Context Aware).
 
 GOAL
 Identify specific moments in this video that need B-roll footage. You must identify approximately {total_clips_needed} B-roll opportunities spread across the video.
 
-For each moment, provide ENHANCED search metadata:
+For each moment, provide ENHANCED search metadata AND semantic context:
 - Primary search phrase (most specific)
 - 2-3 alternate search phrases (synonyms, related terms)
 - Negative keywords (what should NOT appear in results)
 - Visual style preference (cinematic, documentary, raw, vlog)
 - Time of day if relevant (golden hour, night, day)
 - Camera movement preference (static, pan, drone, handheld, tracking)
+- FULL ORIGINAL CONTEXT from transcript (50-150 characters)
+- REQUIRED VISUAL ELEMENTS that must appear in the clip (3-6 specific items)
 
 INPUT
 - Source video duration: {transcript_result.duration:.1f} seconds ({duration_minutes:.1f} minutes)
@@ -450,19 +450,21 @@ Return ONLY a JSON array with this exact structure:
 [
   {{
     "timestamp": 30.5,
-    "search_phrase": "city skyline aerial drone golden hour",
-    "description": "Establishing shot for urban segment",
-    "context": "talking about life in the city and how it changed",
+    "search_phrase": "coffee shop interior morning busy",
+    "description": "Busy cafe scene with remote workers",
+    "context": "talking about remote work culture",
+    "original_context": "The coffee shop was packed with remote workers typing on laptops during the morning rush, everyone with their headphones in, completely focused on their screens.",
+    "required_elements": ["people", "laptops", "coffee shop interior", "busy atmosphere", "morning light"],
     "suggested_duration": 5,
     "alternate_searches": [
-      "urban landscape drone sunset",
-      "downtown buildings aerial view",
-      "metropolitan skyline from above"
+      "cafe coworking space laptops",
+      "remote workers coffee shop",
+      "people working laptops cafe"
     ],
-    "negative_keywords": ["night", "rain", "text overlay", "logo", "watermark"],
+    "negative_keywords": ["empty", "night", "text overlay", "logo", "watermark"],
     "visual_style": "cinematic",
-    "time_of_day": "golden hour",
-    "movement": "slow drone push-in"
+    "time_of_day": "morning",
+    "movement": "slow pan"
   }}
 ]
 
@@ -482,14 +484,22 @@ RULES
    - Always include: "watermark", "logo", "text overlay" for stock footage
    - Add content-specific exclusions based on context
 7. visual_style: One of "cinematic", "documentary", "raw", "vlog", or null if any
-8. time_of_day: "golden hour", "night", "day", or null if doesn't matter
+8. time_of_day: "golden hour", "night", "day", "morning", or null if doesn't matter
 9. movement: "static", "pan", "drone", "handheld", "tracking", or null if any
 10. description: What the editor should see (under 40 characters)
-11. context: 10-20 words from the transcript around this moment
+11. context: 10-20 words summary from the transcript around this moment
 12. suggested_duration: How long the B-roll should play (4-15 seconds)
-13. NO duplicates or very similar search phrases
-14. Return ONLY the JSON array, no markdown, no extra text
-{f'15. CONTENT FILTER: {content_filter}' if content_filter else ''}
+13. original_context: CRITICAL - The EXACT transcript segment (50-150 chars) that this B-roll supports.
+    - Copy the actual words from the transcript around this timestamp
+    - This preserves the full meaning for downstream AI evaluation
+    - Example: "More and more people are working from coffee shops and co-working spaces"
+14. required_elements: 3-6 SPECIFIC visual elements that MUST appear in the selected clip
+    - Be concrete: "laptops" not "technology", "morning light" not "lighting"
+    - Include people, objects, settings, atmosphere, lighting as applicable
+    - These will be used to filter clips during evaluation
+15. NO duplicates or very similar search phrases
+16. Return ONLY the JSON array, no markdown, no extra text
+{f'17. CONTENT FILTER: {content_filter}' if content_filter else ''}
 
 {self._format_user_preferences(user_preferences) if user_preferences and user_preferences.has_preferences() else ''}"""
 
@@ -551,7 +561,9 @@ RULES
                     # Q2 ENHANCEMENT: Parse enhanced metadata fields
                     alternate_searches = item.get("alternate_searches", [])
                     if isinstance(alternate_searches, list):
-                        alternate_searches = [str(s).strip().lower() for s in alternate_searches if s]
+                        alternate_searches = [
+                            str(s).strip().lower() for s in alternate_searches if s
+                        ]
                     else:
                         alternate_searches = []
 
@@ -573,6 +585,14 @@ RULES
                     if movement:
                         movement = str(movement).strip().lower()
 
+                    # Fix 4: Parse semantic context preservation fields
+                    original_context = str(item.get("original_context", "")).strip()
+                    required_elements = item.get("required_elements", [])
+                    if isinstance(required_elements, list):
+                        required_elements = [str(e).strip().lower() for e in required_elements if e]
+                    else:
+                        required_elements = []
+
                     # Validate required fields
                     if not search_phrase or not description:
                         logger.warning(f"Skipping B-roll need with missing fields: {item}")
@@ -590,6 +610,9 @@ RULES
                         description=description,
                         context=context,
                         suggested_duration=suggested_duration,
+                        # Fix 4: Semantic context preservation fields
+                        original_context=original_context,
+                        required_elements=required_elements,
                         # Q2 ENHANCEMENT: Enhanced metadata fields
                         alternate_searches=alternate_searches,
                         negative_keywords=negative_keywords,
@@ -633,8 +656,8 @@ RULES
             raise
 
     def _apply_content_filter(
-        self, video_results: List[VideoResult], content_filter: str
-    ) -> List[VideoResult]:
+        self, video_results: list[VideoResult], content_filter: str
+    ) -> list[VideoResult]:
         """Apply content filter to remove videos based on title/description keywords.
 
         Args:
@@ -650,18 +673,50 @@ RULES
         exclude_keywords = []
 
         if "no women" in filter_lower or "men only" in filter_lower:
-            exclude_keywords.extend([
-                "woman", "women", "female", "girl", "girls", "lady", "ladies",
-                "she ", "her ", "mom", "mother", "daughter", "wife", "girlfriend",
-                "actress", "businesswoman", "sportswoman"
-            ])
+            exclude_keywords.extend(
+                [
+                    "woman",
+                    "women",
+                    "female",
+                    "girl",
+                    "girls",
+                    "lady",
+                    "ladies",
+                    "she ",
+                    "her ",
+                    "mom",
+                    "mother",
+                    "daughter",
+                    "wife",
+                    "girlfriend",
+                    "actress",
+                    "businesswoman",
+                    "sportswoman",
+                ]
+            )
 
         if "no men" in filter_lower or "women only" in filter_lower:
-            exclude_keywords.extend([
-                "man ", "men ", " male", "boy ", "boys", " guy", "guys",
-                "he ", "his ", "dad", "father", "son ", "husband", "boyfriend",
-                "actor ", "businessman", "sportsman"
-            ])
+            exclude_keywords.extend(
+                [
+                    "man ",
+                    "men ",
+                    " male",
+                    "boy ",
+                    "boys",
+                    " guy",
+                    "guys",
+                    "he ",
+                    "his ",
+                    "dad",
+                    "father",
+                    "son ",
+                    "husband",
+                    "boyfriend",
+                    "actor ",
+                    "businessman",
+                    "sportsman",
+                ]
+            )
 
         if not exclude_keywords:
             return video_results
@@ -685,12 +740,12 @@ RULES
     def evaluate_videos(
         self,
         search_phrase: str,
-        video_results: List[VideoResult],
+        video_results: list[VideoResult],
         content_filter: str = None,
         transcript_segment: str = None,
         broll_need: Optional[BRollNeed] = None,
         user_preferences: Optional[UserPreferences] = None,
-    ) -> List[ScoredVideo]:
+    ) -> list[ScoredVideo]:
         """Evaluate YouTube videos for B-roll suitability using Gemini.
 
         S2 IMPROVEMENT: Results are cached by video list hash for 100% savings on re-runs.
@@ -724,9 +779,7 @@ RULES
             video_results = filtered_results
 
             if not video_results:
-                logger.info(
-                    f"No videos remaining after content filter for: {search_phrase}"
-                )
+                logger.info(f"No videos remaining after content filter for: {search_phrase}")
                 return []
 
         # S2 IMPROVEMENT: Generate cache key from video list and parameters
@@ -777,8 +830,11 @@ RULES
         )
 
         # Q4 IMPROVEMENT: Use enhanced prompt if BRollNeed metadata or user preferences available
+        # FIX 1 & 3: Also use enhanced prompt when original_context or required_elements are present
         has_context = (
             (broll_need and broll_need.has_enhanced_metadata())
+            or (broll_need and broll_need.original_context)
+            or (broll_need and broll_need.required_elements)
             or transcript_segment
             or (user_preferences and user_preferences.has_preferences())
         )
@@ -845,18 +901,14 @@ Return only the JSON array, nothing else."""
                 if not text:
                     logger.error("AI response is empty")
                     return []
-                matches = re.findall(
-                    r'"video_id":\s*"([^"]+)".*?"score":\s*(\d+)', text
-                )
+                matches = re.findall(r'"video_id":\s*"([^"]+)".*?"score":\s*(\d+)', text)
                 scored_results = [
                     {"video_id": vid_id, "score": int(score)}
                     for vid_id, score in matches
                     if int(score) >= 6
                 ]
                 if not scored_results:
-                    logger.error(
-                        "Could not extract any valid video evaluations from response"
-                    )
+                    logger.error("Could not extract any valid video evaluations from response")
                     return []
 
             # Validate response format
@@ -869,11 +921,7 @@ Return only the JSON array, nothing else."""
             video_lookup = {v.video_id: v for v in video_results}
 
             for item in scored_results:
-                if (
-                    not isinstance(item, dict)
-                    or "video_id" not in item
-                    or "score" not in item
-                ):
+                if not isinstance(item, dict) or "video_id" not in item or "score" not in item:
                     logger.warning(f"Invalid scored video format: {item}")
                     continue
 
@@ -903,16 +951,9 @@ Return only the JSON array, nothing else."""
             # S2 IMPROVEMENT: Cache the successful response
             if self.cache and scored_videos:
                 # Cache the scored results as JSON for later retrieval
-                cache_data = [
-                    {"video_id": sv.video_id, "score": sv.score}
-                    for sv in scored_videos
-                ]
-                self.cache.set(
-                    cache_key_content, self.model_name, json.dumps(cache_data)
-                )
-                logger.debug(
-                    f"[CACHE SAVE] Video evaluation cached ({len(scored_videos)} results)"
-                )
+                cache_data = [{"video_id": sv.video_id, "score": sv.score} for sv in scored_videos]
+                self.cache.set(cache_key_content, self.model_name, json.dumps(cache_data))
+                logger.debug(f"[CACHE SAVE] Video evaluation cached ({len(scored_videos)} results)")
 
             logger.info(
                 f"Evaluated videos for '{search_phrase}': "
@@ -970,7 +1011,7 @@ Apply these preferences when selecting B-roll:
         content = f"{transcript_result.text}|{transcript_result.duration}"
         return compute_content_hash(content)[:32]
 
-    def _generate_video_list_hash(self, video_results: List[VideoResult]) -> str:
+    def _generate_video_list_hash(self, video_results: list[VideoResult]) -> str:
         """Generate a hash of video list for cache keying.
 
         Args:
@@ -984,9 +1025,7 @@ Apply these preferences when selecting B-roll:
         content = "|".join(video_ids)
         return compute_content_hash(content)[:32]
 
-    def _parse_broll_needs_from_data(
-        self, needs_data: list, duration: float
-    ) -> List[BRollNeed]:
+    def _parse_broll_needs_from_data(self, needs_data: list, duration: float) -> list[BRollNeed]:
         """Parse B-roll needs from cached JSON data.
 
         Args:
@@ -1008,6 +1047,39 @@ Apply these preferences when selecting B-roll:
                 context = str(item.get("context", "")).strip()
                 suggested_duration = float(item.get("suggested_duration", 5.0))
 
+                # Parse Q2 enhanced metadata fields
+                alternate_searches = item.get("alternate_searches", [])
+                if isinstance(alternate_searches, list):
+                    alternate_searches = [str(s).strip().lower() for s in alternate_searches if s]
+                else:
+                    alternate_searches = []
+
+                negative_keywords = item.get("negative_keywords", [])
+                if isinstance(negative_keywords, list):
+                    negative_keywords = [str(k).strip().lower() for k in negative_keywords if k]
+                else:
+                    negative_keywords = []
+
+                visual_style = item.get("visual_style")
+                if visual_style:
+                    visual_style = str(visual_style).strip().lower()
+
+                time_of_day = item.get("time_of_day")
+                if time_of_day:
+                    time_of_day = str(time_of_day).strip().lower()
+
+                movement = item.get("movement")
+                if movement:
+                    movement = str(movement).strip().lower()
+
+                # Fix 4: Parse semantic context preservation fields
+                original_context = str(item.get("original_context", "")).strip()
+                required_elements = item.get("required_elements", [])
+                if isinstance(required_elements, list):
+                    required_elements = [str(e).strip().lower() for e in required_elements if e]
+                else:
+                    required_elements = []
+
                 # Validate required fields
                 if not search_phrase or not description:
                     continue
@@ -1024,6 +1096,15 @@ Apply these preferences when selecting B-roll:
                     description=description,
                     context=context,
                     suggested_duration=suggested_duration,
+                    # Fix 4: Semantic context preservation fields
+                    original_context=original_context,
+                    required_elements=required_elements,
+                    # Q2 Enhanced metadata fields
+                    alternate_searches=alternate_searches,
+                    negative_keywords=negative_keywords,
+                    visual_style=visual_style,
+                    time_of_day=time_of_day,
+                    movement=movement,
                 )
                 needs.append(need)
 
@@ -1036,8 +1117,8 @@ Apply these preferences when selecting B-roll:
         return needs
 
     def filter_by_negative_keywords(
-        self, video_results: List[VideoResult], negative_keywords: List[str]
-    ) -> List[VideoResult]:
+        self, video_results: list[VideoResult], negative_keywords: list[str]
+    ) -> list[VideoResult]:
         """Filter video results by negative keywords.
 
         Part of Q2 Enhanced Search Phrase Generation improvement.
@@ -1063,9 +1144,7 @@ Apply these preferences when selecting B-roll:
             if not has_negative:
                 filtered.append(video)
             else:
-                logger.debug(
-                    f"Filtered out video (negative keyword): {video.title[:50]}..."
-                )
+                logger.debug(f"Filtered out video (negative keyword): {video.title[:50]}...")
 
         if len(filtered) < len(video_results):
             logger.info(
@@ -1073,6 +1152,39 @@ Apply these preferences when selecting B-roll:
             )
 
         return filtered
+
+    def _generate_negative_examples(self, broll_need: BRollNeed) -> str:
+        """Generate examples of videos to reject based on context and required elements.
+
+        FIX 5: Prevents false positive matches by showing AI what NOT to match.
+        This helps prevent high-quality generic clips from scoring well when they
+        don't match the specific context.
+
+        Args:
+            broll_need: BRollNeed with original_context and required_elements
+
+        Returns:
+            Formatted string with rejection patterns, or empty string if insufficient data
+        """
+        if not broll_need.original_context or not broll_need.required_elements:
+            return ""
+
+        # Build negative examples based on missing each required element
+        examples = ["REJECT these types of videos:"]
+
+        # For each required element, describe what a video missing it would look like
+        for element in broll_need.required_elements[:4]:  # Limit to 4 examples
+            examples.append(f"- Video missing '{element}': Does not show {element}")
+
+        # Add general rejection patterns based on context
+        examples.append(
+            "- Video showing opposite of context: e.g., if context mentions 'busy', reject 'empty'"
+        )
+        examples.append(
+            "- Video matching keywords but wrong meaning: generic stock footage unrelated to specific context"
+        )
+
+        return "\n".join(examples)
 
     def _build_enhanced_evaluation_prompt(
         self,
@@ -1091,6 +1203,11 @@ Apply these preferences when selecting B-roll:
         more relevant scoring based on what the narrator is discussing and user's
         style preferences.
 
+        FIX 1 & 3: Enhanced to use original_context and required_elements from BRollNeed
+        for semantic-aware scoring that prioritizes meaning over keywords.
+
+        FIX 5: Now includes negative examples to prevent false positive matches.
+
         Args:
             search_phrase: The search phrase used to find videos
             results_text: Formatted text of video results
@@ -1101,6 +1218,40 @@ Apply these preferences when selecting B-roll:
         Returns:
             Context-aware evaluator prompt string
         """
+        # FIX 1: Build original context section from BRollNeed (highest priority)
+        original_context_section = ""
+        if broll_need and broll_need.original_context:
+            original_context_section = f"""
+ORIGINAL CONTEXT (from transcript - THIS IS THE PRIMARY SCORING CRITERION):
+"{broll_need.original_context}"
+
+Score based on match to ORIGINAL CONTEXT above, not just the search phrase.
+The search phrase is derived from this context - but videos must match the MEANING, not just keywords.
+"""
+
+        # FIX 3: Build required elements section
+        required_elements_section = ""
+        if broll_need and broll_need.required_elements:
+            elements_list = "\n".join(f"- {elem}" for elem in broll_need.required_elements)
+            required_elements_section = f"""
+REQUIRED VISUAL ELEMENTS (must be present in the video):
+{elements_list}
+
+CRITICAL: A video that matches the search phrase but is MISSING more than 2 required elements
+should score 4 or lower. All required elements should ideally be present.
+"""
+
+        # FIX 5: Generate negative examples to prevent false positives
+        negative_examples_section = ""
+        if broll_need:
+            negative_examples = self._generate_negative_examples(broll_need)
+            if negative_examples:
+                negative_examples_section = f"""
+{negative_examples}
+
+If a video matches any of the REJECT patterns above, score it <=4 regardless of technical quality.
+"""
+
         # Build visual preference section from BRollNeed metadata
         visual_preferences = ""
         if broll_need and broll_need.has_enhanced_metadata():
@@ -1112,9 +1263,7 @@ Apply these preferences when selecting B-roll:
             if broll_need.movement:
                 prefs.append(f"- Preferred camera movement: {broll_need.movement}")
             if broll_need.negative_keywords:
-                prefs.append(
-                    f"- AVOID videos with: {', '.join(broll_need.negative_keywords)}"
-                )
+                prefs.append(f"- AVOID videos with: {', '.join(broll_need.negative_keywords)}")
 
             if prefs:
                 visual_preferences = (
@@ -1122,9 +1271,9 @@ Apply these preferences when selecting B-roll:
                     + "\n".join(prefs)
                 )
 
-        # Q4 IMPROVEMENT: Build transcript context section
+        # Fallback to transcript_segment if no original_context (backwards compatibility)
         context_section = ""
-        if transcript_segment:
+        if not original_context_section and transcript_segment:
             context_section = f"""
 TRANSCRIPT CONTEXT (what is being discussed at this moment):
 "{transcript_segment[:300]}"
@@ -1132,7 +1281,7 @@ TRANSCRIPT CONTEXT (what is being discussed at this moment):
 Consider: Does the video match the TOPIC and TONE of what's being discussed?
 """
 
-        # Q4 IMPROVEMENT: Build user preferences section
+        # Build user preferences section
         user_prefs_section = ""
         if user_preferences and user_preferences.has_preferences():
             prefs_text = user_preferences.to_prompt_instructions()
@@ -1141,10 +1290,14 @@ USER PREFERENCES (apply these as scoring criteria):
 {prefs_text}
 """
 
-        return f"""You are B-Roll Evaluator v3 (Context-Aware). Select the most visually relevant videos for professional B-roll.
+        return f"""You are B-Roll Evaluator v4 (Semantic Context-Aware).
 
-SEARCH PHRASE: "{search_phrase}"
+Your task is to evaluate videos based on how well they match the ORIGINAL CONTEXT from the transcript,
+not just the search keywords. A video can match keywords but completely miss the meaning.
 
+DERIVED SEARCH PHRASE: "{search_phrase}"
+{original_context_section}
+{required_elements_section}
 YOUTUBE RESULTS:
 ---
 {results_text}
@@ -1152,23 +1305,31 @@ YOUTUBE RESULTS:
 {visual_preferences}
 {context_section}
 {user_prefs_section}
-SCORING CRITERIA:
-1. **Relevance to transcript context** - Does the video match what's being discussed?
-2. **Match to visual style requirements** - Does it fit the preferred style/mood/era?
-3. **Technical quality indicators** - Resolution, stability, lighting, production value
-4. **Absence of unwanted elements** - No text overlays, logos, watermarks, branding
-5. **Emotional tone match** - Does the footage convey the right feeling?
+{negative_examples_section}
+SCORING WEIGHTS (total 100%):
+1. **SEMANTIC MATCH TO ORIGINAL CONTEXT (50%)** - Does the video capture the MEANING of what's being discussed?
+   - A video about "coffee shop remote work" should show people working, not just coffee being poured
+   - The visual must support the NARRATIVE, not just contain matching keywords
+2. **REQUIRED ELEMENTS PRESENT (20%)** - Are all the required visual elements visible?
+   - Check each required element against the video title/description
+   - Each missing element reduces the score significantly
+3. **TECHNICAL QUALITY (20%)** - Resolution, stability, lighting, production value
+   - Cinematic/stock footage quality preferred
+   - Avoid amateur, shaky, or poorly lit content
+4. **ABSENCE OF UNWANTED ELEMENTS (10%)** - No text overlays, logos, watermarks, branding
+   - Deduct points for vlogs, talk shows, tutorials, reaction videos
+   - Deduct points for prominent branding or advertising
+
+REJECTION CRITERIA (automatic low scores):
+- Score <=3: Video shows the OPPOSITE of what was described (e.g., search for "people working" but video shows empty office)
+- Score <=4: More than 2 required elements are missing from the video
+- Score <=5: Video matches keywords but completely misses the semantic meaning
 
 RATING SCALE:
-- 9-10: Perfect match for search phrase, context, AND all preferences
-- 7-8: Good match for search phrase and context, partial preference match
-- 6: Acceptable match for basic needs
+- 9-10: Perfect semantic match + all required elements + high quality + clean footage
+- 7-8: Good semantic match + most required elements present + decent quality
+- 6: Acceptable match but missing some elements or context alignment
 - <6: Not suitable (don't include in output)
-
-PENALTIES:
-- Videos mentioning negative keywords in title/description
-- Vlogs, talk shows, tutorials, reaction videos
-- Prominent branding or advertising content
 
 OUTPUT FORMAT:
 Return a JSON array of objects with video_id and score for videos scoring 6 or higher.

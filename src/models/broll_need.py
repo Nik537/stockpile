@@ -23,6 +23,32 @@ class BRollNeed:
     context: str  # Surrounding transcript text for reference
     suggested_duration: float = 5.0  # How long the B-roll should be (4-15s)
 
+    # Fix 4: Semantic context preservation fields
+    # These fields preserve the original transcript context throughout the entire pipeline,
+    # ensuring AI evaluators and clip extractors understand exactly what visual is needed.
+    original_context: str = ""
+    """Full transcript segment (100+ characters) that this B-roll supports.
+
+    Contains the exact words from the transcript that explain what visual is needed.
+    This context is passed to all downstream AI services (evaluation, extraction)
+    to ensure selected clips truly match the narrative meaning, not just keywords.
+
+    Example: "Today I want to talk about how remote work has transformed the way
+    we collaborate. More and more people are working from coffee shops and co-working
+    spaces, using their laptops to stay connected with teams across the globe."
+    """
+
+    required_elements: List[str] = field(default_factory=list)
+    """List of visual elements that MUST appear in the selected clip.
+
+    These are extracted from the transcript context by AI during planning,
+    representing concrete visual requirements that any matching clip must contain.
+    Used during video evaluation and clip extraction to filter out clips that
+    don't show the necessary visual elements.
+
+    Examples: ["people", "laptops", "morning light", "coffee shop interior"]
+    """
+
     # Q2 Enhanced search metadata fields
     alternate_searches: List[str] = field(default_factory=list)  # 2-3 synonym phrases
     negative_keywords: List[str] = field(default_factory=list)  # Terms to exclude

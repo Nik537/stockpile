@@ -105,6 +105,11 @@ def load_config() -> dict:
         "min_view_count": int(os.getenv("MIN_VIEW_COUNT", "0")),  # Minimum views for a video
         "max_prefilter_duration": int(os.getenv("MAX_PREFILTER_DURATION", "600")),  # Max video duration in seconds
         "blocked_title_keywords": os.getenv("BLOCKED_TITLE_KEYWORDS", "").split(",") if os.getenv("BLOCKED_TITLE_KEYWORDS") else [],
+        # Semantic matching settings
+        "semantic_match_threshold": float(os.getenv("SEMANTIC_MATCH_THRESHOLD", "0.9")),
+        "semantic_verification_enabled": os.getenv("SEMANTIC_VERIFICATION_ENABLED", "true").lower() == "true",
+        "reject_below_threshold": os.getenv("REJECT_BELOW_THRESHOLD", "true").lower() == "true",
+        "min_required_elements_match": float(os.getenv("MIN_REQUIRED_ELEMENTS_MATCH", "0.8")),
     }
 
     return config

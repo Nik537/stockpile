@@ -20,6 +20,7 @@ from services.drive_service import DriveService
 from services.file_monitor import FileMonitor
 from services.file_organizer import FileOrganizer
 from services.notification import NotificationService
+from services.semantic_verifier import SemanticVerifier
 from services.transcription import TranscriptionService
 from services.video_downloader import VideoDownloader
 from services.video_filter import VideoPreFilter
@@ -221,6 +222,22 @@ class BRollProcessor:
             f"max_duration={self.video_prefilter.filter_config.max_prefilter_duration}s, "
             f"blocked_keywords={len(self.video_prefilter.filter_config.blocked_title_keywords)}"
         )
+
+        # S6 IMPROVEMENT: Semantic verification for clip quality assurance
+        # Verifies extracted clips semantically match original transcript context
+        semantic_verification_enabled = self.config.get("semantic_verification_enabled", False)
+        if semantic_verification_enabled:
+            self.semantic_verifier = SemanticVerifier(
+                model_name=gemini_model,
+                api_key=gemini_api_key,
+            )
+            logger.info(
+                f"Semantic verification ENABLED: threshold={self.config.get('semantic_match_threshold', 0.9)}, "
+                f"reject_below_threshold={self.config.get('reject_below_threshold', True)}"
+            )
+        else:
+            self.semantic_verifier = None
+            logger.info("Semantic verification DISABLED")
 
         logger.info("stockpile initialized successfully")
 
@@ -584,12 +601,15 @@ class BRollProcessor:
                             logger.info(f"    Preview downloaded, analyzing...")
 
                             # Analyze preview to get clip segments
+                            # Fix 4: Pass broll_need for semantic context matching
                             segments = await loop.run_in_executor(
                                 None,
-                                self.clip_extractor.analyze_video,
-                                preview_file,
-                                need.search_phrase,
-                                video.video_id,
+                                lambda: self.clip_extractor.analyze_video(
+                                    preview_file,
+                                    need.search_phrase,
+                                    video.video_id,
+                                    broll_need=need,
+                                ),
                             )
 
                             if segments and segments.analysis_success and segments.segments:
@@ -665,14 +685,17 @@ class BRollProcessor:
                         logger.info(f"    Downloaded: {Path(downloaded_file).name}")
 
                         # Extract clips from full video
+                        # Fix 4: Pass broll_need for semantic context matching
                         if self.clip_extractor:
                             clips, should_delete = await loop.run_in_executor(
                                 None,
-                                self.clip_extractor.process_downloaded_video,
-                                downloaded_file,
-                                need.search_phrase,
-                                video.video_id,
-                                None,  # Use same directory as source
+                                lambda: self.clip_extractor.process_downloaded_video(
+                                    downloaded_file,
+                                    need.search_phrase,
+                                    video.video_id,
+                                    output_dir=None,  # Use same directory as source
+                                    broll_need=need,
+                                ),
                             )
 
                             if clips:
@@ -925,11 +948,14 @@ class BRollProcessor:
                     )
 
                     try:
+                        # Fix 4: Pass broll_need for semantic context matching
                         result = await loop.run_in_executor(
                             None,
-                            self.clip_extractor.analyze_videos_competitive,
-                            preview_files,
-                            need.search_phrase,
+                            lambda: self.clip_extractor.analyze_videos_competitive(
+                                preview_files,
+                                need.search_phrase,
+                                broll_need=need,
+                            ),
                         )
 
                         if result:
@@ -1054,12 +1080,15 @@ class BRollProcessor:
                                 )
 
                                 # Analyze preview to get clip segments
+                                # Fix 4: Pass broll_need for semantic context matching
                                 segments = await loop.run_in_executor(
                                     None,
-                                    self.clip_extractor.analyze_video,
-                                    preview_file,
-                                    need.search_phrase,
-                                    video.video_id,
+                                    lambda: self.clip_extractor.analyze_video(
+                                        preview_file,
+                                        need.search_phrase,
+                                        video.video_id,
+                                        broll_need=need,
+                                    ),
                                 )
 
                                 if segments and segments.analysis_success and segments.segments:
@@ -1153,14 +1182,17 @@ class BRollProcessor:
                             )
 
                             # Extract clips from full video
+                            # Fix 4: Pass broll_need for semantic context matching
                             if self.clip_extractor:
                                 clips, should_delete = await loop.run_in_executor(
                                     None,
-                                    self.clip_extractor.process_downloaded_video,
-                                    downloaded_file,
-                                    need.search_phrase,
-                                    video.video_id,
-                                    None,  # Use same directory as source
+                                    lambda: self.clip_extractor.process_downloaded_video(
+                                        downloaded_file,
+                                        need.search_phrase,
+                                        video.video_id,
+                                        output_dir=None,  # Use same directory as source
+                                        broll_need=need,
+                                    ),
                                 )
 
                                 if clips:
@@ -1191,6 +1223,30 @@ class BRollProcessor:
                         continue
 
             logger.info(f"  [{need_index}/{total_needs}] Completed: {len(final_files)} clips total")
+
+            # S6 IMPROVEMENT: Semantic verification for extracted clips
+            # Verify clips match the original transcript context before finalizing
+            if self.semantic_verifier and final_files:
+                verified_files = await self._verify_clips_semantically(
+                    clip_paths=final_files,
+                    broll_need=need,
+                    need_index=need_index,
+                    total_needs=total_needs,
+                )
+
+                if verified_files:
+                    removed_count = len(final_files) - len(verified_files)
+                    if removed_count > 0:
+                        logger.info(
+                            f"  [{need_index}/{total_needs}] Semantic verification: "
+                            f"{len(verified_files)} passed, {removed_count} filtered out"
+                        )
+                    final_files = verified_files
+                else:
+                    logger.warning(
+                        f"  [{need_index}/{total_needs}] All clips failed semantic verification, "
+                        "keeping original files"
+                    )
 
             # Clean up intermediate files (previews, webm, failed downloads) to save disk space
             await loop.run_in_executor(
@@ -1656,6 +1712,7 @@ class BRollProcessor:
         video_path: str,
         video_id: str,
         phrase: str,
+        broll_need: Optional[BRollNeed] = None,
     ) -> tuple[list[str], Optional[str]]:
         """Extract clips from a single video with semaphore limiting.
 
@@ -1663,6 +1720,7 @@ class BRollProcessor:
             video_path: Path to video file
             video_id: Video ID for identification
             phrase: Search phrase for context
+            broll_need: Optional BRollNeed for semantic context matching (Fix 4)
 
         Returns:
             Tuple of (list of clip paths, original path to delete or None)
@@ -1672,13 +1730,16 @@ class BRollProcessor:
                 logger.info(f"Extracting clips from: {Path(video_path).name}")
 
                 loop = asyncio.get_event_loop()
+                # Fix 4: Pass broll_need for semantic context matching when available
                 clips, should_delete = await loop.run_in_executor(
                     None,
-                    self.clip_extractor.process_downloaded_video,
-                    video_path,
-                    phrase,
-                    video_id,
-                    None,  # Use same directory as source
+                    lambda: self.clip_extractor.process_downloaded_video(
+                        video_path,
+                        phrase,
+                        video_id,
+                        output_dir=None,  # Use same directory as source
+                        broll_need=broll_need,
+                    ),
                 )
 
                 if clips:
@@ -1710,3 +1771,109 @@ class BRollProcessor:
         """
         resolved_path = str(Path(file_path).resolve())
         return resolved_path in self.protected_input_files
+
+    async def _verify_clips_semantically(
+        self,
+        clip_paths: list[str],
+        broll_need: "BRollNeed",
+        need_index: int,
+        total_needs: int,
+    ) -> list[str]:
+        """Verify clips semantically match the original transcript context.
+
+        S6 IMPROVEMENT: Uses SemanticVerifier to analyze extracted clips and verify
+        they match the original transcript context and contain required visual elements.
+
+        Args:
+            clip_paths: List of clip file paths to verify
+            broll_need: BRollNeed with original_context and required_elements
+            need_index: Index of current need (for logging)
+            total_needs: Total number of needs (for logging)
+
+        Returns:
+            List of verified clip paths that pass semantic verification threshold
+        """
+        if not self.semantic_verifier:
+            return clip_paths
+
+        if not clip_paths:
+            return clip_paths
+
+        logger.info(
+            f"  [{need_index}/{total_needs}] Running semantic verification on {len(clip_paths)} clips"
+        )
+
+        verified_files = []
+        rejected_files = []
+
+        for clip_path in clip_paths:
+            clip_file = Path(clip_path)
+            if not clip_file.exists():
+                logger.warning(f"  [{need_index}/{total_needs}] Clip not found: {clip_path}")
+                continue
+
+            try:
+                # Verify clip against BRollNeed context
+                result = await self.semantic_verifier.verify_clip(
+                    clip_path=clip_file,
+                    broll_need=broll_need,
+                )
+
+                if result.passed:
+                    verified_files.append(clip_path)
+                    logger.info(
+                        f"    [{need_index}/{total_needs}] Verified {clip_file.name}: "
+                        f"score={result.similarity_score:.2%}, "
+                        f"matched={len(result.matched_elements)}/{len(result.matched_elements) + len(result.missing_elements)}"
+                    )
+                else:
+                    rejected_files.append((clip_path, result))
+                    logger.warning(
+                        f"    [{need_index}/{total_needs}] Rejected {clip_file.name}: "
+                        f"score={result.similarity_score:.2%} < threshold, "
+                        f"missing={result.missing_elements}"
+                    )
+
+            except Exception as e:
+                logger.error(
+                    f"    [{need_index}/{total_needs}] Verification failed for {clip_file.name}: {e}"
+                )
+                # On error, keep the clip (don't reject due to verification errors)
+                verified_files.append(clip_path)
+
+        # If all clips were rejected, keep the best scoring one with a warning
+        if not verified_files and rejected_files:
+            # Sort by score descending and take the best
+            rejected_files.sort(key=lambda x: x[1].similarity_score, reverse=True)
+            best_path, best_result = rejected_files[0]
+            verified_files.append(best_path)
+            logger.warning(
+                f"  [{need_index}/{total_needs}] All clips below threshold, keeping best: "
+                f"{Path(best_path).name} (score={best_result.similarity_score:.2%})"
+            )
+
+            # Clean up rejected clips (except the one we're keeping)
+            reject_below_threshold = self.config.get("reject_below_threshold", True)
+            if reject_below_threshold:
+                for path, result in rejected_files[1:]:
+                    try:
+                        Path(path).unlink()
+                        logger.debug(f"    [{need_index}/{total_needs}] Deleted rejected clip: {path}")
+                    except Exception as e:
+                        logger.warning(
+                            f"    [{need_index}/{total_needs}] Could not delete rejected clip: {e}"
+                        )
+        elif rejected_files:
+            # Clean up rejected clips
+            reject_below_threshold = self.config.get("reject_below_threshold", True)
+            if reject_below_threshold:
+                for path, result in rejected_files:
+                    try:
+                        Path(path).unlink()
+                        logger.debug(f"    [{need_index}/{total_needs}] Deleted rejected clip: {path}")
+                    except Exception as e:
+                        logger.warning(
+                            f"    [{need_index}/{total_needs}] Could not delete rejected clip: {e}"
+                        )
+
+        return verified_files

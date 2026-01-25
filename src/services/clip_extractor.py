@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from google.genai import Client, types
 
+from models.broll_need import BRollNeed
 from models.clip import ClipResult, ClipSegment, VideoAnalysisResult
 from utils.cache import AIResponseCache, compute_content_hash, compute_file_hash
 from utils.retry import APIRateLimitError, NetworkError, retry_api_call
@@ -40,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 
 # S2 IMPROVEMENT: Prompt version for cache invalidation
-CLIP_ANALYSIS_PROMPT_VERSION = "v2"
+# v3: Updated to use original_context and required_elements from BRollNeed
+CLIP_ANALYSIS_PROMPT_VERSION = "v3"
 
 
 class ClipExtractor:
@@ -143,6 +145,7 @@ class ClipExtractor:
         search_phrase: str,
         video_id: str,
         output_dir: Optional[str] = None,
+        broll_need: Optional[BRollNeed] = None,
     ) -> Tuple[List[ClipResult], bool]:
         """Process a downloaded video: analyze, extract clips, cleanup.
 
@@ -151,6 +154,8 @@ class ClipExtractor:
             search_phrase: The search phrase context for B-roll relevance
             video_id: YouTube video ID
             output_dir: Directory for extracted clips (defaults to same as source)
+            broll_need: Optional BRollNeed with original_context and required_elements
+                        for enhanced semantic matching
 
         Returns:
             Tuple of (list of ClipResult objects, whether original should be deleted)
@@ -164,7 +169,7 @@ class ClipExtractor:
 
         # Step 1: Analyze video with Gemini
         logger.info(f"Analyzing video for B-roll segments: {video_file.name}")
-        analysis = self.analyze_video(video_path, search_phrase, video_id)
+        analysis = self.analyze_video(video_path, search_phrase, video_id, broll_need)
 
         if not analysis.analysis_success or not analysis.segments:
             logger.warning(f"No segments found in video: {video_file.name}")
@@ -196,17 +201,28 @@ class ClipExtractor:
 
     @retry_api_call(max_retries=3, base_delay=2.0)
     def analyze_video(
-        self, video_path: str, search_phrase: str, video_id: str
+        self,
+        video_path: str,
+        search_phrase: str,
+        video_id: str,
+        broll_need: Optional[BRollNeed] = None,
     ) -> VideoAnalysisResult:
         """Analyze video using Gemini to identify relevant B-roll segments.
 
         S2 IMPROVEMENT: Results are cached by video file hash + search phrase.
         Cache key includes prompt version, file hash, and search phrase.
 
+        Fix 4 Enhancement: When broll_need is provided, uses original_context and
+        required_elements for semantic matching instead of just search_phrase.
+        This produces more contextually relevant B-roll selections.
+
         Args:
             video_path: Path to video file
             search_phrase: Context for what B-roll content to look for
             video_id: YouTube video ID
+            broll_need: Optional BRollNeed with original_context and required_elements
+                        for enhanced semantic matching. When provided, the analysis
+                        prioritizes segments showing required visual elements.
 
         Returns:
             VideoAnalysisResult with identified segments
@@ -218,12 +234,17 @@ class ClipExtractor:
 
             # S2 IMPROVEMENT: Generate cache key from video file hash + search phrase
             # File hash is computed incrementally for large files
+            # Fix 4: Include original_context in cache key when available
             if self.cache:
                 file_hash = compute_file_hash(video_path)
+                context_for_cache = (
+                    broll_need.original_context if broll_need and broll_need.original_context
+                    else search_phrase
+                )
                 cache_key_content = (
                     f"{CLIP_ANALYSIS_PROMPT_VERSION}|"
                     f"{file_hash[:32]}|"
-                    f"{compute_content_hash(search_phrase)[:16]}"
+                    f"{compute_content_hash(context_for_cache)[:16]}"
                 )
 
                 cached_response = self.cache.get(cache_key_content, self.model_name)
@@ -279,7 +300,8 @@ class ClipExtractor:
                 )
 
             # Construct analysis prompt
-            prompt = self._build_analysis_prompt(search_phrase, video_duration)
+            # Fix 4: Pass broll_need for semantic context-aware prompting
+            prompt = self._build_analysis_prompt(search_phrase, video_duration, broll_need)
 
             # Generate content with video analysis
             response = self.client.models.generate_content(
@@ -378,8 +400,39 @@ class ClipExtractor:
         logger.error(f"File processing timeout: {file_name}")
         return False
 
-    def _build_analysis_prompt(self, search_phrase: str, video_duration: float) -> str:
-        """Build the prompt for video segment analysis."""
+    def _build_analysis_prompt(
+        self,
+        search_phrase: str,
+        video_duration: float,
+        broll_need: Optional[BRollNeed] = None,
+    ) -> str:
+        """Build the prompt for video segment analysis.
+
+        Fix 4 Enhancement: When broll_need is provided with original_context and
+        required_elements, builds a semantic context-aware prompt that prioritizes
+        segments matching the full narrative context, not just keywords.
+
+        Args:
+            search_phrase: Basic search phrase for fallback matching
+            video_duration: Video duration in seconds
+            broll_need: Optional BRollNeed with semantic context
+
+        Returns:
+            Prompt string for Gemini video analysis
+        """
+        # Fix 4: Use original_context and required_elements when available
+        if broll_need and broll_need.original_context:
+            return self._build_semantic_analysis_prompt(
+                broll_need, search_phrase, video_duration
+            )
+
+        # Fallback to basic search phrase-only prompt
+        return self._build_basic_analysis_prompt(search_phrase, video_duration)
+
+    def _build_basic_analysis_prompt(
+        self, search_phrase: str, video_duration: float
+    ) -> str:
+        """Build basic analysis prompt using only search phrase (legacy behavior)."""
         return f"""You are a B-Roll Clip Analyzer. Your task is to identify the best segments in this video that would work as B-roll footage for the topic: "{search_phrase}"
 
 GOAL:
@@ -405,11 +458,95 @@ Return ONLY a JSON array with this exact structure:
   }}
 ]
 
+SCORING (only include segments scoring 6 or higher):
+- 10: Perfectly matches topic with excellent visual quality
+- 8: Strong match with good quality
+- 6: Adequate match, usable as B-roll
+- 4: Loosely related (DO NOT INCLUDE)
+- 2: Barely related (DO NOT INCLUDE)
+- 0: Unrelated (DO NOT INCLUDE)
+
 RULES:
 - start_time and end_time are in seconds (decimals allowed)
-- relevance_score is 1-10 (only include segments scoring 7+)
+- relevance_score is 1-10 (ONLY include segments scoring 6+)
 - description should be brief (under 50 characters)
 - Return empty array [] if no suitable segments found
+- No markdown, no extra text, just the JSON array"""
+
+    def _build_semantic_analysis_prompt(
+        self,
+        broll_need: BRollNeed,
+        search_phrase: str,
+        video_duration: float,
+    ) -> str:
+        """Build semantic context-aware analysis prompt (Fix 4 enhancement).
+
+        This prompt uses original_context and required_elements from the BRollNeed
+        to find segments that truly match the narrative meaning, not just keywords.
+
+        Args:
+            broll_need: BRollNeed with original_context and required_elements
+            search_phrase: Fallback search phrase
+            video_duration: Video duration in seconds
+
+        Returns:
+            Semantic context-aware prompt for Gemini video analysis
+        """
+        # Format required elements as a bulleted list
+        required_elements_str = ""
+        if broll_need.required_elements:
+            elements_list = "\n".join(
+                f"  - {element}" for element in broll_need.required_elements
+            )
+            required_elements_str = f"""
+REQUIRED VISUAL ELEMENTS (must be visible in selected segments):
+{elements_list}
+"""
+
+        return f"""You are a B-Roll Clip Analyzer specializing in semantic context matching.
+Your task is to find segments in this video that match the ORIGINAL CONTEXT, not just keywords.
+
+ORIGINAL CONTEXT (this is what the video narrator is discussing):
+"{broll_need.original_context}"
+
+SEARCH PHRASE: "{search_phrase}"
+{required_elements_str}
+GOAL:
+Find {self.max_clips_per_video} or fewer segments ({self.min_clip_duration}-{self.max_clip_duration} seconds) where MOST required elements are visible.
+Prefer fewer high-quality matches over many mediocre ones.
+
+VIDEO DURATION: {video_duration:.1f} seconds
+
+SCORING CRITERIA (ONLY return segments scoring 6 or higher):
+- 10: ALL required elements clearly visible, perfectly matches original context meaning
+- 8: MOST required elements visible, strong contextual match with minor gaps
+- 6: SOME required elements visible, adequate contextual match
+- 4: Matches search phrase keywords only (not the context meaning) - DO NOT INCLUDE
+- 2: Loosely related to topic - DO NOT INCLUDE
+- 0: Unrelated content - DO NOT INCLUDE
+
+VISUAL QUALITY REQUIREMENTS:
+- Focus on visually compelling shots (cinematic, clear subject, good lighting)
+- Avoid: talking heads, text overlays, logos, watermarks, transitions
+- Prefer: establishing shots, action shots, close-ups of relevant subjects
+
+OUTPUT FORMAT:
+Return ONLY a JSON array with this exact structure:
+[
+  {{
+    "start_time": 12.5,
+    "end_time": 20.0,
+    "relevance_score": 9,
+    "description": "Wide shot showing [visible elements]"
+  }}
+]
+
+CRITICAL RULES:
+- ONLY return segments scoring 6 or higher
+- start_time and end_time are in seconds (decimals allowed)
+- description should mention which required elements are visible
+- Segments must not overlap
+- Return empty array [] if no segments score 6+
 - No markdown, no extra text, just the JSON array"""
 
     def _parse_segments_response(
@@ -453,7 +590,8 @@ RULES:
                     continue
                 if end > video_duration:
                     end = video_duration
-                if score < 7:
+                # Fix 4: Updated minimum score from 7 to 6 to match new scoring criteria
+                if score < 6:
                     continue
 
                 duration = end - start
@@ -534,15 +672,21 @@ RULES:
         self,
         video_data,  # List[Tuple[VideoSearchResult, str]]
         search_phrase: str,
+        broll_need: Optional[BRollNeed] = None,
     ) -> Optional[Tuple[Path, ClipSegment]]:
         """Analyze multiple videos and return single best clip across all.
 
         This method enables competitive analysis: download multiple preview videos,
         analyze all of them, and select the single best clip based on relevance scores.
 
+        Fix 4 Enhancement: When broll_need is provided, uses original_context and
+        required_elements for semantic matching to select the best clip.
+
         Args:
             video_data: List of (video_object, video_file_path) tuples
             search_phrase: Search phrase for relevance scoring
+            broll_need: Optional BRollNeed with original_context and required_elements
+                        for enhanced semantic matching
 
         Returns:
             Tuple of (source_video_path, best_segment) or None if no good clips found
@@ -555,6 +699,7 @@ RULES:
                     video_path=str(video_path),
                     search_phrase=search_phrase,
                     video_id=video.video_id,
+                    broll_need=broll_need,
                 )
 
                 if analysis.analysis_success and analysis.segments:
@@ -947,23 +1092,28 @@ RULES:
         search_phrase: str,
         video_id: str,
         use_clip_enhancement: bool = True,
+        broll_need: Optional[BRollNeed] = None,
     ) -> VideoAnalysisResult:
         """Analyze video using both Gemini and CLIP for improved accuracy.
 
         This combines Gemini's contextual understanding with CLIP's visual
         matching to produce more accurate segment identification.
 
+        Fix 4 Enhancement: When broll_need is provided, uses original_context and
+        required_elements for semantic matching.
+
         Args:
             video_path: Path to video file
             search_phrase: Context for what B-roll content to look for
             video_id: Video identifier
             use_clip_enhancement: Whether to enhance with CLIP scores
+            broll_need: Optional BRollNeed with original_context and required_elements
 
         Returns:
             VideoAnalysisResult with CLIP-enhanced segments
         """
         # First, run standard Gemini analysis
-        result = self.analyze_video(video_path, search_phrase, video_id)
+        result = self.analyze_video(video_path, search_phrase, video_id, broll_need)
 
         if not result.analysis_success or not result.segments:
             return result
