@@ -33,6 +33,10 @@ coverage/
 
 # Next.js
 .next/
+node_modules/
+
+# Build artifacts (webapp has no source - just build output)
+webapp/
 
 # Backups
 src.backup.*/
