@@ -13,3 +13,30 @@ token.json
 
 *.DS_Store
 test_email.py
+
+# Large files - never commit
+*.mp4
+*.mov
+*.avi
+*.mkv
+uploads/
+
+# Logs
+*.log
+backend.log
+frontend.log
+
+# Coverage
+.coverage
+coverage/
+*.lcov
+
+# Next.js
+.next/
+
+# Backups
+src.backup.*/
+*.bak
+
+# Artifacts
+=*
