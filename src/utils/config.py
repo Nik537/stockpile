@@ -110,6 +110,29 @@ def load_config() -> dict:
         "semantic_verification_enabled": os.getenv("SEMANTIC_VERIFICATION_ENABLED", "true").lower() == "true",
         "reject_below_threshold": os.getenv("REJECT_BELOW_THRESHOLD", "true").lower() == "true",
         "min_required_elements_match": float(os.getenv("MIN_REQUIRED_ELEMENTS_MATCH", "0.8")),
+        # IMAGE ACQUISITION SETTINGS
+        # Parallel image acquisition - one image per N seconds of video
+        "image_acquisition_enabled": os.getenv("IMAGE_ACQUISITION_ENABLED", "true").lower() == "true",
+        "image_interval_seconds": float(os.getenv("IMAGE_INTERVAL_SECONDS", "5.0")),
+        "image_sources": [s.strip() for s in os.getenv("IMAGE_SOURCES", "pexels,pixabay,google").split(",") if s.strip()],
+        "parallel_image_downloads": int(os.getenv("PARALLEL_IMAGE_DOWNLOADS", "10")),
+        # SerpAPI key for Google Images search
+        "serpapi_key": os.getenv("SERPAPI_KEY"),
+        # Feature 1: Style/Mood Detection
+        # Analyzes source video to detect visual style, topic, and audience
+        "style_detection_enabled": os.getenv("STYLE_DETECTION_ENABLED", "true").lower() == "true",
+        # Feature 2: Context Window
+        # Uses ±N seconds of transcript around each B-roll timestamp
+        "context_window_seconds": float(os.getenv("CONTEXT_WINDOW_SECONDS", "10.0")),
+        # Feature 3: Feedback Loop
+        # Learns from user rejections to improve future selections
+        "feedback_enabled": os.getenv("FEEDBACK_ENABLED", "true").lower() == "true",
+        "feedback_dir": resolve_path(os.getenv("FEEDBACK_DIR"), ".stockpile"),
+        # Source preferences (soft bias, not hard filter)
+        # For video clips: "youtube", "pexels", "pixabay"
+        # For images: "google", "pexels", "pixabay"
+        "video_preferred_source": os.getenv("VIDEO_PREFERRED_SOURCE", "youtube"),
+        "image_preferred_source": os.getenv("IMAGE_PREFERRED_SOURCE", "google"),
     }
 
     return config

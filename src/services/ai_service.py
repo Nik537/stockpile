@@ -12,6 +12,8 @@ from typing import Optional
 
 from google.genai import Client, types
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
+from models.image import ImageNeed, ImagePlan
+from models.style import ContentStyle, VisualStyle, ColorTone, PacingStyle
 from models.user_preferences import GeneratedQuestion, UserPreferences
 from models.video import ScoredVideo, VideoResult
 from utils.cache import AIResponseCache, compute_content_hash
@@ -27,6 +29,10 @@ PROMPT_VERSIONS = {
     "generate_context_questions": "v1",
     "plan_broll_needs": "v3",  # B-roll planning with original_context and required_elements
     "evaluate_videos": "v4",  # Video evaluation with semantic context scoring + negative examples
+    "generate_image_queries": "v1",  # Image query generation for parallel image acquisition
+    "select_best_image": "v2",  # AI-powered image selection from candidates (v2: + ContentStyle)
+    "detect_content_style": "v1",  # Feature 1: Content style/mood detection
+    "generate_image_queries_with_context": "v1",  # Feature 2: Image queries with ±10s context window
 }
 
 
@@ -339,6 +345,253 @@ RULES:
             elif "network" in str(e).lower() or "connection" in str(e).lower():
                 raise NetworkError(f"Network error: {e}")
             return []  # Return empty list on error
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    def detect_content_style(
+        self,
+        transcript_result: TranscriptResult,
+        user_preferences: Optional[UserPreferences] = None,
+    ) -> ContentStyle:
+        """Analyze transcript to detect content style and mood.
+
+        Feature 1: Style/Mood Detection + Content Analysis
+
+        Detects:
+        1. TOPIC: What is this video about?
+           - Main subject (e.g., "MMA strength training")
+           - Key themes and keywords
+
+        2. AUDIENCE: Who is this for?
+           - Target viewer (e.g., "competitive fighters")
+           - Skill level (beginner/intermediate/advanced/pro)
+           - Demographics hints from language
+
+        3. STYLE: How should B-roll look?
+           - Visual style (cinematic, documentary, raw)
+           - Mood/tone (serious, casual, energetic)
+           - Color preferences
+
+        4. GUIDANCE: What imagery to use/avoid?
+           - Preferred imagery types
+           - Things that would look out of place
+
+        Args:
+            transcript_result: TranscriptResult with text and metadata
+            user_preferences: Optional user preferences to incorporate
+
+        Returns:
+            ContentStyle with detected style and content analysis
+        """
+        if not transcript_result.text or not transcript_result.text.strip():
+            logger.warning("Empty transcript provided for style detection")
+            return ContentStyle()
+
+        # S2 IMPROVEMENT: Generate cache key
+        cache_key_content = (
+            f"{PROMPT_VERSIONS['detect_content_style']}|"
+            f"{self._generate_transcript_hash(transcript_result)}"
+        )
+
+        # Check cache
+        if self.cache:
+            cached_response = self.cache.get(cache_key_content, self.model_name)
+            if cached_response:
+                try:
+                    cached_data = json.loads(cached_response)
+                    style = self._parse_content_style_from_data(cached_data)
+                    logger.info("[CACHE HIT] Content style detection from cache")
+                    return style
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Failed to parse cached content style: {e}")
+
+        # Use first 2000 characters of transcript for analysis
+        transcript_preview = transcript_result.text[:2000]
+        if len(transcript_result.text) > 2000:
+            transcript_preview += "..."
+
+        duration_minutes = transcript_result.duration / 60.0
+
+        prompt = f"""You are a Content Style Analyzer for video B-roll matching.
+
+TASK: Analyze this video transcript to understand its content, audience, and visual style requirements.
+This analysis will be used to select matching B-roll images and video clips.
+
+TRANSCRIPT:
+<<<
+{transcript_preview}
+>>>
+
+VIDEO INFO:
+- Duration: {duration_minutes:.1f} minutes
+- Language: {transcript_result.language or 'English'}
+
+ANALYZE THE FOLLOWING:
+
+1. TOPIC ANALYSIS:
+   - What is the main topic/subject?
+   - What are the key topic keywords (5-10 words)?
+
+2. AUDIENCE ANALYSIS:
+   - Who is the target audience?
+   - What skill/knowledge level is this for? (beginner/intermediate/advanced/professional/general)
+   - Any demographic hints from the language used?
+
+3. VISUAL STYLE:
+   - What visual style matches this content? (cinematic/documentary/raw/professional/energetic/moody/vintage/modern)
+   - What color tone fits? (warm/cool/neutral/desaturated/vibrant/high_contrast/low_contrast)
+   - What pacing? (fast/moderate/slow/mixed)
+
+4. MOOD/TONE:
+   - What is the overall tone? (serious/casual/inspirational/technical/entertaining)
+   - 3-5 mood keywords that describe this content
+
+5. IMAGERY GUIDANCE:
+   - What types of imagery should be used? (5-8 specific examples)
+   - What types of imagery should be AVOIDED? (5-8 specific examples that would look out of place)
+
+OUTPUT FORMAT (JSON):
+{{
+  "topic": "Main topic in 5-10 words",
+  "topic_keywords": ["keyword1", "keyword2", "keyword3", ...],
+  "target_audience": "Description of target viewer",
+  "audience_level": "beginner|intermediate|advanced|professional|general",
+  "audience_demographics": "Demographic hints if any",
+  "content_type": "educational|motivational|tutorial|vlog|documentary|entertainment|corporate",
+  "tone": "serious|casual|inspirational|technical|entertaining",
+  "visual_style": "cinematic|documentary|raw|professional|energetic|moody|vintage|modern",
+  "color_tone": "warm|cool|neutral|desaturated|vibrant|high_contrast|low_contrast",
+  "pacing": "fast|moderate|slow|mixed",
+  "mood_keywords": ["mood1", "mood2", "mood3"],
+  "preferred_imagery": ["specific imagery type 1", "specific imagery type 2", ...],
+  "avoid_imagery": ["imagery to avoid 1", "imagery to avoid 2", ...],
+  "is_talking_head": true|false,
+  "is_tutorial": true|false,
+  "is_entertainment": true|false,
+  "is_corporate": true|false
+}}
+
+Return ONLY the JSON object, no markdown, no extra text."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,  # Low temperature for consistent analysis
+                ),
+            )
+
+            if not response.text:
+                logger.error("AI response is empty for content style detection")
+                return ContentStyle()
+
+            response_text = strip_markdown_code_blocks(response.text)
+
+            try:
+                style_data = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON parsing failed for content style: {e}")
+                logger.debug(f"Raw response: {response.text}")
+                return ContentStyle()
+
+            # Parse the response into ContentStyle
+            style = self._parse_content_style_from_data(style_data)
+
+            # Cache the response
+            if self.cache:
+                self.cache.set(cache_key_content, self.model_name, response_text)
+                logger.debug("[CACHE SAVE] Content style detection cached")
+
+            logger.info(
+                f"Content style detected: topic='{style.topic[:50]}...', "
+                f"style={style.visual_style.value}, audience_level={style.audience_level}"
+            )
+            return style
+
+        except Exception as e:
+            logger.error(f"Content style detection failed: {e}")
+            if "rate limit" in str(e).lower():
+                raise APIRateLimitError(f"Rate limit hit: {e}")
+            elif "network" in str(e).lower() or "connection" in str(e).lower():
+                raise NetworkError(f"Network error: {e}")
+            return ContentStyle()
+
+    def _parse_content_style_from_data(self, data: dict) -> ContentStyle:
+        """Parse ContentStyle from JSON data.
+
+        Args:
+            data: Dictionary with content style fields
+
+        Returns:
+            Populated ContentStyle object
+        """
+        # Parse visual style enum
+        visual_style_str = str(data.get("visual_style", "professional")).lower()
+        try:
+            visual_style = VisualStyle(visual_style_str)
+        except ValueError:
+            visual_style = VisualStyle.PROFESSIONAL
+
+        # Parse color tone enum
+        color_tone_str = str(data.get("color_tone", "neutral")).lower()
+        try:
+            color_tone = ColorTone(color_tone_str)
+        except ValueError:
+            color_tone = ColorTone.NEUTRAL
+
+        # Parse pacing enum
+        pacing_str = str(data.get("pacing", "moderate")).lower()
+        try:
+            pacing = PacingStyle(pacing_str)
+        except ValueError:
+            pacing = PacingStyle.MODERATE
+
+        # Parse list fields
+        topic_keywords = data.get("topic_keywords", [])
+        if isinstance(topic_keywords, list):
+            topic_keywords = [str(k).strip().lower() for k in topic_keywords if k]
+        else:
+            topic_keywords = []
+
+        mood_keywords = data.get("mood_keywords", [])
+        if isinstance(mood_keywords, list):
+            mood_keywords = [str(k).strip().lower() for k in mood_keywords if k]
+        else:
+            mood_keywords = []
+
+        preferred_imagery = data.get("preferred_imagery", [])
+        if isinstance(preferred_imagery, list):
+            preferred_imagery = [str(i).strip() for i in preferred_imagery if i]
+        else:
+            preferred_imagery = []
+
+        avoid_imagery = data.get("avoid_imagery", [])
+        if isinstance(avoid_imagery, list):
+            avoid_imagery = [str(i).strip() for i in avoid_imagery if i]
+        else:
+            avoid_imagery = []
+
+        return ContentStyle(
+            visual_style=visual_style,
+            color_tone=color_tone,
+            pacing=pacing,
+            is_talking_head=bool(data.get("is_talking_head", False)),
+            is_tutorial=bool(data.get("is_tutorial", False)),
+            is_entertainment=bool(data.get("is_entertainment", False)),
+            is_corporate=bool(data.get("is_corporate", False)),
+            mood_keywords=mood_keywords,
+            avoid_keywords=[],  # Not in this prompt, uses avoid_imagery instead
+            confidence=0.85,  # High confidence for AI detection
+            topic=str(data.get("topic", "")).strip(),
+            topic_keywords=topic_keywords,
+            target_audience=str(data.get("target_audience", "")).strip(),
+            audience_level=str(data.get("audience_level", "general")).strip().lower(),
+            audience_demographics=str(data.get("audience_demographics", "")).strip(),
+            content_type=str(data.get("content_type", "")).strip().lower(),
+            tone=str(data.get("tone", "")).strip().lower(),
+            preferred_imagery=preferred_imagery,
+            avoid_imagery=avoid_imagery,
+        )
 
     @retry_api_call(max_retries=5, base_delay=2.0)
     def plan_broll_needs(
@@ -745,12 +998,16 @@ RULES
         transcript_segment: str = None,
         broll_need: Optional[BRollNeed] = None,
         user_preferences: Optional[UserPreferences] = None,
+        content_style: Optional[ContentStyle] = None,
+        feedback_context: str = "",
     ) -> list[ScoredVideo]:
         """Evaluate YouTube videos for B-roll suitability using Gemini.
 
         S2 IMPROVEMENT: Results are cached by video list hash for 100% savings on re-runs.
         Q2 ENHANCEMENT: Optionally uses BRollNeed metadata for context-aware evaluation.
         Q4 IMPROVEMENT: Context-aware evaluation with transcript segment and user preferences.
+        Feature 1: Uses ContentStyle for style-aware evaluation
+        Feature 3: Uses feedback history to avoid past rejection patterns
         Cache key includes prompt version, search phrase, video list hash, and content filter.
 
         Args:
@@ -760,6 +1017,8 @@ RULES
             transcript_segment: Optional transcript context for evaluation
             broll_need: Optional BRollNeed with enhanced metadata (visual_style, etc.)
             user_preferences: Optional UserPreferences for style customization
+            content_style: Optional ContentStyle for source video style consistency
+            feedback_context: Optional string with feedback history for prompt injection
 
         Returns:
             List of scored videos (score >= 6 only)
@@ -831,12 +1090,15 @@ RULES
 
         # Q4 IMPROVEMENT: Use enhanced prompt if BRollNeed metadata or user preferences available
         # FIX 1 & 3: Also use enhanced prompt when original_context or required_elements are present
+        # Feature 1 & 3: Also use enhanced prompt when content_style or feedback available
         has_context = (
             (broll_need and broll_need.has_enhanced_metadata())
             or (broll_need and broll_need.original_context)
             or (broll_need and broll_need.required_elements)
             or transcript_segment
             or (user_preferences and user_preferences.has_preferences())
+            or content_style
+            or feedback_context
         )
         if has_context:
             evaluator_prompt = self._build_enhanced_evaluation_prompt(
@@ -845,12 +1107,16 @@ RULES
                 broll_need=broll_need,
                 transcript_segment=transcript_segment,
                 user_preferences=user_preferences,
+                content_style=content_style,
+                feedback_context=feedback_context,
             )
             logger.debug(
                 f"Using context-aware evaluation prompt: "
                 f"broll_need={broll_need is not None}, "
                 f"transcript_segment={bool(transcript_segment)}, "
-                f"user_prefs={user_preferences.has_preferences() if user_preferences else False}"
+                f"user_prefs={user_preferences.has_preferences() if user_preferences else False}, "
+                f"content_style={content_style is not None}, "
+                f"feedback={bool(feedback_context)}"
             )
         else:
             # Original evaluation prompt (fallback for non-enhanced needs)
@@ -1193,6 +1459,8 @@ Apply these preferences when selecting B-roll:
         broll_need: Optional[BRollNeed] = None,
         transcript_segment: Optional[str] = None,
         user_preferences: Optional[UserPreferences] = None,
+        content_style: Optional[ContentStyle] = None,
+        feedback_context: str = "",
     ) -> str:
         """Build a context-aware evaluation prompt using all available context.
 
@@ -1208,12 +1476,17 @@ Apply these preferences when selecting B-roll:
 
         FIX 5: Now includes negative examples to prevent false positive matches.
 
+        Feature 1: Uses ContentStyle for source video style consistency.
+        Feature 3: Uses feedback history to avoid past rejection patterns.
+
         Args:
             search_phrase: The search phrase used to find videos
             results_text: Formatted text of video results
             broll_need: Optional BRollNeed with enhanced metadata
             transcript_segment: Optional transcript context around B-roll timestamp
             user_preferences: Optional UserPreferences for style customization
+            content_style: Optional ContentStyle for style-aware evaluation
+            feedback_context: Optional string with feedback history
 
         Returns:
             Context-aware evaluator prompt string
@@ -1290,6 +1563,21 @@ USER PREFERENCES (apply these as scoring criteria):
 {prefs_text}
 """
 
+        # Feature 1: Build content style section
+        content_style_section = ""
+        if content_style:
+            content_style_section = f"""
+SOURCE VIDEO STYLE (match B-roll to this style):
+{content_style.to_prompt_context()}
+"""
+
+        # Feature 3: Build feedback section
+        feedback_section = ""
+        if feedback_context:
+            feedback_section = f"""
+{feedback_context}
+"""
+
         return f"""You are B-Roll Evaluator v4 (Semantic Context-Aware).
 
 Your task is to evaluate videos based on how well they match the ORIGINAL CONTEXT from the transcript,
@@ -1305,6 +1593,8 @@ YOUTUBE RESULTS:
 {visual_preferences}
 {context_section}
 {user_prefs_section}
+{content_style_section}
+{feedback_section}
 {negative_examples_section}
 SCORING WEIGHTS (total 100%):
 1. **SEMANTIC MATCH TO ORIGINAL CONTEXT (50%)** - Does the video capture the MEANING of what's being discussed?
@@ -1313,12 +1603,15 @@ SCORING WEIGHTS (total 100%):
 2. **REQUIRED ELEMENTS PRESENT (20%)** - Are all the required visual elements visible?
    - Check each required element against the video title/description
    - Each missing element reduces the score significantly
-3. **TECHNICAL QUALITY (20%)** - Resolution, stability, lighting, production value
+3. **TECHNICAL QUALITY (15%)** - Resolution, stability, lighting, production value
    - Cinematic/stock footage quality preferred
    - Avoid amateur, shaky, or poorly lit content
 4. **ABSENCE OF UNWANTED ELEMENTS (10%)** - No text overlays, logos, watermarks, branding
    - Deduct points for vlogs, talk shows, tutorials, reaction videos
    - Deduct points for prominent branding or advertising
+5. **SOURCE PREFERENCE (5%)** - When comparing videos of similar quality, slightly prefer YouTube content
+   - YouTube content often has more authentic, real-world footage
+   - Stock footage is acceptable but YouTube is preferred for variety and authenticity
 
 REJECTION CRITERIA (automatic low scores):
 - Score <=3: Video shows the OPPOSITE of what was described (e.g., search for "people working" but video shows empty office)
@@ -1336,3 +1629,529 @@ Return a JSON array of objects with video_id and score for videos scoring 6 or h
 Order by score (highest first).
 Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
 Return ONLY the JSON array, nothing else."""
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    def generate_image_queries(
+        self,
+        transcript_result: TranscriptResult,
+        interval_seconds: float = 5.0,
+    ) -> ImagePlan:
+        """Generate image search queries for every N seconds of transcript using Gemini.
+
+        Batches all timestamps into a single API call for efficiency (~$0.02 per video).
+
+        Args:
+            transcript_result: The transcript with timestamps
+            interval_seconds: Seconds between image needs (default 5.0)
+
+        Returns:
+            ImagePlan containing list of ImageNeed objects
+        """
+        if not transcript_result.segments:
+            logger.warning("No transcript segments available for image query generation")
+            return ImagePlan(
+                source_duration=transcript_result.duration,
+                interval_seconds=interval_seconds,
+            )
+
+        # Calculate timestamps at regular intervals
+        duration = transcript_result.duration
+        timestamps = list(range(0, int(duration), int(interval_seconds)))
+
+        if not timestamps:
+            timestamps = [0]  # At minimum, one image at the start
+
+        # S2 IMPROVEMENT: Generate cache key
+        cache_key_content = (
+            f"{PROMPT_VERSIONS['generate_image_queries']}|"
+            f"{compute_content_hash(transcript_result.text)[:32]}|"
+            f"{interval_seconds}"
+        )
+
+        # Check cache
+        if self.cache:
+            cached_response = self.cache.get(cache_key_content, self.model_name)
+            if cached_response:
+                try:
+                    cached_data = json.loads(cached_response)
+                    needs = []
+                    for item in cached_data:
+                        context = transcript_result.get_text_around_timestamp(
+                            item["timestamp"], context_seconds=10.0
+                        )
+                        need = ImageNeed(
+                            timestamp=float(item["timestamp"]),
+                            search_phrase=item["search_phrase"],
+                            context=context,
+                            required_elements=item.get("required_elements", []),
+                            visual_style=item.get("visual_style"),
+                        )
+                        needs.append(need)
+
+                    logger.info(
+                        f"[CACHE HIT] Image queries: {len(needs)} needs "
+                        f"(saved ~$0.02 API cost)"
+                    )
+                    return ImagePlan(
+                        source_duration=duration,
+                        needs=needs,
+                        interval_seconds=interval_seconds,
+                    )
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Failed to parse cached image queries: {e}")
+
+        # Format transcript for prompt
+        transcript_formatted = transcript_result.format_with_timestamps()
+
+        prompt = f"""You are an Image Query Generator for video content.
+
+TASK: Analyze this transcript and generate an optimized image search phrase for each timestamp.
+The images will be used as visual aids (B-roll) at these specific moments in a video.
+
+TRANSCRIPT:
+{transcript_formatted}
+
+TIMESTAMPS TO GENERATE QUERIES FOR:
+{timestamps}
+
+RULES FOR SEARCH PHRASES:
+1. Each search phrase should be 2-5 words
+2. Focus on concrete, visual concepts that stock photo sites can match
+3. Avoid abstract concepts - prefer "coffee shop laptop" over "productivity"
+4. Include visual style hints when relevant: "aerial", "close-up", "silhouette"
+5. Match the emotional tone of the transcript at that moment
+6. Consider what visual would BEST illustrate what's being discussed
+
+OUTPUT FORMAT:
+Return a JSON array with one object per timestamp:
+[
+  {{
+    "timestamp": 0,
+    "search_phrase": "city skyline sunset",
+    "required_elements": ["buildings", "sky", "sunset colors"],
+    "visual_style": "cinematic"
+  }},
+  {{
+    "timestamp": 5,
+    "search_phrase": "laptop coffee shop",
+    "required_elements": ["laptop", "coffee", "workspace"],
+    "visual_style": "lifestyle"
+  }}
+]
+
+Return ONLY the JSON array, nothing else."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,  # Slightly higher for creative queries
+                ),
+            )
+
+            if not response.text:
+                logger.error("AI response is empty for image query generation")
+                return ImagePlan(
+                    source_duration=duration,
+                    interval_seconds=interval_seconds,
+                )
+
+            text = strip_markdown_code_blocks(response.text)
+            query_data = json.loads(text)
+
+            # Convert to ImageNeed objects with context window (Feature 2)
+            needs = []
+            for item in query_data:
+                timestamp = float(item.get("timestamp", 0))
+
+                # Feature 2: Get ±10 second context window
+                context_before, context_at, context_after = transcript_result.get_context_window(
+                    timestamp, window_seconds=10.0
+                )
+                full_context = transcript_result.get_full_context_window(
+                    timestamp, window_seconds=10.0
+                )
+
+                need = ImageNeed(
+                    timestamp=timestamp,
+                    search_phrase=item.get("search_phrase", "stock photo"),
+                    context=context_at or full_context[:200],  # Backwards compatible
+                    required_elements=item.get("required_elements", []),
+                    visual_style=item.get("visual_style"),
+                    # Feature 2: Context window fields
+                    context_before=context_before,
+                    context_after=context_after,
+                    full_context=full_context,
+                    themes=item.get("themes", []),
+                    entities=item.get("entities", []),
+                    emotional_tone=item.get("emotional_tone"),
+                )
+                needs.append(need)
+
+            # Cache the response
+            if self.cache:
+                self.cache.set(cache_key_content, text, self.model_name)
+
+            logger.info(f"Generated {len(needs)} image queries for {duration:.1f}s video")
+            return ImagePlan(
+                source_duration=duration,
+                needs=needs,
+                interval_seconds=interval_seconds,
+            )
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse image query response: {e}")
+            return ImagePlan(
+                source_duration=duration,
+                interval_seconds=interval_seconds,
+            )
+        except Exception as e:
+            logger.error(f"Image query generation failed: {e}")
+            raise
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    def generate_image_queries_with_context(
+        self,
+        transcript_result: TranscriptResult,
+        interval_seconds: float = 5.0,
+        context_window: float = 10.0,
+        content_style: Optional[ContentStyle] = None,
+    ) -> ImagePlan:
+        """Generate image search queries with extended context window analysis.
+
+        Feature 2: Enhanced version of generate_image_queries that:
+        - Uses ±context_window seconds of surrounding transcript
+        - Extracts themes and entities from extended context
+        - Detects emotional tone at each timestamp
+        - Optionally uses ContentStyle for better search phrase generation
+
+        Args:
+            transcript_result: The transcript with timestamps
+            interval_seconds: Seconds between image needs (default 5.0)
+            context_window: Seconds before/after to include (default 10.0)
+            content_style: Optional ContentStyle for search enhancement
+
+        Returns:
+            ImagePlan containing list of ImageNeed objects with full context
+        """
+        if not transcript_result.segments:
+            logger.warning("No transcript segments available for image query generation")
+            return ImagePlan(
+                source_duration=transcript_result.duration,
+                interval_seconds=interval_seconds,
+            )
+
+        # Calculate timestamps at regular intervals
+        duration = transcript_result.duration
+        timestamps = list(range(0, int(duration), int(interval_seconds)))
+
+        if not timestamps:
+            timestamps = [0]  # At minimum, one image at the start
+
+        # Generate cache key including context window parameter
+        cache_key_content = (
+            f"{PROMPT_VERSIONS['generate_image_queries_with_context']}|"
+            f"{compute_content_hash(transcript_result.text)[:32]}|"
+            f"{interval_seconds}|{context_window}"
+        )
+
+        # Check cache
+        if self.cache:
+            cached_response = self.cache.get(cache_key_content, self.model_name)
+            if cached_response:
+                try:
+                    cached_data = json.loads(cached_response)
+                    needs = self._parse_image_needs_from_cache(
+                        cached_data, transcript_result, context_window
+                    )
+                    logger.info(
+                        f"[CACHE HIT] Image queries with context: {len(needs)} needs"
+                    )
+                    return ImagePlan(
+                        source_duration=duration,
+                        needs=needs,
+                        interval_seconds=interval_seconds,
+                    )
+                except (json.JSONDecodeError, Exception) as e:
+                    logger.warning(f"Failed to parse cached image queries: {e}")
+
+        # Build context-aware prompt
+        # For each timestamp, pre-compute the context window to include in prompt
+        timestamp_contexts = []
+        for ts in timestamps:
+            before, at, after = transcript_result.get_context_window(ts, context_window)
+            full_ctx = f"[Before]: {before[:100]}... [At {ts}s]: {at} [After]: {after[:100]}..."
+            timestamp_contexts.append({"timestamp": ts, "context": full_ctx})
+
+        # Include content style guidance if available
+        style_guidance = ""
+        if content_style and content_style.topic:
+            style_guidance = f"""
+CONTENT STYLE (use this to guide image selection):
+{content_style.to_prompt_context()}
+"""
+
+        prompt = f"""You are an Image Query Generator with Context Awareness.
+
+TASK: Analyze this transcript and generate optimized image search phrases.
+For each timestamp, you have access to ±{context_window} seconds of surrounding context.
+Use this extended context to understand what's being discussed and generate better queries.
+
+TRANSCRIPT WITH TIMESTAMPS:
+{transcript_result.format_with_timestamps()}
+{style_guidance}
+TIMESTAMPS WITH CONTEXT WINDOWS:
+{json.dumps(timestamp_contexts, indent=2)}
+
+ANALYSIS REQUIREMENTS:
+For each timestamp, analyze the ±{context_window}s context window to:
+1. Identify key THEMES (main topics being discussed)
+2. Extract ENTITIES (people, places, objects mentioned)
+3. Detect EMOTIONAL TONE (serious, excited, contemplative, etc.)
+4. Generate a search phrase that captures the semantic meaning
+
+RULES FOR SEARCH PHRASES:
+1. 2-5 words, focused on concrete visuals
+2. Consider the FULL context window, not just the exact timestamp
+3. Match the emotional tone of the surrounding discussion
+4. Avoid generic terms - be specific to what's being discussed
+5. Include visual style hints when relevant
+
+OUTPUT FORMAT:
+Return a JSON array with enhanced context for each timestamp:
+[
+  {{
+    "timestamp": 0,
+    "search_phrase": "intense gym training session",
+    "required_elements": ["athlete", "weights", "gym equipment"],
+    "visual_style": "raw",
+    "themes": ["fitness", "dedication", "training"],
+    "entities": ["gym", "athlete"],
+    "emotional_tone": "motivated"
+  }}
+]
+
+Return ONLY the JSON array, nothing else."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                ),
+            )
+
+            if not response.text:
+                logger.error("AI response is empty for context-aware image query generation")
+                return ImagePlan(
+                    source_duration=duration,
+                    interval_seconds=interval_seconds,
+                )
+
+            text = strip_markdown_code_blocks(response.text)
+            query_data = json.loads(text)
+
+            # Convert to ImageNeed objects with full context
+            needs = self._parse_image_needs_from_cache(
+                query_data, transcript_result, context_window
+            )
+
+            # Cache the response
+            if self.cache:
+                self.cache.set(cache_key_content, self.model_name, text)
+
+            logger.info(
+                f"Generated {len(needs)} context-aware image queries for {duration:.1f}s video"
+            )
+            return ImagePlan(
+                source_duration=duration,
+                needs=needs,
+                interval_seconds=interval_seconds,
+            )
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse context-aware image query response: {e}")
+            return ImagePlan(
+                source_duration=duration,
+                interval_seconds=interval_seconds,
+            )
+        except Exception as e:
+            logger.error(f"Context-aware image query generation failed: {e}")
+            raise
+
+    def _parse_image_needs_from_cache(
+        self,
+        query_data: list,
+        transcript_result: TranscriptResult,
+        context_window: float = 10.0,
+    ) -> list[ImageNeed]:
+        """Parse ImageNeed objects from cached/API response data.
+
+        Args:
+            query_data: List of dictionaries with image query data
+            transcript_result: Transcript for context extraction
+            context_window: Context window size in seconds
+
+        Returns:
+            List of ImageNeed objects with full context
+        """
+        needs = []
+        for item in query_data:
+            timestamp = float(item.get("timestamp", 0))
+
+            # Get context window
+            context_before, context_at, context_after = transcript_result.get_context_window(
+                timestamp, window_seconds=context_window
+            )
+            full_context = transcript_result.get_full_context_window(
+                timestamp, window_seconds=context_window
+            )
+
+            # Parse list fields
+            required_elements = item.get("required_elements", [])
+            if isinstance(required_elements, list):
+                required_elements = [str(e).strip() for e in required_elements if e]
+            else:
+                required_elements = []
+
+            themes = item.get("themes", [])
+            if isinstance(themes, list):
+                themes = [str(t).strip().lower() for t in themes if t]
+            else:
+                themes = []
+
+            entities = item.get("entities", [])
+            if isinstance(entities, list):
+                entities = [str(e).strip() for e in entities if e]
+            else:
+                entities = []
+
+            need = ImageNeed(
+                timestamp=timestamp,
+                search_phrase=item.get("search_phrase", "stock photo"),
+                context=context_at or full_context[:200],
+                required_elements=required_elements,
+                visual_style=item.get("visual_style"),
+                # Feature 2: Context window fields
+                context_before=context_before,
+                context_after=context_after,
+                full_context=full_context,
+                themes=themes,
+                entities=entities,
+                emotional_tone=item.get("emotional_tone"),
+            )
+            needs.append(need)
+
+        return needs
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    async def select_best_image(
+        self,
+        search_phrase: str,
+        context: str,
+        candidates: list[dict],
+        content_style: Optional[ContentStyle] = None,
+        feedback_context: str = "",
+    ) -> int:
+        """Use AI to select the best image from multiple candidates.
+
+        Feature 1: Uses ContentStyle to match source video's visual style
+        Feature 2: Uses extended context window (passed in context param)
+        Feature 3: Uses feedback history to avoid past rejection patterns
+
+        Args:
+            search_phrase: The search phrase used to find images
+            context: Transcript context at this timestamp (may include extended ±10s context)
+            candidates: List of candidate dicts with index, title, source, resolution, description
+            content_style: Optional ContentStyle for style-aware selection
+            feedback_context: Optional string with feedback history for prompt injection
+
+        Returns:
+            Index of the best candidate (0-indexed)
+        """
+        if not candidates:
+            return 0
+
+        if len(candidates) == 1:
+            return 0
+
+        # Format candidates for prompt
+        candidates_text = "\n".join([
+            f"[{c['index']}] Source: {c['source']}, Title: {c['title'][:60]}, "
+            f"Resolution: {c['resolution']}, Description: {c.get('description', 'N/A')[:80]}"
+            for c in candidates
+        ])
+
+        # Feature 1: Build style context section
+        style_section = ""
+        if content_style:
+            style_section = f"""
+SOURCE VIDEO STYLE:
+{content_style.to_prompt_context()}
+"""
+
+        # Feature 3: Build feedback section
+        feedback_section = ""
+        if feedback_context:
+            feedback_section = f"""
+{feedback_context}
+"""
+
+        prompt = f"""You are an Image Selector for video content.
+
+TASK: Select the BEST image from these candidates to use as a visual aid in a video.
+
+SEARCH PHRASE: "{search_phrase}"
+TRANSCRIPT CONTEXT: "{context[:300]}"
+{style_section}{feedback_section}
+CANDIDATES:
+{candidates_text}
+
+SELECTION CRITERIA (in order of importance):
+1. RELEVANCE (40%): Which image best matches the search phrase AND transcript context?
+2. STYLE CONSISTENCY (25%): If style info provided, match the source video's visual style
+3. AVOIDS PAST ISSUES (20%): If feedback history provided, avoid patterns that were rejected before
+4. SOURCE QUALITY (10%): Prefer web search results (google) for variety; stock sites (pexels, pixabay) are backup
+5. RESOLUTION (5%): Higher resolution is better
+
+OUTPUT:
+Return ONLY a JSON object with the best index and brief reason:
+{{"best_index": 0, "reason": "Best match for context"}}
+
+Return ONLY the JSON object, nothing else."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,  # Low temperature for consistent selection
+                ),
+            )
+
+            if not response.text:
+                logger.warning("Empty response for image selection, using first candidate")
+                return 0
+
+            text = strip_markdown_code_blocks(response.text)
+            result = json.loads(text)
+            best_index = int(result.get("best_index", 0))
+            reason = result.get("reason", "")
+
+            logger.debug(f"AI selected image {best_index}: {reason}")
+
+            # Validate index
+            if 0 <= best_index < len(candidates):
+                return best_index
+            else:
+                logger.warning(f"Invalid AI selection index {best_index}, using 0")
+                return 0
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse image selection response: {e}")
+            return 0
+        except Exception as e:
+            logger.warning(f"Image selection failed: {e}")
+            return 0
