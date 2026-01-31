@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import JobList from './components/JobList'
 import UploadForm from './components/UploadForm'
+import OutlierFinder from './components/OutlierFinder'
 import { Job } from './types'
+
+type ActiveTab = 'broll' | 'outliers'
 
 function App() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<ActiveTab>('broll')
 
   const fetchJobs = async () => {
     try {
@@ -27,7 +31,7 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
-  const handleJobCreated = (jobId: string) => {
+  const handleJobCreated = (_jobId: string) => {
     // Immediately refresh jobs list
     fetchJobs()
   }
@@ -45,38 +49,63 @@ function App() {
             <h1>Stockpile</h1>
           </div>
           <p className="tagline">AI-Powered B-roll Automation</p>
+
+          {/* Tab Navigation */}
+          <nav className="tab-nav">
+            <button
+              className={`tab-btn ${activeTab === 'broll' ? 'active' : ''}`}
+              onClick={() => setActiveTab('broll')}
+            >
+              <span className="tab-icon">&#x1F4E4;</span>
+              B-Roll Processor
+            </button>
+            <button
+              className={`tab-btn ${activeTab === 'outliers' ? 'active' : ''}`}
+              onClick={() => setActiveTab('outliers')}
+            >
+              <span className="tab-icon">&#x1F4CA;</span>
+              Outlier Finder
+            </button>
+          </nav>
         </div>
       </header>
 
       <main className="app-main">
-        <section className="upload-section">
-          <div className="section-header">
-            <div className="section-icon">&#x1F4E4;</div>
-            <div>
-              <h2>Upload Video</h2>
-              <p className="section-description">Drop your video to generate curated B-roll footage</p>
+        {/* Both tabs stay mounted - hidden via CSS to preserve state */}
+        <div style={{ display: activeTab === 'broll' ? 'block' : 'none' }}>
+          <section className="upload-section">
+            <div className="section-header">
+              <div className="section-icon">&#x1F4E4;</div>
+              <div>
+                <h2>Upload Video</h2>
+                <p className="section-description">Drop your video to generate curated B-roll footage</p>
+              </div>
             </div>
-          </div>
-          <UploadForm onJobCreated={handleJobCreated} />
-        </section>
+            <UploadForm onJobCreated={handleJobCreated} />
+          </section>
 
-        <section className="jobs-section">
-          <div className="section-header">
-            <div className="section-icon">&#x1F4CB;</div>
-            <div>
-              <h2>Processing Jobs</h2>
-              <p className="section-description">Track your video processing in real-time</p>
+          <section className="jobs-section">
+            <div className="section-header">
+              <div className="section-icon">&#x1F4CB;</div>
+              <div>
+                <h2>Processing Jobs</h2>
+                <p className="section-description">Track your video processing in real-time</p>
+              </div>
             </div>
-          </div>
-          {loading ? (
-            <div className="loading-state">
-              <div className="loading-spinner"></div>
-              <span className="loading-text">Loading jobs...</span>
-            </div>
-          ) : (
-            <JobList jobs={jobs} onJobDeleted={handleJobDeleted} />
-          )}
-        </section>
+            {loading ? (
+              <div className="loading-state">
+                <div className="loading-spinner"></div>
+                <span className="loading-text">Loading jobs...</span>
+              </div>
+            ) : (
+              <JobList jobs={jobs} onJobDeleted={handleJobDeleted} />
+            )}
+          </section>
+        </div>
+
+        <div style={{ display: activeTab === 'outliers' ? 'block' : 'none' }}>
+          <OutlierFinder />
+        </div>
       </main>
 
       <footer className="app-footer">

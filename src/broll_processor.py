@@ -12,9 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 from models.broll_need import BRollNeed, BRollPlan, TranscriptResult
+from models.image import ImageNeed, ImagePlan
+from models.style import ContentStyle
 from models.user_preferences import UserPreferences
 from models.video import ScoredVideo, VideoResult
 from services.ai_service import AIService
+from services.feedback_service import FeedbackService
 from services.clip_extractor import ClipExtractor
 from services.drive_service import DriveService
 from services.file_monitor import FileMonitor
@@ -30,6 +33,13 @@ from services.video_sources import (
     VideoSource,
     YouTubeVideoSource,
 )
+from services.image_sources import (
+    ImageSource,
+    PexelsImageSource,
+    PixabayImageSource,
+    GoogleImageSource,
+)
+from services.image_downloader import ImageAcquisitionService
 from utils.cache import load_cache_from_config
 from utils.checkpoint import (
     ProcessingCheckpoint,
@@ -146,6 +156,52 @@ class BRollProcessor:
             f"[VideoSources] Active sources: {[s.get_source_name() for s in self.video_sources]}"
         )
 
+        # IMAGE ACQUISITION: Initialize image sources for parallel image downloads
+        self.image_sources: list[ImageSource] = []
+        self.image_acquisition_service: Optional[ImageAcquisitionService] = None
+
+        image_acquisition_enabled = self.config.get("image_acquisition_enabled", True)
+        if image_acquisition_enabled:
+            image_source_names = self.config.get("image_sources", ["pexels", "pixabay", "google"])
+
+            for source_name in image_source_names:
+                source_name = source_name.strip().lower()
+
+                if source_name == "pexels":
+                    pexels_img_source = PexelsImageSource(max_results=5)
+                    if pexels_img_source.is_configured():
+                        self.image_sources.append(pexels_img_source)
+                        logger.debug("[ImageSources] Enabled: Pexels Photos")
+
+                elif source_name == "pixabay":
+                    pixabay_img_source = PixabayImageSource(max_results=5)
+                    if pixabay_img_source.is_configured():
+                        self.image_sources.append(pixabay_img_source)
+                        logger.debug("[ImageSources] Enabled: Pixabay Images")
+
+                elif source_name == "google":
+                    google_img_source = GoogleImageSource(max_results=5)
+                    if google_img_source.is_configured():
+                        self.image_sources.append(google_img_source)
+                        logger.debug("[ImageSources] Enabled: Google Images")
+
+            if self.image_sources:
+                self.image_acquisition_service = ImageAcquisitionService(
+                    image_sources=self.image_sources,
+                    ai_service=self.ai_service,
+                    output_dir=self.config.get("local_output_folder", "../output"),
+                    max_concurrent_downloads=self.config.get("parallel_image_downloads", 10),
+                )
+                logger.info(
+                    f"[ImageSources] Image acquisition ENABLED: "
+                    f"{[s.get_source_name() for s in self.image_sources]}, "
+                    f"interval={self.config.get('image_interval_seconds', 5.0)}s"
+                )
+            else:
+                logger.info("[ImageSources] Image acquisition DISABLED (no sources configured)")
+        else:
+            logger.info("[ImageSources] Image acquisition DISABLED (config)")
+
         whisper_model = self.config.get("whisper_model", "base")
         self.transcription_service = TranscriptionService(whisper_model)
 
@@ -238,6 +294,26 @@ class BRollProcessor:
         else:
             self.semantic_verifier = None
             logger.info("Semantic verification DISABLED")
+
+        # Feature 3: Feedback Loop - learns from user rejections to improve selection
+        feedback_enabled = self.config.get("feedback_enabled", True)
+        if feedback_enabled:
+            feedback_dir = self.config.get("feedback_dir", ".stockpile")
+            self.feedback_service = FeedbackService(feedback_dir)
+            stats = self.feedback_service.get_statistics()
+            logger.info(
+                f"Feedback system ENABLED: {stats['total_rejections']} rejections, "
+                f"{stats['total_approvals']} approvals stored in {feedback_dir}"
+            )
+            # Connect feedback service to image acquisition
+            if self.image_acquisition_service:
+                self.image_acquisition_service.feedback_service = self.feedback_service
+        else:
+            self.feedback_service = None
+            logger.info("Feedback system DISABLED")
+
+        # Feature 1: Style detection - will be populated per video during processing
+        self.content_style: Optional[ContentStyle] = None
 
         logger.info("stockpile initialized successfully")
 
@@ -410,6 +486,29 @@ class BRollProcessor:
             f"{len(transcript_result.segments)} segments, {duration_minutes:.1f} min duration"
         )
 
+        # Feature 1: Detect content style (topic, audience, visual style)
+        # This is done once per video and passed to all evaluations
+        style_detection_enabled = self.config.get("style_detection_enabled", True)
+        if style_detection_enabled:
+            logger.info("Detecting content style from transcript...")
+            self.content_style = self.ai_service.detect_content_style(
+                transcript_result=transcript_result,
+                user_preferences=user_preferences,
+            )
+            logger.info(
+                f"Content style detected: topic='{self.content_style.topic}', "
+                f"audience='{self.content_style.target_audience}', "
+                f"visual_style={self.content_style.visual_style.value}"
+            )
+            # Pass content style to image acquisition service
+            if self.image_acquisition_service:
+                self.image_acquisition_service.set_content_style(self.content_style)
+        else:
+            self.content_style = None
+            logger.info("Style detection DISABLED (config)")
+            if self.image_acquisition_service:
+                self.image_acquisition_service.set_content_style(None)
+
         # Step 2: Plan B-roll needs (timeline-aware)
         if status:
             status.start_stage("plan")
@@ -474,7 +573,21 @@ class BRollProcessor:
             drive_folder_url = f"https://drive.google.com/drive/folders/{drive_project_folder_id}"
             logger.info(f"Google Drive structure created: {drive_folder_url}")
 
-        # Step 4: Process B-roll needs in parallel batches
+        # Step 4: Generate image plan (if image acquisition is enabled)
+        # Images are acquired in parallel with video clips
+        image_plan: Optional[ImagePlan] = None
+        if self.image_acquisition_service:
+            logger.info("Generating image acquisition plan...")
+            image_interval = self.config.get("image_interval_seconds", 5.0)
+            image_plan = self.ai_service.generate_image_queries(
+                transcript_result, interval_seconds=image_interval
+            )
+            logger.info(
+                f"Image plan generated: {len(image_plan.needs)} images "
+                f"(1 per {image_interval}s for {transcript_result.duration:.1f}s video)"
+            )
+
+        # Step 5: Process B-roll needs AND images in PARALLEL
         logger.info(f"Processing {len(broll_plan.needs)} B-roll needs")
         need_downloads: dict[str, list[str]] = {}
         total_clips = 0
@@ -482,54 +595,149 @@ class BRollProcessor:
         # Register B-roll processing stage
         if status:
             status.register_stage("process_needs", total_items=len(broll_plan.needs))
+            if image_plan:
+                status.register_stage("process_images", total_items=len(image_plan.needs))
             status.start_stage("process_needs")
 
-        # Get parallel processing config
-        max_concurrent = self.config.get("max_concurrent_needs", 5)
+        # Create the video processing coroutine
+        async def process_all_broll_needs():
+            """Process all B-roll video needs."""
+            nonlocal need_downloads, total_clips
+            max_concurrent = self.config.get("max_concurrent_needs", 5)
+            batch_size = max_concurrent
 
-        # Process needs in batches
-        batch_size = max_concurrent
-        for batch_start in range(0, len(broll_plan.needs), batch_size):
-            batch_end = min(batch_start + batch_size, len(broll_plan.needs))
-            batch = broll_plan.needs[batch_start:batch_end]
+            for batch_start in range(0, len(broll_plan.needs), batch_size):
+                batch_end = min(batch_start + batch_size, len(broll_plan.needs))
+                batch = broll_plan.needs[batch_start:batch_end]
 
-            logger.info(
-                f"Processing batch {batch_start//batch_size + 1}/{(len(broll_plan.needs) + batch_size - 1)//batch_size} ({len(batch)} needs in parallel)"
-            )
-
-            # Process this batch in parallel
-            # Q4 IMPROVEMENT: Pass transcript and user preferences for context-aware evaluation
-            tasks = []
-            for i, need in enumerate(batch, batch_start + 1):
-                task = self._process_single_need(
-                    need=need,
-                    need_index=i,
-                    total_needs=len(broll_plan.needs),
-                    project_dir=project_dir,
-                    drive_project_folder_id=drive_project_folder_id,
-                    transcript_result=transcript_result,
-                    user_preferences=user_preferences,
+                logger.info(
+                    f"Processing video batch {batch_start//batch_size + 1}/"
+                    f"{(len(broll_plan.needs) + batch_size - 1)//batch_size} "
+                    f"({len(batch)} needs in parallel)"
                 )
-                tasks.append(task)
 
-            # Wait for all tasks in this batch to complete
-            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                tasks = []
+                for i, need in enumerate(batch, batch_start + 1):
+                    task = self._process_single_need(
+                        need=need,
+                        need_index=i,
+                        total_needs=len(broll_plan.needs),
+                        project_dir=project_dir,
+                        drive_project_folder_id=drive_project_folder_id,
+                        transcript_result=transcript_result,
+                        user_preferences=user_preferences,
+                    )
+                    tasks.append(task)
 
-            # Collect results
-            for result in batch_results:
-                if isinstance(result, Exception):
-                    logger.error(f"Batch task failed: {result}")
-                    # Still update progress even for failures
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        logger.error(f"Batch task failed: {result}")
+                        if status:
+                            status.update_stage("process_needs", increment=1)
+                        continue
+                    if result:
+                        folder_name, files = result
+                        need_downloads[folder_name] = files
+                        total_clips += len(files)
                     if status:
                         status.update_stage("process_needs", increment=1)
-                    continue
-                if result:
-                    folder_name, files = result
-                    need_downloads[folder_name] = files
-                    total_clips += len(files)
-                # Update progress
-                if status:
-                    status.update_stage("process_needs", increment=1)
+
+            return need_downloads
+
+        # Create the image processing coroutine (if enabled)
+        async def process_all_images():
+            """Process all image needs."""
+            if not self.image_acquisition_service or not image_plan or not image_plan.needs:
+                return {}
+
+            if status:
+                status.start_stage("process_images")
+
+            logger.info(f"[ImageAcquisition] Starting parallel image acquisition for {len(image_plan.needs)} images...")
+            image_results = await self.image_acquisition_service.process_all_image_needs(
+                image_plan.needs, project_dir
+            )
+
+            if status:
+                status.update_stage("process_images", completed=len(image_results))
+                status.complete_stage("process_images")
+
+            logger.info(f"[ImageAcquisition] Completed: {len(image_results)} images acquired")
+            return image_results
+
+        # Run video and image acquisition in PARALLEL using asyncio.gather
+        if self.image_acquisition_service and image_plan and image_plan.needs:
+            logger.info(
+                f"Starting PARALLEL acquisition: {len(broll_plan.needs)} video needs + "
+                f"{len(image_plan.needs)} image needs"
+            )
+            video_result, image_result = await asyncio.gather(
+                process_all_broll_needs(),
+                process_all_images(),
+                return_exceptions=True,
+            )
+
+            # Handle any exceptions
+            if isinstance(video_result, Exception):
+                logger.error(f"Video acquisition failed: {video_result}")
+                need_downloads = {}
+            if isinstance(image_result, Exception):
+                logger.error(f"Image acquisition failed: {image_result}")
+                image_result = {}
+
+            # Log image results
+            if image_result and not isinstance(image_result, Exception):
+                logger.info(f"Image acquisition complete: {len(image_result)} images in {project_dir}/images/")
+        else:
+            # No image acquisition - just process videos
+            # Get parallel processing config
+            max_concurrent = self.config.get("max_concurrent_needs", 5)
+
+            # Process needs in batches (original sequential batch processing)
+            batch_size = max_concurrent
+            for batch_start in range(0, len(broll_plan.needs), batch_size):
+                batch_end = min(batch_start + batch_size, len(broll_plan.needs))
+                batch = broll_plan.needs[batch_start:batch_end]
+
+                logger.info(
+                    f"Processing batch {batch_start//batch_size + 1}/{(len(broll_plan.needs) + batch_size - 1)//batch_size} ({len(batch)} needs in parallel)"
+                )
+
+                # Process this batch in parallel
+                # Q4 IMPROVEMENT: Pass transcript and user preferences for context-aware evaluation
+                tasks = []
+                for i, need in enumerate(batch, batch_start + 1):
+                    task = self._process_single_need(
+                        need=need,
+                        need_index=i,
+                        total_needs=len(broll_plan.needs),
+                        project_dir=project_dir,
+                        drive_project_folder_id=drive_project_folder_id,
+                        transcript_result=transcript_result,
+                        user_preferences=user_preferences,
+                    )
+                    tasks.append(task)
+
+                # Wait for all tasks in this batch to complete
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Collect results
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        logger.error(f"Batch task failed: {result}")
+                        # Still update progress even for failures
+                        if status:
+                            status.update_stage("process_needs", increment=1)
+                        continue
+                    if result:
+                        folder_name, files = result
+                        need_downloads[folder_name] = files
+                        total_clips += len(files)
+                    # Update progress
+                    if status:
+                        status.update_stage("process_needs", increment=1)
 
         # Original sequential processing (keeping for reference, but replaced above)
         """
@@ -1432,14 +1640,28 @@ class BRollProcessor:
         """Evaluate videos using Gemini AI (legacy method).
 
         NOTE: For Q4 context-aware evaluation, use evaluate_videos_enhanced instead.
+
+        Feature 1 & 3: Now includes content_style and feedback_context for better selection.
         """
         if not videos:
             logger.info(f"No videos to evaluate for phrase: {phrase}")
             return []
 
+        # Feature 3: Get feedback context
+        feedback_context = ""
+        if self.feedback_service:
+            feedback_context = self.feedback_service.get_prompt_additions(phrase)
+
         loop = asyncio.get_event_loop()
         scored_videos = await loop.run_in_executor(
-            None, lambda: self.ai_service.evaluate_videos(phrase, videos, self.content_filter)
+            None,
+            lambda: self.ai_service.evaluate_videos(
+                phrase,
+                videos,
+                self.content_filter,
+                content_style=self.content_style,  # Feature 1
+                feedback_context=feedback_context,  # Feature 3
+            )
         )
 
         max_videos = self.config.get("max_videos_per_phrase", 3)
@@ -1489,9 +1711,15 @@ class BRollProcessor:
                     f"'{transcript_segment[:100]}...'"
                 )
 
+        # Feature 3: Get feedback context
+        feedback_context = ""
+        if self.feedback_service:
+            feedback_context = self.feedback_service.get_prompt_additions(need.search_phrase)
+
         loop = asyncio.get_event_loop()
         # Q2/Q4 IMPROVEMENT: Pass full context to evaluation for better scoring
         # BRollNeed includes enhanced metadata: visual_style, time_of_day, movement, negative_keywords
+        # Feature 1 & 3: Also pass content_style and feedback_context
         scored_videos = await loop.run_in_executor(
             None,
             lambda: self.ai_service.evaluate_videos(
@@ -1500,6 +1728,8 @@ class BRollProcessor:
                 content_filter=self.content_filter,
                 transcript_segment=transcript_segment,
                 broll_need=need,  # Q2: Passes visual_style, movement, negative_keywords
+                content_style=self.content_style,  # Feature 1
+                feedback_context=feedback_context,  # Feature 3
             ),
         )
 

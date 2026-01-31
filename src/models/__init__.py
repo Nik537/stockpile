@@ -2,6 +2,10 @@
 from .video import VideoResult, ScoredVideo
 from .clip import ClipSegment, ClipResult, VideoAnalysisResult
 from .user_preferences import UserPreferences, GeneratedQuestion
+from .image import ImageResult, ImageNeed, ImagePlan, ScoredImage
+from .style import ContentStyle, VisualStyle, ColorTone, PacingStyle, TranscriptContext
+from .feedback import ContentFeedback, FeedbackStore, RejectionFilter
+from .outlier import OutlierVideo, ChannelStats, OutlierSearchResult
 
 __all__ = [
     "VideoResult",
@@ -11,4 +15,22 @@ __all__ = [
     "VideoAnalysisResult",
     "UserPreferences",
     "GeneratedQuestion",
+    "ImageResult",
+    "ImageNeed",
+    "ImagePlan",
+    "ScoredImage",
+    # Feature 1: Style/Mood Detection
+    "ContentStyle",
+    "VisualStyle",
+    "ColorTone",
+    "PacingStyle",
+    "TranscriptContext",
+    # Feature 3: Feedback Loop
+    "ContentFeedback",
+    "FeedbackStore",
+    "RejectionFilter",
+    # Outlier Finder
+    "OutlierVideo",
+    "ChannelStats",
+    "OutlierSearchResult",
 ]

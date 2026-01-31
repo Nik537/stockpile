@@ -15,6 +15,12 @@ class BRollNeed:
     - visual_style: Preferred style (cinematic, documentary, raw, vlog)
     - time_of_day: Preferred lighting (golden hour, night, day)
     - movement: Camera movement preference (static, pan, drone, handheld)
+
+    Feature 2: Extended with ±10 second context window fields:
+    - context_before: Text from ~10 seconds before timestamp
+    - context_after: Text from ~10 seconds after timestamp
+    - themes: Key themes extracted from full context
+    - emotional_tone: Detected emotional tone at this point
     """
 
     timestamp: float  # When in source video this B-roll is needed (seconds)
@@ -55,6 +61,22 @@ class BRollNeed:
     visual_style: Optional[str] = None  # cinematic, documentary, raw, vlog
     time_of_day: Optional[str] = None  # golden hour, night, day, doesn't matter
     movement: Optional[str] = None  # static, pan, drone, handheld, tracking
+
+    # Feature 2: Extended context window (±10 seconds)
+    context_before: str = ""
+    """Transcript text from ~10 seconds before this timestamp."""
+
+    context_after: str = ""
+    """Transcript text from ~10 seconds after this timestamp."""
+
+    themes: List[str] = field(default_factory=list)
+    """Key themes extracted from the extended context window."""
+
+    entities: List[str] = field(default_factory=list)
+    """Named entities (people, places, things) from context."""
+
+    emotional_tone: Optional[str] = None
+    """Detected emotional tone at this point (e.g., 'serious', 'excited', 'contemplative')."""
 
     def __post_init__(self):
         """Validate and clamp values."""
@@ -152,6 +174,65 @@ class TranscriptResult:
         ]
 
         return " ".join(seg.text for seg in relevant_segments).strip()
+
+    def get_context_window(
+        self, timestamp: float, window_seconds: float = 10.0
+    ) -> tuple[str, str, str]:
+        """Get ±window_seconds of context around a timestamp.
+
+        Feature 2: Context Window support.
+
+        Args:
+            timestamp: The target timestamp in seconds
+            window_seconds: Seconds before and after to include (default 10.0)
+
+        Returns:
+            Tuple of (context_before, context_at, context_after)
+            - context_before: Text from (timestamp - window_seconds) to timestamp
+            - context_at: Text at the timestamp (±2 seconds)
+            - context_after: Text from timestamp to (timestamp + window_seconds)
+        """
+        # Context before: window_seconds before timestamp
+        before_start = max(0, timestamp - window_seconds)
+        before_end = timestamp
+        context_before = " ".join(
+            seg.text for seg in self.segments
+            if seg.start >= before_start and seg.end <= before_end
+        ).strip()
+
+        # Context at: ±2 seconds around timestamp
+        at_start = max(0, timestamp - 2)
+        at_end = timestamp + 2
+        context_at = " ".join(
+            seg.text for seg in self.segments
+            if seg.end >= at_start and seg.start <= at_end
+        ).strip()
+
+        # Context after: timestamp to window_seconds after
+        after_start = timestamp
+        after_end = min(self.duration, timestamp + window_seconds)
+        context_after = " ".join(
+            seg.text for seg in self.segments
+            if seg.start >= after_start and seg.start <= after_end
+        ).strip()
+
+        return (context_before, context_at, context_after)
+
+    def get_full_context_window(
+        self, timestamp: float, window_seconds: float = 10.0
+    ) -> str:
+        """Get the full combined context window as a single string.
+
+        Args:
+            timestamp: The target timestamp in seconds
+            window_seconds: Seconds before and after to include
+
+        Returns:
+            Combined context string
+        """
+        before, at, after = self.get_context_window(timestamp, window_seconds)
+        parts = [p for p in [before, at, after] if p]
+        return " ".join(parts)
 
     def format_with_timestamps(self) -> str:
         """Format transcript with timestamps for AI analysis."""

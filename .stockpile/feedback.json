@@ -1,0 +1,32 @@
+{
+  "rejections": [
+    {
+      "content_id": "test_integration_001",
+      "content_type": "image",
+      "source": "pexels",
+      "search_phrase": "athlete training",
+      "was_rejected": true,
+      "rejection_reason": "too_generic",
+      "timestamp": 0.0,
+      "title": "Stock gym photo",
+      "description": "",
+      "feedback_time": 1769511107.2821782
+    }
+  ],
+  "approvals": [],
+  "rejected_sources": {
+    "pexels": 1
+  },
+  "rejected_keywords": {
+    "gym": 1,
+    "athlete": 1,
+    "training": 1
+  },
+  "rejected_content_ids": {
+    "test_integration_001": 1
+  },
+  "successful_patterns": [],
+  "total_rejections": 1,
+  "total_approvals": 0,
+  "last_updated": 1769511107.28218
+}

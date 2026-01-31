@@ -10,7 +10,7 @@ interface JobCardProps {
 
 function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
   const [job, setJob] = useState<Job>(initialJob)
-  const [ws, setWs] = useState<WebSocket | null>(null)
+  const [_ws, setWs] = useState<WebSocket | null>(null)
 
   useEffect(() => {
     // Connect to WebSocket for real-time updates
