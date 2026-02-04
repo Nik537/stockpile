@@ -11,6 +11,8 @@ Optimizations implemented:
 5. In-memory TTL caching
 6. Parallel processing with rate limiting
 7. Scales to 100+ channels (10,000+ videos)
+8. YouTube Data API integration for faster metadata (when available)
+9. Reddit integration for early viral detection
 """
 
 import logging
@@ -21,10 +23,30 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
+import numpy as np
 import yt_dlp
 
-from models.outlier import OutlierSearchResult, OutlierVideo
+from models.outlier import ChannelStats, OutlierSearchResult, OutlierVideo
 from services.video_cache import VideoCache, get_video_cache
+
+# Optional YouTube API service import
+try:
+    from services.youtube_api_service import (
+        YouTubeAPIService,
+        get_youtube_api_service,
+        ChannelInfo as APIChannelInfo,
+        VideoInfo as APIVideoInfo,
+    )
+    YOUTUBE_API_AVAILABLE = True
+except ImportError:
+    YOUTUBE_API_AVAILABLE = False
+
+# Optional Reddit monitor import
+try:
+    from services.reddit_monitor import RedditMonitor, RedditVideo
+    REDDIT_AVAILABLE = True
+except ImportError:
+    REDDIT_AVAILABLE = False
 
 # Type aliases for callbacks
 OnOutlierFoundCallback = Callable[[OutlierVideo], None]
@@ -59,6 +81,8 @@ class OutlierFinderService:
     - Video caching (SQLite + in-memory)
     - Batched metadata extraction
     - Channel-first discovery approach
+    - YouTube Data API integration (50x faster when available)
+    - Reddit integration for early viral detection
     """
 
     def __init__(
@@ -72,6 +96,9 @@ class OutlierFinderService:
         parallel_workers: int = 3,  # Parallel channel analysis
         use_cache: bool = True,
         cache: Optional[VideoCache] = None,
+        youtube_api_key: Optional[str] = None,
+        use_youtube_api: bool = True,
+        enable_reddit_discovery: bool = True,
     ):
         """Initialize the outlier finder.
 
@@ -85,6 +112,9 @@ class OutlierFinderService:
             parallel_workers: Number of parallel workers for channel analysis
             use_cache: Whether to use caching (default True)
             cache: Optional VideoCache instance (uses global if None)
+            youtube_api_key: YouTube Data API key (optional, uses config if not provided)
+            use_youtube_api: Whether to use YouTube API when available (default True)
+            enable_reddit_discovery: Whether to check Reddit for viral signals (default True)
         """
         self.min_score = min_score
         self.max_videos_per_channel = max_videos_per_channel
@@ -96,13 +126,39 @@ class OutlierFinderService:
         self.use_cache = use_cache
         self.cache = cache or (get_video_cache() if use_cache else None)
 
-        # Rate limiting delays (in seconds)
-        self.channel_delay = (1.5, 3.0)  # Reduced due to caching
-        self.video_delay = (0.3, 0.8)  # Reduced due to batching
+        # YouTube API integration
+        self.use_youtube_api = use_youtube_api
+        self._youtube_api: Optional[YouTubeAPIService] = None
+        if use_youtube_api and YOUTUBE_API_AVAILABLE:
+            if youtube_api_key:
+                self._youtube_api = YouTubeAPIService(youtube_api_key)
+            else:
+                self._youtube_api = get_youtube_api_service()
+
+        if self._youtube_api:
+            logger.info("YouTube Data API enabled - using fast metadata retrieval")
+        else:
+            logger.info("YouTube Data API not available - using yt-dlp fallback")
+
+        # Reddit integration
+        self.enable_reddit_discovery = enable_reddit_discovery and REDDIT_AVAILABLE
+        self._reddit_monitor: Optional[RedditMonitor] = None
+        if self.enable_reddit_discovery:
+            self._reddit_monitor = RedditMonitor(min_score=50, max_age_hours=72)
+            logger.info("Reddit integration enabled for early viral detection")
+
+        # Rate limiting delays (in seconds) - reduced when using API
+        if self._youtube_api:
+            self.channel_delay = (0.1, 0.3)  # Much faster with API
+            self.video_delay = (0.05, 0.1)
+        else:
+            self.channel_delay = (1.5, 3.0)  # Slower for yt-dlp scraping
+            self.video_delay = (0.3, 0.8)
+
         self.retry_delays = [2, 4, 8, 16]  # Exponential backoff on 403
 
         # Batch size for video metadata enrichment
-        self.batch_size = 10  # Process videos in batches
+        self.batch_size = 50 if self._youtube_api else 10  # API supports 50
 
     def find_outliers_by_topic(
         self,
@@ -115,6 +171,8 @@ class OutlierFinderService:
 
         Main entry point - searches topic, discovers channels, finds outliers.
         Now with parallel processing and caching for 10-100x more videos.
+
+        Uses YouTube Data API when available for 50x faster metadata retrieval.
 
         Args:
             topic: Topic to search for (e.g., "tech reviews")
@@ -129,8 +187,30 @@ class OutlierFinderService:
 
         result = OutlierSearchResult(topic=topic)
 
-        # Step 1: Search for channels by topic (uses ytsearch)
-        channel_urls = self._search_channels_by_topic(topic, max_channels)
+        # Step 0: Check Reddit for early viral signals (if enabled)
+        reddit_video_ids: Set[str] = set()
+        if self._reddit_monitor:
+            try:
+                reddit_videos = self._reddit_monitor.find_videos_by_topic(topic, limit_per_subreddit=25)
+                reddit_video_ids = {v.video_id for v in reddit_videos}
+                logger.info(f"Found {len(reddit_video_ids)} videos trending on Reddit for topic: {topic}")
+            except Exception as e:
+                logger.warning(f"Reddit discovery failed: {e}")
+
+        # Step 1: Search for channels by topic
+        # First, check if we have indexed channels for this niche
+        indexed_channels = self._get_channels_from_index(topic, max_channels)
+
+        if indexed_channels:
+            logger.info(f"Using {len(indexed_channels)} channels from index for: {topic}")
+            channel_urls = indexed_channels
+        elif self._youtube_api:
+            # Fall back to API search
+            channel_urls = self._search_channels_by_topic_api(topic, max_channels)
+        else:
+            # Fall back to yt-dlp search
+            channel_urls = self._search_channels_by_topic(topic, max_channels)
+
         if not channel_urls:
             logger.warning(f"No channels found for topic: {topic}")
             return result
@@ -213,6 +293,154 @@ class OutlierFinderService:
         time.sleep(random.uniform(*self.channel_delay))
         return self._analyze_channel(channel_url)
 
+    def _get_channels_from_index(self, topic: str, max_results: int) -> List[str]:
+        """Get channels from the local index for a topic.
+
+        Checks the channel index for pre-indexed channels matching this topic.
+        Much faster than API search when index is populated.
+
+        Args:
+            topic: Topic/niche to search for
+            max_results: Maximum number of channels to return
+
+        Returns:
+            List of channel URLs (empty if no indexed channels found)
+        """
+        if not self.cache:
+            return []
+
+        try:
+            # Query index for channels with this niche tag
+            indexed = self.cache.get_channels_by_niche(
+                niche=topic.lower(),
+                min_subs=self.min_subs,
+                max_subs=self.max_subs,
+                limit=max_results,
+            )
+
+            if indexed:
+                channel_urls = [
+                    f"https://www.youtube.com/channel/{ch['channel_id']}"
+                    for ch in indexed
+                    if ch.get('channel_id')
+                ]
+                logger.debug(f"Found {len(channel_urls)} indexed channels for: {topic}")
+                return channel_urls
+
+        except Exception as e:
+            logger.warning(f"Error querying channel index: {e}")
+
+        return []
+
+    def _search_channels_by_topic_api(
+        self, topic: str, max_results: int
+    ) -> List[str]:
+        """Search for channels using YouTube Data API.
+
+        Much faster than yt-dlp scraping and includes subscriber counts.
+
+        Args:
+            topic: Topic to search for
+            max_results: Maximum number of channels to return
+
+        Returns:
+            List of channel URLs
+        """
+        if not self._youtube_api:
+            return self._search_channels_by_topic(topic, max_results)
+
+        try:
+            # Search for channels with subscriber filtering
+            channels = self._youtube_api.search_channels(
+                topic=topic,
+                max_results=max_results,
+                min_subscriber_count=self.min_subs,
+                max_subscriber_count=self.max_subs,
+            )
+
+            channel_urls = []
+            for channel in channels:
+                url = f"https://www.youtube.com/channel/{channel.channel_id}"
+                channel_urls.append(url)
+
+                # Pre-cache channel info from API
+                if self.cache:
+                    self.cache.set_channel(channel.channel_id, {
+                        "channel_id": channel.channel_id,
+                        "channel_name": channel.channel_name,
+                        "subscriber_count": channel.subscriber_count,
+                        "video_count": channel.video_count,
+                        "view_count": channel.view_count,
+                    })
+
+            logger.info(f"YouTube API found {len(channel_urls)} channels for topic: {topic}")
+            logger.info(f"API quota used: {self._youtube_api.quota_used} units")
+
+            return channel_urls
+
+        except Exception as e:
+            logger.error(f"YouTube API channel search failed: {e}, falling back to yt-dlp")
+            return self._search_channels_by_topic(topic, max_results)
+
+    def _extract_channel_videos_api(self, channel_id: str) -> List[Dict]:
+        """Extract channel videos using YouTube Data API.
+
+        Much faster than yt-dlp and includes all metadata in single request.
+
+        Args:
+            channel_id: YouTube channel ID
+
+        Returns:
+            List of video metadata dicts (compatible with yt-dlp format)
+        """
+        if not self._youtube_api:
+            return []
+
+        try:
+            api_videos = self._youtube_api.get_channel_videos(
+                channel_id=channel_id,
+                max_results=self.max_videos_per_channel,
+            )
+
+            # Convert API format to yt-dlp compatible format
+            videos = []
+            for v in api_videos:
+                # Convert ISO date to YYYYMMDD format
+                upload_date = ""
+                if v.published_at:
+                    try:
+                        dt = datetime.fromisoformat(v.published_at.replace("Z", "+00:00"))
+                        upload_date = dt.strftime("%Y%m%d")
+                    except ValueError:
+                        pass
+
+                video_dict = {
+                    "id": v.video_id,
+                    "title": v.title,
+                    "view_count": v.view_count,
+                    "like_count": v.like_count,
+                    "comment_count": v.comment_count,
+                    "duration": v.duration_seconds,
+                    "upload_date": upload_date,
+                    "channel": v.channel_name,
+                    "uploader": v.channel_name,
+                    "channel_id": v.channel_id,
+                    "thumbnail": v.thumbnail_url,
+                    "is_short": v.is_short,
+                }
+                videos.append(video_dict)
+
+                # Cache each video
+                if self.cache:
+                    self.cache.set_video(v.video_id, video_dict)
+
+            logger.debug(f"YouTube API fetched {len(videos)} videos for channel {channel_id}")
+            return videos
+
+        except Exception as e:
+            logger.warning(f"YouTube API video fetch failed for {channel_id}: {e}")
+            return []
+
     def _search_channels_by_topic(
         self, topic: str, max_results: int
     ) -> List[str]:
@@ -282,7 +510,11 @@ class OutlierFinderService:
     ) -> Tuple[List[OutlierVideo], int]:
         """Analyze a channel for outlier videos.
 
-        Enhanced with caching and batched processing.
+        Enhanced with multi-layer scoring including:
+        - IQR-based statistical score
+        - Engagement metrics (likes, comments)
+        - Velocity tracking (views per day)
+        - Composite score combining all factors
 
         Args:
             channel_url: YouTube channel URL
@@ -302,8 +534,11 @@ class OutlierFinderService:
             logger.debug(f"Using cached video list for channel {channel_id}")
             videos = self._get_videos_from_ids(cached_video_ids)
         else:
-            # Get channel videos with metadata using yt-dlp
-            videos = self._extract_channel_videos(channel_url)
+            # Get channel videos - use API if available, otherwise yt-dlp
+            if self._youtube_api and channel_id:
+                videos = self._extract_channel_videos_api(channel_id)
+            else:
+                videos = self._extract_channel_videos(channel_url)
 
             # Cache the video IDs
             if self.cache and videos and channel_id:
@@ -331,46 +566,95 @@ class OutlierFinderService:
         if not videos:
             return [], 0
 
-        # Calculate channel average (excluding top 5% to avoid skewing)
-        avg_views, median_views = self._calculate_channel_average(videos)
+        # Get channel name
+        channel_name = videos[0].get("channel", videos[0].get("uploader", "Unknown"))
 
-        if avg_views <= 0:
+        # Calculate comprehensive channel statistics
+        channel_stats = self._calculate_channel_stats(
+            videos, channel_id or "unknown", channel_name
+        )
+
+        if channel_stats.average_views <= 0:
             return [], len(videos)
 
         # Cache channel stats
         if self.cache and channel_id:
             self.cache.set_channel(channel_id, {
                 "channel_id": channel_id,
-                "average_views": avg_views,
-                "median_views": median_views,
-                "video_count": len(videos)
+                "average_views": channel_stats.average_views,
+                "median_views": channel_stats.median_views,
+                "video_count": len(videos),
+                "q1_views": channel_stats.q1_views,
+                "q3_views": channel_stats.q3_views,
+                "iqr_views": channel_stats.iqr_views,
+                "upper_bound": channel_stats.upper_bound,
+                "median_views_per_day": channel_stats.median_views_per_day,
             })
 
-        # Find outliers
+        # Find outliers with enhanced scoring
         outliers = []
-        channel_name = videos[0].get("channel", videos[0].get("uploader", "Unknown"))
 
         for video in videos:
             view_count = video.get("view_count", 0)
             if not view_count:
                 continue
 
-            score = view_count / avg_views
+            # Legacy ratio score
+            ratio_score = view_count / channel_stats.average_views
 
-            if score >= self.min_score:
-                tier = OutlierVideo.calculate_tier(score)
+            if ratio_score >= self.min_score:
+                tier = OutlierVideo.calculate_tier(ratio_score)
+
+                # Calculate engagement metrics
+                like_count = video.get("like_count")
+                comment_count = video.get("comment_count")
+                engagement_rate = self._calculate_engagement_rate(video)
+                engagement_score = self._calculate_engagement_score(engagement_rate)
+
+                # Calculate velocity metrics
+                upload_date = video.get("upload_date", "")
+                days_since_upload = self._days_since_upload(upload_date)
+                views_per_day = (
+                    view_count / days_since_upload if days_since_upload > 0 else None
+                )
+                velocity_score = self._calculate_velocity_score(
+                    views_per_day, channel_stats.median_views_per_day or 0
+                )
+
+                # Calculate IQR-based statistical score
+                statistical_score = self._calculate_statistical_score(
+                    view_count, channel_stats.upper_bound or 0
+                )
+
+                # Calculate composite score
+                composite_score = self._calculate_composite_score(
+                    statistical_score, engagement_score, velocity_score, ratio_score
+                )
 
                 outlier = OutlierVideo(
+                    # Core fields
                     video_id=video.get("id", ""),
                     title=video.get("title", "Unknown"),
                     url=f"https://www.youtube.com/watch?v={video.get('id', '')}",
                     thumbnail_url=self._get_thumbnail_url(video),
                     view_count=view_count,
-                    outlier_score=score,
-                    channel_average_views=avg_views,
+                    outlier_score=ratio_score,
+                    channel_average_views=channel_stats.average_views,
                     channel_name=channel_name,
-                    upload_date=video.get("upload_date", ""),
+                    upload_date=upload_date,
                     outlier_tier=tier,
+                    # Engagement metrics
+                    like_count=like_count,
+                    comment_count=comment_count,
+                    engagement_rate=engagement_rate,
+                    # Velocity metrics
+                    days_since_upload=days_since_upload if days_since_upload > 0 else None,
+                    views_per_day=views_per_day,
+                    velocity_score=velocity_score,
+                    # Composite scoring
+                    composite_score=composite_score,
+                    statistical_score=statistical_score,
+                    engagement_score=engagement_score,
                 )
                 outliers.append(outlier)
 
@@ -556,7 +840,8 @@ class OutlierFinderService:
     def _enrich_video_metadata(self, videos: List[dict]) -> List[dict]:
         """Enrich video list with view counts if not present.
 
-        Now with caching - checks cache first, only fetches uncached.
+        Now with caching and YouTube API support for batch fetching.
+        Uses API when available (50 videos per request), otherwise yt-dlp.
 
         Args:
             videos: List of video metadata dicts
@@ -598,46 +883,126 @@ class OutlierFinderService:
         if to_fetch:
             logger.debug(f"Enriching {len(to_fetch)} videos with metadata")
 
-            for video in to_fetch:
-                video_id = video.get("id")
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
+            # Use YouTube API for batch fetching if available (50x faster)
+            if self._youtube_api:
+                enriched.extend(self._enrich_videos_with_api(to_fetch))
+            else:
+                enriched.extend(self._enrich_videos_with_ytdlp(to_fetch))
 
-                ydl_opts = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "skip_download": True,
-                    "http_headers": {
-                        "User-Agent": get_random_user_agent(),
-                    },
-                }
+        return enriched
 
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=False)
-                        if info:
-                            # Merge enriched data with original
-                            video.update({
-                                "view_count": info.get("view_count", 0),
-                                "upload_date": info.get("upload_date", video.get("upload_date", "")),
-                                "duration": info.get("duration", video.get("duration", 0)),
-                                "channel": info.get("channel", info.get("uploader", "")),
-                                "like_count": info.get("like_count"),
-                                "comment_count": info.get("comment_count"),
-                            })
-                            enriched.append(video)
+    def _enrich_videos_with_api(self, videos: List[dict]) -> List[dict]:
+        """Enrich videos using YouTube Data API (batched, 50 per request).
 
-                            # Cache the enriched video
-                            if self.cache:
-                                self.cache.set_video(video_id, video)
+        Args:
+            videos: List of video metadata dicts
 
-                    # Rate limiting between video fetches
-                    delay = random.uniform(*self.video_delay)
-                    time.sleep(delay)
+        Returns:
+            Enriched video list
+        """
+        if not self._youtube_api:
+            return videos
 
-                except Exception as e:
-                    logger.warning(f"Could not enrich video {video_id}: {e}")
-                    # Still include video with whatever data we have
+        enriched = []
+        video_ids = [v.get("id") for v in videos if v.get("id")]
+
+        try:
+            # Batch fetch video details (50 per request)
+            video_details = self._youtube_api.get_video_details(video_ids)
+
+            # Create lookup for quick access
+            video_lookup = {v.get("id"): v for v in videos}
+
+            for video_id, details in video_details.items():
+                video = video_lookup.get(video_id, {})
+
+                # Convert ISO date to YYYYMMDD format
+                upload_date = video.get("upload_date", "")
+                if details.published_at and not upload_date:
+                    try:
+                        dt = datetime.fromisoformat(details.published_at.replace("Z", "+00:00"))
+                        upload_date = dt.strftime("%Y%m%d")
+                    except ValueError:
+                        pass
+
+                video.update({
+                    "view_count": details.view_count,
+                    "like_count": details.like_count,
+                    "comment_count": details.comment_count,
+                    "duration": details.duration_seconds,
+                    "upload_date": upload_date,
+                    "channel": details.channel_name,
+                    "is_short": details.is_short,
+                })
+                enriched.append(video)
+
+                # Cache the enriched video
+                if self.cache:
+                    self.cache.set_video(video_id, video)
+
+            # Handle any videos not returned by API
+            returned_ids = set(video_details.keys())
+            for video in videos:
+                if video.get("id") not in returned_ids:
                     enriched.append(video)
+
+        except Exception as e:
+            logger.warning(f"YouTube API enrichment failed: {e}, falling back to yt-dlp")
+            return self._enrich_videos_with_ytdlp(videos)
+
+        return enriched
+
+    def _enrich_videos_with_ytdlp(self, videos: List[dict]) -> List[dict]:
+        """Enrich videos using yt-dlp (slower, one at a time).
+
+        Args:
+            videos: List of video metadata dicts
+
+        Returns:
+            Enriched video list
+        """
+        enriched = []
+
+        for video in videos:
+            video_id = video.get("id")
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "skip_download": True,
+                "http_headers": {
+                    "User-Agent": get_random_user_agent(),
+                },
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(video_url, download=False)
+                    if info:
+                        # Merge enriched data with original
+                        video.update({
+                            "view_count": info.get("view_count", 0),
+                            "upload_date": info.get("upload_date", video.get("upload_date", "")),
+                            "duration": info.get("duration", video.get("duration", 0)),
+                            "channel": info.get("channel", info.get("uploader", "")),
+                            "like_count": info.get("like_count"),
+                            "comment_count": info.get("comment_count"),
+                        })
+                        enriched.append(video)
+
+                        # Cache the enriched video
+                        if self.cache:
+                            self.cache.set_video(video_id, video)
+
+                # Rate limiting between video fetches
+                delay = random.uniform(*self.video_delay)
+                time.sleep(delay)
+
+            except Exception as e:
+                logger.warning(f"Could not enrich video {video_id}: {e}")
+                # Still include video with whatever data we have
+                enriched.append(video)
 
         return enriched
 
@@ -671,6 +1036,162 @@ class OutlierFinderService:
         median_views = statistics.median(filtered_counts)
 
         return avg_views, median_views
+
+    def _calculate_channel_stats(
+        self, videos: List[dict], channel_id: str, channel_name: str
+    ) -> ChannelStats:
+        """Calculate comprehensive channel statistics including IQR and velocity.
+
+        Args:
+            videos: List of video metadata dicts
+            channel_id: YouTube channel ID
+            channel_name: Channel display name
+
+        Returns:
+            ChannelStats with IQR-based statistics and velocity metrics
+        """
+        view_counts = [v.get("view_count", 0) for v in videos if v.get("view_count")]
+
+        if not view_counts:
+            return ChannelStats(
+                channel_id=channel_id,
+                channel_name=channel_name,
+                average_views=0.0,
+                median_views=0.0,
+                total_videos_analyzed=0,
+            )
+
+        # Sort and exclude top 5% for average calculation
+        view_counts_sorted = sorted(view_counts)
+        exclude_count = max(1, len(view_counts_sorted) // 20)
+        filtered_counts = (
+            view_counts_sorted[:-exclude_count]
+            if len(view_counts_sorted) > 1
+            else view_counts_sorted
+        )
+
+        avg_views = statistics.mean(filtered_counts) if filtered_counts else 0.0
+        median_views = statistics.median(filtered_counts) if filtered_counts else 0.0
+
+        # Calculate IQR-based statistics using numpy
+        q1 = float(np.percentile(view_counts, 25))
+        q3 = float(np.percentile(view_counts, 75))
+        iqr = q3 - q1
+        upper_bound = q3 + 1.5 * iqr
+
+        # Calculate velocity statistics (views per day)
+        velocity_values = []
+        for video in videos:
+            view_count = video.get("view_count", 0)
+            upload_date = video.get("upload_date", "")
+            if view_count and upload_date:
+                days_old = self._days_since_upload(upload_date)
+                if days_old > 0:
+                    velocity_values.append(view_count / days_old)
+
+        median_velocity = statistics.median(velocity_values) if velocity_values else 0.0
+        avg_velocity = statistics.mean(velocity_values) if velocity_values else 0.0
+
+        return ChannelStats(
+            channel_id=channel_id,
+            channel_name=channel_name,
+            average_views=avg_views,
+            median_views=median_views,
+            total_videos_analyzed=len(videos),
+            q1_views=q1,
+            q3_views=q3,
+            iqr_views=iqr,
+            upper_bound=upper_bound,
+            median_views_per_day=median_velocity,
+            average_views_per_day=avg_velocity,
+        )
+
+    def _days_since_upload(self, upload_date: str) -> int:
+        """Calculate days since upload from YYYYMMDD format."""
+        if not upload_date or len(upload_date) != 8:
+            return 0
+        try:
+            upload_dt = datetime.strptime(upload_date, "%Y%m%d")
+            return max(1, (datetime.now() - upload_dt).days)
+        except ValueError:
+            return 0
+
+    def _calculate_engagement_rate(self, video: dict) -> Optional[float]:
+        """Calculate engagement rate as (likes + comments) / views * 100."""
+        view_count = video.get("view_count", 0)
+        like_count = video.get("like_count", 0) or 0
+        comment_count = video.get("comment_count", 0) or 0
+
+        if view_count <= 0:
+            return None
+
+        return (like_count + comment_count) / view_count * 100
+
+    def _calculate_engagement_score(self, engagement_rate: Optional[float]) -> Optional[float]:
+        """Normalize engagement rate to a score (6% = 1.0, capped at 2.0)."""
+        if engagement_rate is None:
+            return None
+        return min(engagement_rate / 6.0, 2.0)
+
+    def _calculate_velocity_score(
+        self, views_per_day: Optional[float], channel_median_velocity: float
+    ) -> Optional[float]:
+        """Calculate velocity score as video velocity / channel median velocity."""
+        if views_per_day is None or channel_median_velocity <= 0:
+            return None
+        return views_per_day / channel_median_velocity
+
+    def _calculate_statistical_score(
+        self, view_count: int, upper_bound: float
+    ) -> Optional[float]:
+        """Calculate IQR-based statistical score."""
+        if upper_bound <= 0:
+            return None
+        return view_count / upper_bound
+
+    def _calculate_composite_score(
+        self,
+        statistical_score: Optional[float],
+        engagement_score: Optional[float],
+        velocity_score: Optional[float],
+        ratio_score: float,
+    ) -> float:
+        """Calculate weighted composite score from all components.
+
+        Weights:
+        - 35% statistical (IQR-based)
+        - 25% engagement
+        - 25% velocity
+        - 15% ratio (views/channel average - legacy)
+
+        Falls back to available scores if some are missing.
+        """
+        scores = []
+        weights = []
+
+        if statistical_score is not None:
+            scores.append(statistical_score)
+            weights.append(0.35)
+
+        if engagement_score is not None:
+            scores.append(engagement_score)
+            weights.append(0.25)
+
+        if velocity_score is not None:
+            scores.append(velocity_score)
+            weights.append(0.25)
+
+        # Always have ratio score
+        scores.append(ratio_score)
+        weights.append(0.15)
+
+        # Normalize weights if some scores are missing
+        total_weight = sum(weights)
+        if total_weight > 0:
+            normalized_weights = [w / total_weight for w in weights]
+            return sum(s * w for s, w in zip(scores, normalized_weights))
+
+        return ratio_score
 
     def _get_thumbnail_url(self, video: dict) -> str:
         """Get the best available thumbnail URL for a video."""

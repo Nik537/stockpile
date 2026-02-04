@@ -1,0 +1,168 @@
+/* ==========================================================================
+   Voice Uploader Component
+   ========================================================================== */
+
+.voice-uploader {
+  margin-bottom: var(--space-5);
+}
+
+.voice-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.voice-hint {
+  font-weight: var(--font-normal);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Dropzone
+   ========================================================================== */
+
+.voice-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--color-bg-secondary);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.voice-dropzone:hover:not(.disabled) {
+  border-color: var(--color-primary-500);
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.voice-dropzone.dragging {
+  border-color: var(--color-primary-500);
+  background: rgba(79, 70, 229, 0.1);
+}
+
+.voice-dropzone.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropzone-icon {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.dropzone-text {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.dropzone-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Voice Preview
+   ========================================================================== */
+
+.voice-preview {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.voice-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.voice-icon {
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.voice-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.voice-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-size {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.btn-remove-voice {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: var(--text-sm);
+}
+
+.btn-remove-voice:hover:not(:disabled) {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: white;
+}
+
+.btn-remove-voice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.voice-audio-preview {
+  width: 100%;
+  height: 32px;
+  border-radius: var(--radius-md);
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .voice-dropzone {
+    padding: var(--space-4);
+  }
+
+  .dropzone-icon {
+    font-size: 1.5rem;
+  }
+}

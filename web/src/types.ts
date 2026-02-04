@@ -39,6 +39,7 @@ export interface StatusUpdate {
 export type OutlierTier = 'solid' | 'strong' | 'exceptional'
 
 export interface OutlierVideo {
+  // Core fields
   video_id: string
   title: string
   url: string
@@ -49,6 +50,53 @@ export interface OutlierVideo {
   channel_name: string
   upload_date: string
   outlier_tier: OutlierTier
+
+  // Engagement metrics
+  like_count?: number | null
+  comment_count?: number | null
+  engagement_rate?: number | null // (likes + comments) / views * 100
+
+  // Velocity metrics
+  days_since_upload?: number | null
+  views_per_day?: number | null
+  velocity_score?: number | null // views_per_day / channel_median_velocity
+
+  // Composite scoring
+  composite_score?: number | null
+  statistical_score?: number | null // IQR-based score
+  engagement_score?: number | null // Normalized engagement score
+
+  // Reddit integration
+  found_on_reddit?: boolean
+  reddit_score?: number | null
+  reddit_subreddit?: string | null
+
+  // Momentum tracking
+  momentum_score?: number | null
+  is_trending?: boolean
+}
+
+// Sorting options for outlier results
+export type OutlierSortField =
+  | 'composite_score'
+  | 'outlier_score'
+  | 'engagement_rate'
+  | 'velocity_score'
+  | 'view_count'
+  | 'upload_date'
+
+export type SortDirection = 'asc' | 'desc'
+
+// Filter options for outlier results
+export interface OutlierFilters {
+  minEngagementRate?: number | null
+  minVelocity?: number | null
+  tiers: {
+    exceptional: boolean
+    strong: boolean
+    solid: boolean
+  }
+  redditOnly: boolean
 }
 
 export interface OutlierSearchParams {
@@ -93,4 +141,21 @@ export interface OutlierWSMessage {
   status?: OutlierSearchStatus
   outliers?: OutlierVideo[]
   error?: string
+}
+
+// TTS (Text-to-Speech) Types
+export type TTSStatus = 'idle' | 'connecting' | 'generating' | 'completed' | 'error'
+
+export interface TTSServerStatus {
+  connected: boolean
+  server_url?: string
+  error?: string
+}
+
+export interface TTSGenerationParams {
+  text: string
+  voice?: File | null
+  exaggeration: number
+  cfg_weight: number
+  temperature: number
 }

@@ -28,6 +28,24 @@ def load_config() -> dict:
     config = {
         # Required API keys
         "gemini_api_key": os.getenv("GEMINI_API_KEY"),
+        # YouTube Data API (optional but recommended for outlier finder)
+        "youtube_api_key": os.getenv("YOUTUBE_API_KEY"),
+        "use_youtube_api": os.getenv("USE_YOUTUBE_API", "false").lower() == "true",
+        # Turso Cloud Database (optional - for cloud channel index)
+        "turso_database_url": os.getenv("TURSO_DATABASE_URL"),
+        "turso_auth_token": os.getenv("TURSO_AUTH_TOKEN"),
+        "use_cloud_cache": os.getenv("USE_CLOUD_CACHE", "false").lower() == "true",
+        # Cloudflare R2 Storage (optional - for exports)
+        "r2_account_id": os.getenv("R2_ACCOUNT_ID"),
+        "r2_access_key_id": os.getenv("R2_ACCESS_KEY_ID"),
+        "r2_secret_access_key": os.getenv("R2_SECRET_ACCESS_KEY"),
+        "r2_bucket_name": os.getenv("R2_BUCKET_NAME", "stockpile-exports"),
+        "r2_public_url": os.getenv("R2_PUBLIC_URL"),
+        # Reddit Integration (optional - enhances outlier finding)
+        "reddit_client_id": os.getenv("REDDIT_CLIENT_ID"),
+        "reddit_client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
+        "enable_reddit_discovery": os.getenv("ENABLE_REDDIT_DISCOVERY", "true").lower() == "true",
+        "reddit_subreddits": [s.strip() for s in os.getenv("REDDIT_SUBREDDITS", "videos,mealtimevideos,Documentaries").split(",") if s.strip()],
         # Input sources (at least one required)
         "local_input_folder": resolve_path(os.getenv("LOCAL_INPUT_FOLDER"), "input"),
         "google_drive_input_folder_id": os.getenv("GOOGLE_DRIVE_INPUT_FOLDER_ID"),
@@ -133,6 +151,9 @@ def load_config() -> dict:
         # For images: "google", "pexels", "pixabay"
         "video_preferred_source": os.getenv("VIDEO_PREFERRED_SOURCE", "youtube"),
         "image_preferred_source": os.getenv("IMAGE_PREFERRED_SOURCE", "google"),
+        # TTS (Text-to-Speech) settings
+        # URL of Chatterbox-TTS-Server running on Colab
+        "tts_server_url": os.getenv("TTS_SERVER_URL", ""),
     }
 
     return config

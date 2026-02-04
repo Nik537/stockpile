@@ -4,17 +4,29 @@ Monitors Reddit for YouTube video links to catch viral content
 24-72 hours before it peaks on YouTube.
 
 Implements recommendation #8: Monitor social signals for early detection.
+
+Enhanced with:
+- PRAW support for authenticated API access (higher rate limits)
+- RedditVideoFinder class for targeted discovery
+- Cross-reference with outlier finding
 """
 
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set
 from urllib.parse import parse_qs, urlparse
 
 import requests
+
+# Try to import PRAW for authenticated access
+try:
+    import praw
+    PRAW_AVAILABLE = True
+except ImportError:
+    PRAW_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +43,27 @@ class RedditVideo:
     reddit_url: str
     discovered_at: datetime
     post_title: str
+    # Enhanced fields for cross-referencing
+    channel_id: Optional[str] = None
+    channel_name: Optional[str] = None
+    upvote_ratio: float = 0.0
+    is_crosspost: bool = False
+    flair: str = ""
+    awards: int = 0
+    # Computed viral score
+    viral_score: float = field(default=0.0)
+
+    def __post_init__(self):
+        """Calculate viral score after initialization."""
+        if self.viral_score == 0.0:
+            # Score based on engagement
+            self.viral_score = (
+                self.reddit_score * 1.0 +
+                self.reddit_comments * 2.0 +  # Comments indicate high engagement
+                self.awards * 50.0
+            ) * self.upvote_ratio if self.upvote_ratio > 0 else (
+                self.reddit_score + self.reddit_comments * 2 + self.awards * 50
+            )
 
 
 # Default subreddits to monitor for viral videos
@@ -389,6 +422,245 @@ class RedditMonitor:
         return all_videos
 
 
+class RedditVideoFinder:
+    """Enhanced Reddit video discovery with PRAW support.
+
+    Provides higher-level methods for finding viral YouTube videos
+    with optional authenticated API access for better rate limits.
+    """
+
+    def __init__(
+        self,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        user_agent: str = "stockpile:v2.0 (by /u/stockpile_bot)",
+        min_score: int = 50,
+        max_age_hours: int = 72,
+    ):
+        """Initialize the video finder.
+
+        Args:
+            client_id: Reddit API client ID (for PRAW)
+            client_secret: Reddit API client secret (for PRAW)
+            user_agent: User agent string
+            min_score: Minimum Reddit score to consider
+            max_age_hours: Maximum age of posts
+        """
+        self.min_score = min_score
+        self.max_age_hours = max_age_hours
+        self._reddit = None
+        self._unauthenticated_monitor = RedditMonitor(
+            min_score=min_score,
+            max_age_hours=max_age_hours,
+        )
+
+        # Try to initialize PRAW for authenticated access
+        if PRAW_AVAILABLE and client_id and client_secret:
+            try:
+                self._reddit = praw.Reddit(
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    user_agent=user_agent,
+                )
+                # Test connection
+                self._reddit.user.me()
+                logger.info("PRAW authenticated successfully - using higher rate limits")
+            except Exception as e:
+                logger.warning(f"PRAW authentication failed: {e}, using public API")
+                self._reddit = None
+
+    def find_viral_videos(
+        self,
+        subreddits: Optional[List[str]] = None,
+        time_filter: str = "week",
+        limit: int = 100,
+    ) -> List[RedditVideo]:
+        """Find viral YouTube videos across multiple subreddits.
+
+        Args:
+            subreddits: List of subreddit names (uses defaults if None)
+            time_filter: Time filter ("hour", "day", "week", "month", "year", "all")
+            limit: Maximum results per subreddit
+
+        Returns:
+            List of RedditVideo objects sorted by viral score
+        """
+        if subreddits is None:
+            subreddits = DEFAULT_SUBREDDITS
+
+        all_videos: List[RedditVideo] = []
+        seen_ids: Set[str] = set()
+
+        if self._reddit:
+            # Use PRAW for authenticated access
+            all_videos = self._find_viral_with_praw(subreddits, time_filter, limit, seen_ids)
+        else:
+            # Fall back to public API
+            for subreddit in subreddits:
+                videos = self._unauthenticated_monitor.find_videos_in_subreddit(
+                    subreddit, sort="top", limit=limit
+                )
+                for video in videos:
+                    if video.video_id not in seen_ids:
+                        seen_ids.add(video.video_id)
+                        all_videos.append(video)
+
+        # Sort by viral score
+        all_videos.sort(key=lambda v: v.viral_score, reverse=True)
+        return all_videos
+
+    def _find_viral_with_praw(
+        self,
+        subreddits: List[str],
+        time_filter: str,
+        limit: int,
+        seen_ids: Set[str],
+    ) -> List[RedditVideo]:
+        """Find videos using PRAW authenticated API."""
+        videos = []
+        cutoff_time = datetime.now() - timedelta(hours=self.max_age_hours)
+
+        for subreddit_name in subreddits:
+            try:
+                subreddit = self._reddit.subreddit(subreddit_name)
+
+                for submission in subreddit.top(time_filter=time_filter, limit=limit):
+                    # Check age
+                    post_time = datetime.fromtimestamp(submission.created_utc)
+                    if post_time < cutoff_time:
+                        continue
+
+                    # Check score
+                    if submission.score < self.min_score:
+                        continue
+
+                    # Extract video ID
+                    video_id = self._extract_video_id(submission.url)
+                    if not video_id and hasattr(submission, 'selftext'):
+                        # Check selftext for YouTube links
+                        for word in submission.selftext.split():
+                            video_id = self._extract_video_id(word)
+                            if video_id:
+                                break
+
+                    if video_id and video_id not in seen_ids:
+                        seen_ids.add(video_id)
+                        videos.append(RedditVideo(
+                            video_id=video_id,
+                            title=submission.title,
+                            url=f"https://www.youtube.com/watch?v={video_id}",
+                            subreddit=subreddit_name,
+                            reddit_score=submission.score,
+                            reddit_comments=submission.num_comments,
+                            reddit_url=f"https://www.reddit.com{submission.permalink}",
+                            discovered_at=post_time,
+                            post_title=submission.title,
+                            upvote_ratio=submission.upvote_ratio,
+                            is_crosspost=hasattr(submission, 'crosspost_parent'),
+                            flair=submission.link_flair_text or "",
+                            awards=submission.total_awards_received,
+                        ))
+
+            except Exception as e:
+                logger.warning(f"Error fetching r/{subreddit_name} with PRAW: {e}")
+
+        return videos
+
+    def _extract_video_id(self, url: str) -> Optional[str]:
+        """Extract YouTube video ID from URL."""
+        return self._unauthenticated_monitor._extract_video_id(url)
+
+    def search_topic(
+        self,
+        topic: str,
+        limit: int = 100,
+    ) -> List[RedditVideo]:
+        """Search Reddit for YouTube videos about a topic.
+
+        Args:
+            topic: Topic to search for
+            limit: Maximum results
+
+        Returns:
+            List of RedditVideo objects
+        """
+        if self._reddit:
+            return self._search_with_praw(topic, limit)
+        else:
+            return self._unauthenticated_monitor.search_reddit(
+                query=topic,
+                time_filter="week",
+                limit=limit,
+            )
+
+    def _search_with_praw(self, query: str, limit: int) -> List[RedditVideo]:
+        """Search using PRAW authenticated API."""
+        videos = []
+        seen_ids: Set[str] = set()
+        cutoff_time = datetime.now() - timedelta(hours=self.max_age_hours)
+
+        try:
+            # Search across all subreddits
+            for submission in self._reddit.subreddit("all").search(
+                f"{query} site:youtube.com OR site:youtu.be",
+                sort="relevance",
+                time_filter="week",
+                limit=limit,
+            ):
+                # Check age
+                post_time = datetime.fromtimestamp(submission.created_utc)
+                if post_time < cutoff_time:
+                    continue
+
+                # Check score
+                if submission.score < self.min_score:
+                    continue
+
+                # Extract video ID
+                video_id = self._extract_video_id(submission.url)
+                if video_id and video_id not in seen_ids:
+                    seen_ids.add(video_id)
+                    videos.append(RedditVideo(
+                        video_id=video_id,
+                        title=submission.title,
+                        url=f"https://www.youtube.com/watch?v={video_id}",
+                        subreddit=submission.subreddit.display_name,
+                        reddit_score=submission.score,
+                        reddit_comments=submission.num_comments,
+                        reddit_url=f"https://www.reddit.com{submission.permalink}",
+                        discovered_at=post_time,
+                        post_title=submission.title,
+                        upvote_ratio=submission.upvote_ratio,
+                        awards=submission.total_awards_received,
+                    ))
+
+        except Exception as e:
+            logger.error(f"PRAW search failed: {e}")
+
+        videos.sort(key=lambda v: v.viral_score, reverse=True)
+        return videos
+
+    def get_trending_youtube(self) -> List[RedditVideo]:
+        """Get currently trending YouTube videos from r/videos and related.
+
+        Returns:
+            List of trending videos sorted by viral score
+        """
+        trending_subreddits = [
+            "videos",
+            "youtubehaiku",
+            "mealtimevideos",
+            "listentothis",
+            "documentaries",
+        ]
+
+        return self.find_viral_videos(
+            subreddits=trending_subreddits,
+            time_filter="day",
+            limit=50,
+        )
+
+
 # Convenience function
 def find_reddit_videos(
     topic: Optional[str] = None,
@@ -411,3 +683,33 @@ def find_reddit_videos(
         return monitor.find_videos_by_topic(topic)
     else:
         return monitor.get_trending_videos()
+
+
+def get_reddit_video_finder(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+) -> RedditVideoFinder:
+    """Get a RedditVideoFinder instance.
+
+    Tries to load credentials from config if not provided.
+
+    Args:
+        client_id: Reddit API client ID
+        client_secret: Reddit API client secret
+
+    Returns:
+        RedditVideoFinder instance
+    """
+    if client_id is None or client_secret is None:
+        try:
+            from utils.config import load_config
+            config = load_config()
+            client_id = client_id or config.get("reddit_client_id")
+            client_secret = client_secret or config.get("reddit_client_secret")
+        except Exception:
+            pass
+
+    return RedditVideoFinder(
+        client_id=client_id,
+        client_secret=client_secret,
+    )

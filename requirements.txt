@@ -1,6 +1,7 @@
 # Core dependencies
 # faster-whisper is a CTranslate2 reimplementation of OpenAI Whisper (4x faster)
 faster-whisper>=0.10.0
+numpy>=1.24.0
 google-genai
 yt-dlp
 google-api-python-client
@@ -46,3 +47,18 @@ pyyaml==6.0.1
 # Q3: Multi-source video search (Pexels, Pixabay)
 # Required for async HTTP requests to stock footage APIs
 aiohttp>=3.9.0
+
+# TTS Service - async HTTP client for Chatterbox-TTS-Server
+httpx>=0.27.0
+
+# Outlier Finder Enhancement - Phase 2: Turso Cloud Database
+# libsql with embedded replicas for cloud+local sync
+libsql-experimental>=0.0.47
+
+# Outlier Finder Enhancement - Phase 3: Reddit Integration
+# Higher rate limits with authenticated Reddit API access
+praw>=7.7.1
+
+# Outlier Finder Enhancement - Phase 5: Cloudflare R2 Storage
+# S3-compatible API for R2
+boto3>=1.34.0

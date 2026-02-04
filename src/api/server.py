@@ -15,9 +15,9 @@ src_dir = Path(__file__).parent.parent
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -25,8 +25,15 @@ from broll_processor import BRollProcessor
 from models.user_preferences import UserPreferences
 from models.outlier import OutlierVideo
 from services.outlier_finder_service import OutlierFinderService
+from services.tts_service import TTSService, TTSServiceError
 from utils.config import load_config
 
+# Configure logging to output to stderr
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
 logger = logging.getLogger(__name__)
 
 # Job storage (in-memory for MVP, would use Redis/DB in production)
@@ -36,6 +43,20 @@ active_websockets: dict[str, list[WebSocket]] = {}
 # Outlier search storage
 outlier_searches: dict[str, dict[str, Any]] = {}
 outlier_websockets: dict[str, list[WebSocket]] = {}
+# Keep references to background tasks to prevent garbage collection
+_background_tasks: set = set()
+
+# TTS service instance
+_tts_service: TTSService | None = None
+
+
+def get_tts_service() -> TTSService:
+    """Get or create the TTS service instance."""
+    global _tts_service
+    if _tts_service is None:
+        config = load_config()
+        _tts_service = TTSService(config.get("tts_server_url", ""))
+    return _tts_service
 
 
 class OutlierSearchParams(BaseModel):
@@ -473,15 +494,16 @@ async def notify_outlier_clients(search_id: str, message: dict) -> None:
 
 
 def outlier_to_dict(outlier: OutlierVideo) -> dict:
-    """Convert OutlierVideo to dictionary.
+    """Convert OutlierVideo to dictionary with all metrics.
 
     Args:
         outlier: OutlierVideo object
 
     Returns:
-        Dictionary representation
+        Dictionary representation with full metrics
     """
     return {
+        # Core fields
         "video_id": outlier.video_id,
         "title": outlier.title,
         "url": outlier.url,
@@ -492,6 +514,39 @@ def outlier_to_dict(outlier: OutlierVideo) -> dict:
         "channel_name": outlier.channel_name,
         "upload_date": outlier.upload_date,
         "outlier_tier": outlier.outlier_tier,
+        # Engagement metrics
+        "like_count": outlier.like_count,
+        "comment_count": outlier.comment_count,
+        "engagement_rate": (
+            round(outlier.engagement_rate, 2) if outlier.engagement_rate else None
+        ),
+        # Velocity metrics
+        "days_since_upload": outlier.days_since_upload,
+        "views_per_day": (
+            round(outlier.views_per_day, 0) if outlier.views_per_day else None
+        ),
+        "velocity_score": (
+            round(outlier.velocity_score, 2) if outlier.velocity_score else None
+        ),
+        # Composite scoring
+        "composite_score": (
+            round(outlier.composite_score, 2) if outlier.composite_score else None
+        ),
+        "statistical_score": (
+            round(outlier.statistical_score, 2) if outlier.statistical_score else None
+        ),
+        "engagement_score": (
+            round(outlier.engagement_score, 2) if outlier.engagement_score else None
+        ),
+        # Reddit integration
+        "found_on_reddit": outlier.found_on_reddit,
+        "reddit_score": outlier.reddit_score,
+        "reddit_subreddit": outlier.reddit_subreddit,
+        # Momentum
+        "momentum_score": (
+            round(outlier.momentum_score, 2) if outlier.momentum_score else None
+        ),
+        "is_trending": outlier.is_trending,
     }
 
 
@@ -501,12 +556,16 @@ async def run_outlier_search(search_id: str) -> None:
     Args:
         search_id: Search ID
     """
+    logger.info(f"run_outlier_search started for {search_id}")
+
     if search_id not in outlier_searches:
+        logger.error(f"Search {search_id} not found in outlier_searches")
         return
 
     search = outlier_searches[search_id]
 
     try:
+        logger.info(f"Creating OutlierFinderService for topic: {search['topic']}")
         # Create service with parameters
         service = OutlierFinderService(
             min_score=search["min_score"],
@@ -559,15 +618,24 @@ async def run_outlier_search(search_id: str) -> None:
             )
 
         # Run the search in a thread pool to avoid blocking
-        result = await loop.run_in_executor(
-            None,
-            lambda: service.find_outliers_by_topic(
-                topic=search["topic"],
-                max_channels=search["max_channels"],
-                on_outlier_found=on_outlier_found,
-                on_channel_complete=on_channel_complete,
-            )
-        )
+        logger.info(f"Starting executor for search {search_id}")
+
+        def run_search():
+            logger.info(f"Executor thread started for {search_id}")
+            try:
+                result = service.find_outliers_by_topic(
+                    topic=search["topic"],
+                    max_channels=search["max_channels"],
+                    on_outlier_found=on_outlier_found,
+                    on_channel_complete=on_channel_complete,
+                )
+                logger.info(f"Executor thread completed for {search_id}: {len(result.outliers)} outliers")
+                return result
+            except Exception as e:
+                logger.exception(f"Executor thread error for {search_id}: {e}")
+                raise
+
+        result = await loop.run_in_executor(None, run_search)
 
         # Update search with final results
         search["status"] = "completed"
@@ -618,8 +686,12 @@ async def start_outlier_search(params: OutlierSearchParams) -> JSONResponse:
     # Create search
     search_id = create_outlier_search(params)
 
-    # Start search in background
-    asyncio.create_task(run_outlier_search(search_id))
+    # Start search in background - store task reference to prevent GC
+    task = asyncio.create_task(run_outlier_search(search_id))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    logger.info(f"Started outlier search task for {search_id}")
 
     return JSONResponse(
         status_code=202,
@@ -644,6 +716,102 @@ async def get_outlier_search(search_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Search not found")
 
     return outlier_searches[search_id]
+
+
+@app.get("/api/outliers/{search_id}/export")
+async def export_outlier_search(search_id: str, format: str = "json") -> Any:
+    """Export outlier search results as CSV or JSON.
+
+    Args:
+        search_id: Search ID
+        format: Export format - "csv" or "json" (default: json)
+
+    Returns:
+        FileResponse with exported data
+    """
+    import csv
+    import io
+    import tempfile
+
+    if search_id not in outlier_searches:
+        raise HTTPException(status_code=404, detail="Search not found")
+
+    search = outlier_searches[search_id]
+    outliers = search.get("outliers", [])
+
+    if format.lower() == "csv":
+        # Create CSV in memory
+        output = io.StringIO()
+        if outliers:
+            # Get all unique keys from the outliers
+            fieldnames = [
+                "video_id",
+                "title",
+                "url",
+                "channel_name",
+                "view_count",
+                "outlier_score",
+                "outlier_tier",
+                "channel_average_views",
+                "upload_date",
+                "like_count",
+                "comment_count",
+                "engagement_rate",
+                "days_since_upload",
+                "views_per_day",
+                "velocity_score",
+                "composite_score",
+                "statistical_score",
+                "engagement_score",
+                "found_on_reddit",
+                "reddit_score",
+                "reddit_subreddit",
+                "momentum_score",
+                "is_trending",
+            ]
+            writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for outlier in outliers:
+                writer.writerow(outlier)
+
+        # Create temp file
+        csv_content = output.getvalue()
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False
+        ) as temp_file:
+            temp_file.write(csv_content)
+            temp_path = temp_file.name
+
+        return FileResponse(
+            path=temp_path,
+            filename=f"outliers_{search['topic'].replace(' ', '_')}_{search_id[:8]}.csv",
+            media_type="text/csv",
+        )
+
+    else:
+        # JSON format
+        export_data = {
+            "topic": search["topic"],
+            "search_id": search_id,
+            "created_at": search["created_at"],
+            "channels_analyzed": search["channels_analyzed"],
+            "videos_scanned": search["videos_scanned"],
+            "total_outliers": len(outliers),
+            "outliers": outliers,
+        }
+
+        # Create temp file
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as temp_file:
+            json.dump(export_data, temp_file, indent=2)
+            temp_path = temp_file.name
+
+        return FileResponse(
+            path=temp_path,
+            filename=f"outliers_{search['topic'].replace(' ', '_')}_{search_id[:8]}.json",
+            media_type="application/json",
+        )
 
 
 @app.delete("/api/outliers/{search_id}")
@@ -717,6 +885,169 @@ async def websocket_outliers(websocket: WebSocket, search_id: str) -> None:
         # Remove from active connections
         if search_id in outlier_websockets and websocket in outlier_websockets[search_id]:
             outlier_websockets[search_id].remove(websocket)
+
+
+# =============================================================================
+# TTS (Text-to-Speech) Endpoints
+# =============================================================================
+
+
+class TTSEndpointRequest(BaseModel):
+    """Request body for setting TTS endpoint."""
+
+    url: str
+
+
+class TTSGenerateRequest(BaseModel):
+    """Request body for TTS generation."""
+
+    text: str
+    exaggeration: float = 0.5
+    cfg_weight: float = 0.5
+    temperature: float = 0.8
+
+
+@app.get("/api/tts/status")
+async def get_tts_status() -> dict:
+    """Check TTS server connection status for both modes.
+
+    Returns:
+        Connection status including:
+        - colab: status of custom Colab server connection
+        - runpod: status of RunPod serverless endpoint
+    """
+    service = get_tts_service()
+
+    # Get both statuses
+    colab_status = await service.check_health()
+    runpod_status = await service.check_runpod_health()
+
+    return {
+        "colab": colab_status,
+        "runpod": runpod_status,
+    }
+
+
+@app.post("/api/tts/endpoint")
+async def set_tts_endpoint(request: TTSEndpointRequest) -> dict:
+    """Set or update the TTS server URL.
+
+    Args:
+        request: Request body containing the server URL
+
+    Returns:
+        Updated connection status
+    """
+    service = get_tts_service()
+    service.set_server_url(request.url)
+
+    # Check if we can connect to the new endpoint
+    status = await service.check_health()
+
+    if status.get("connected"):
+        return {"message": "TTS server connected successfully", **status}
+    else:
+        return {"message": "URL saved but server not reachable", **status}
+
+
+@app.post("/api/tts/generate")
+async def generate_tts(
+    text: str = Form(...),
+    mode: str = Form("runpod"),  # "runpod" or "colab"
+    voice: UploadFile | None = File(None),
+    exaggeration: float = Form(0.5),
+    cfg_weight: float = Form(0.5),
+    temperature: float = Form(0.8),
+) -> Response:
+    """Generate TTS audio from text.
+
+    Args:
+        text: Text to convert to speech
+        mode: TTS mode - "runpod" for RunPod Serverless, "colab" for custom Colab server
+        voice: Optional voice reference audio file (5-10 seconds recommended)
+        exaggeration: Voice exaggeration level (0.0-1.0)
+        cfg_weight: CFG weight for generation (0.0-1.0)
+        temperature: Generation temperature (0.0-1.0)
+
+    Returns:
+        Audio file response (MP3)
+    """
+    service = get_tts_service()
+
+    # Validate mode
+    if mode not in ("runpod", "colab"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid mode. Use 'runpod' or 'colab'.",
+        )
+
+    # Check appropriate service is configured
+    if mode == "colab" and not service.server_url:
+        raise HTTPException(
+            status_code=400,
+            detail="TTS server not configured. Set the server URL first.",
+        )
+    elif mode == "runpod" and not service.is_runpod_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="RunPod not configured. Set RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID in .env",
+        )
+
+    # Validate text
+    if not text or not text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    # Handle voice reference file
+    voice_path: str | None = None
+    if voice and voice.filename:
+        # Save uploaded voice file temporarily
+        upload_dir = Path("uploads/tts_voices")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        voice_path = str(upload_dir / f"{uuid.uuid4()}_{voice.filename}")
+
+        with open(voice_path, "wb") as f:
+            content = await voice.read()
+            f.write(content)
+
+        logger.info(f"Saved voice reference: {voice_path}")
+
+    try:
+        # Generate based on mode
+        if mode == "runpod":
+            audio_bytes = await service.generate_runpod(
+                text=text.strip(),
+                voice_ref_path=voice_path,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+            )
+        else:  # colab
+            audio_bytes = await service.generate(
+                text=text.strip(),
+                voice_ref_path=voice_path,
+                exaggeration=exaggeration,
+                cfg_weight=cfg_weight,
+                temperature=temperature,
+            )
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": "attachment; filename=tts_output.mp3",
+            },
+        )
+
+    except TTSServiceError as e:
+        logger.error(f"TTS generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up voice file
+        if voice_path and Path(voice_path).exists():
+            try:
+                Path(voice_path).unlink()
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up voice file: {cleanup_error}")
 
 
 if __name__ == "__main__":

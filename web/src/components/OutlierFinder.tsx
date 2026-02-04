@@ -1,7 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { OutlierVideo, OutlierSearchParams, OutlierSearchStatus, OutlierWSMessage } from '../types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  OutlierVideo,
+  OutlierSearchParams,
+  OutlierSearchStatus,
+  OutlierWSMessage,
+  OutlierSortField,
+  SortDirection,
+  OutlierFilters,
+} from '../types'
 import OutlierCard from './OutlierCard'
 import './OutlierFinder.css'
+
+const API_BASE = ''  // Same origin
 
 function OutlierFinder() {
   // Search form state
@@ -32,14 +42,105 @@ function OutlierFinder() {
   const [error, setError] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
 
+  // Sorting and filtering state
+  const [sortField, setSortField] = useState<OutlierSortField>('composite_score')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [filters, setFilters] = useState<OutlierFilters>({
+    minEngagementRate: null,
+    minVelocity: null,
+    tiers: {
+      exceptional: true,
+      strong: true,
+      solid: true,
+    },
+    redditOnly: false,
+  })
+
   const wsRef = useRef<WebSocket | null>(null)
 
-  // Group outliers by tier
-  const groupedOutliers = {
-    exceptional: outliers.filter(o => o.outlier_tier === 'exceptional'),
-    strong: outliers.filter(o => o.outlier_tier === 'strong'),
-    solid: outliers.filter(o => o.outlier_tier === 'solid'),
-  }
+  // Sort outliers based on current sort field
+  const sortOutliers = useCallback((items: OutlierVideo[]): OutlierVideo[] => {
+    return [...items].sort((a, b) => {
+      let aVal: number | string | null = null
+      let bVal: number | string | null = null
+
+      switch (sortField) {
+        case 'composite_score':
+          aVal = a.composite_score ?? a.outlier_score
+          bVal = b.composite_score ?? b.outlier_score
+          break
+        case 'outlier_score':
+          aVal = a.outlier_score
+          bVal = b.outlier_score
+          break
+        case 'engagement_rate':
+          aVal = a.engagement_rate ?? 0
+          bVal = b.engagement_rate ?? 0
+          break
+        case 'velocity_score':
+          aVal = a.velocity_score ?? 0
+          bVal = b.velocity_score ?? 0
+          break
+        case 'view_count':
+          aVal = a.view_count
+          bVal = b.view_count
+          break
+        case 'upload_date':
+          aVal = a.upload_date
+          bVal = b.upload_date
+          break
+      }
+
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+
+      const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [sortField, sortDirection])
+
+  // Filter and sort outliers
+  const filteredOutliers = useMemo(() => {
+    let result = outliers.filter((o) => {
+      // Tier filter
+      if (!filters.tiers[o.outlier_tier as keyof typeof filters.tiers]) {
+        return false
+      }
+
+      // Engagement rate filter
+      if (
+        filters.minEngagementRate != null &&
+        (o.engagement_rate == null || o.engagement_rate < filters.minEngagementRate)
+      ) {
+        return false
+      }
+
+      // Velocity filter
+      if (
+        filters.minVelocity != null &&
+        (o.views_per_day == null || o.views_per_day < filters.minVelocity)
+      ) {
+        return false
+      }
+
+      // Reddit only filter
+      if (filters.redditOnly && !o.found_on_reddit) {
+        return false
+      }
+
+      return true
+    })
+
+    return sortOutliers(result)
+  }, [outliers, filters, sortOutliers])
+
+  // Group filtered outliers by tier
+  const groupedOutliers = useMemo(() => ({
+    exceptional: filteredOutliers.filter((o) => o.outlier_tier === 'exceptional'),
+    strong: filteredOutliers.filter((o) => o.outlier_tier === 'strong'),
+    solid: filteredOutliers.filter((o) => o.outlier_tier === 'solid'),
+  }), [filteredOutliers])
 
   // Handle WebSocket messages
   const handleWSMessage = useCallback((message: OutlierWSMessage) => {
@@ -65,11 +166,7 @@ function OutlierFinder() {
 
       case 'outlier':
         if (message.outlier) {
-          setOutliers(prev => {
-            // Sort by score when adding
-            const updated = [...prev, message.outlier!]
-            return updated.sort((a, b) => b.outlier_score - a.outlier_score)
-          })
+          setOutliers((prev) => [...prev, message.outlier!])
         }
         break
 
@@ -152,7 +249,7 @@ function OutlierFinder() {
     }
 
     try {
-      const response = await fetch('/api/outliers/search', {
+      const response = await fetch(`${API_BASE}/api/outliers/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -174,9 +271,45 @@ function OutlierFinder() {
     }
   }
 
-  const progressPercent = totalChannels > 0
-    ? Math.round((channelsAnalyzed / totalChannels) * 100)
-    : 0
+  // Export handlers
+  const handleExport = async (format: 'csv' | 'json') => {
+    if (!searchId) return
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/outliers/${searchId}/export?format=${format}`
+      )
+      if (!response.ok) {
+        throw new Error('Export failed')
+      }
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `outliers_${topic.replace(/\s+/g, '_')}.${format}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  // Toggle tier visibility
+  const toggleTier = (tier: 'exceptional' | 'strong' | 'solid') => {
+    setFilters((prev) => ({
+      ...prev,
+      tiers: {
+        ...prev.tiers,
+        [tier]: !prev.tiers[tier],
+      },
+    }))
+  }
+
+  const progressPercent =
+    totalChannels > 0 ? Math.round((channelsAnalyzed / totalChannels) * 100) : 0
 
   return (
     <section className="outlier-section">
@@ -265,7 +398,9 @@ function OutlierFinder() {
               disabled={isSearching}
             >
               {Object.entries(channelSizePresets).map(([key, preset]) => (
-                <option key={key} value={key}>{preset.label}</option>
+                <option key={key} value={key}>
+                  {preset.label}
+                </option>
               ))}
             </select>
           </div>
@@ -331,13 +466,137 @@ function OutlierFinder() {
       {/* Results */}
       {outliers.length > 0 && (
         <div className="outlier-results">
+          {/* Results Toolbar */}
+          <div className="results-toolbar">
+            <div className="results-summary">
+              <span className="results-count">
+                {filteredOutliers.length} outlier{filteredOutliers.length !== 1 ? 's' : ''}
+                {filteredOutliers.length !== outliers.length &&
+                  ` (${outliers.length} total)`}
+              </span>
+            </div>
+
+            <div className="results-controls">
+              {/* Sort dropdown */}
+              <div className="sort-control">
+                <label htmlFor="sort">Sort:</label>
+                <select
+                  id="sort"
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value as OutlierSortField)}
+                >
+                  <option value="composite_score">Score</option>
+                  <option value="outlier_score">Ratio</option>
+                  <option value="engagement_rate">Engagement</option>
+                  <option value="velocity_score">Velocity</option>
+                  <option value="view_count">Views</option>
+                  <option value="upload_date">Date</option>
+                </select>
+                <button
+                  className="sort-direction-btn"
+                  onClick={() =>
+                    setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
+                  }
+                  title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                >
+                  {sortDirection === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+
+              {/* Export buttons */}
+              {searchId && status === 'completed' && (
+                <div className="export-controls">
+                  <button
+                    className="btn-export"
+                    onClick={() => handleExport('csv')}
+                    title="Export as CSV"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    className="btn-export"
+                    onClick={() => handleExport('json')}
+                    title="Export as JSON"
+                  >
+                    JSON
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Filters row */}
+          <div className="filters-toolbar">
+            <div className="filter-group">
+              <label>Min Engagement:</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                placeholder="%"
+                value={filters.minEngagementRate ?? ''}
+                onChange={(e) =>
+                  setFilters((f) => ({
+                    ...f,
+                    minEngagementRate: e.target.value ? Number(e.target.value) : null,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="filter-group">
+              <label>Min Velocity:</label>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="/day"
+                value={filters.minVelocity ?? ''}
+                onChange={(e) =>
+                  setFilters((f) => ({
+                    ...f,
+                    minVelocity: e.target.value ? Number(e.target.value) : null,
+                  }))
+                }
+              />
+            </div>
+
+            <div className="tier-toggles">
+              <button
+                className={`tier-toggle ${filters.tiers.exceptional ? 'active' : ''}`}
+                onClick={() => toggleTier('exceptional')}
+              >
+                Exceptional
+              </button>
+              <button
+                className={`tier-toggle ${filters.tiers.strong ? 'active' : ''}`}
+                onClick={() => toggleTier('strong')}
+              >
+                Strong
+              </button>
+              <button
+                className={`tier-toggle ${filters.tiers.solid ? 'active' : ''}`}
+                onClick={() => toggleTier('solid')}
+              >
+                Solid
+              </button>
+            </div>
+
+            <label className="checkbox-label reddit-toggle">
+              <input
+                type="checkbox"
+                checked={filters.redditOnly}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, redditOnly: e.target.checked }))
+                }
+              />
+              <span>Reddit only</span>
+            </label>
+          </div>
+
           <div className="results-header">
-            <h3>
-              {status === 'completed' ? 'Search Complete' : 'Found So Far'}
-            </h3>
-            <span className="results-count">
-              {outliers.length} outlier{outliers.length !== 1 ? 's' : ''} found
-            </span>
+            <h3>{status === 'completed' ? 'Search Complete' : 'Found So Far'}</h3>
           </div>
 
           {/* Exceptional tier */}
@@ -345,7 +604,9 @@ function OutlierFinder() {
             <div className="outlier-tier-group tier-exceptional">
               <div className="tier-header">
                 <span className="tier-badge tier-badge-exceptional">EXCEPTIONAL</span>
-                <span className="tier-description">10x+ average views</span>
+                <span className="tier-description">
+                  10x+ average views ({groupedOutliers.exceptional.length})
+                </span>
               </div>
               <div className="outlier-grid">
                 {groupedOutliers.exceptional.map((outlier) => (
@@ -360,7 +621,9 @@ function OutlierFinder() {
             <div className="outlier-tier-group tier-strong">
               <div className="tier-header">
                 <span className="tier-badge tier-badge-strong">STRONG</span>
-                <span className="tier-description">5-10x average views</span>
+                <span className="tier-description">
+                  5-10x average views ({groupedOutliers.strong.length})
+                </span>
               </div>
               <div className="outlier-grid">
                 {groupedOutliers.strong.map((outlier) => (
@@ -375,7 +638,9 @@ function OutlierFinder() {
             <div className="outlier-tier-group tier-solid">
               <div className="tier-header">
                 <span className="tier-badge tier-badge-solid">SOLID</span>
-                <span className="tier-description">3-5x average views</span>
+                <span className="tier-description">
+                  3-5x average views ({groupedOutliers.solid.length})
+                </span>
               </div>
               <div className="outlier-grid">
                 {groupedOutliers.solid.map((outlier) => (
@@ -393,6 +658,15 @@ function OutlierFinder() {
           <span className="empty-icon">&#x1F50D;</span>
           <h3>No Outliers Found</h3>
           <p>Try adjusting your search parameters or searching for a different topic.</p>
+        </div>
+      )}
+
+      {/* Filtered empty state */}
+      {outliers.length > 0 && filteredOutliers.length === 0 && (
+        <div className="outlier-empty">
+          <span className="empty-icon">&#x1F50D;</span>
+          <h3>No Matching Results</h3>
+          <p>Try adjusting your filters to see more results.</p>
         </div>
       )}
     </section>

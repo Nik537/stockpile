@@ -3,9 +3,10 @@ import './App.css'
 import JobList from './components/JobList'
 import UploadForm from './components/UploadForm'
 import OutlierFinder from './components/OutlierFinder'
+import TTSGenerator from './components/TTSGenerator'
 import { Job } from './types'
 
-type ActiveTab = 'broll' | 'outliers'
+type ActiveTab = 'broll' | 'outliers' | 'tts'
 
 function App() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -66,6 +67,13 @@ function App() {
               <span className="tab-icon">&#x1F4CA;</span>
               Outlier Finder
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'tts' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tts')}
+            >
+              <span className="tab-icon">&#x1F3A4;</span>
+              TTS Generator
+            </button>
           </nav>
         </div>
       </header>
@@ -105,6 +113,10 @@ function App() {
 
         <div style={{ display: activeTab === 'outliers' ? 'block' : 'none' }}>
           <OutlierFinder />
+        </div>
+
+        <div style={{ display: activeTab === 'tts' ? 'block' : 'none' }}>
+          <TTSGenerator />
         </div>
       </main>
 

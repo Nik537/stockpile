@@ -1,0 +1,9 @@
+# RunPod SDK
+runpod>=1.6.0
+
+# PyTorch (CUDA version for GPU support)
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# Chatterbox TTS model
+chatterbox-tts @ git+https://github.com/devnen/chatterbox.git@master
