@@ -4,9 +4,10 @@ import JobList from './components/JobList'
 import UploadForm from './components/UploadForm'
 import OutlierFinder from './components/OutlierFinder'
 import TTSGenerator from './components/TTSGenerator'
+import ImageGenerator from './components/ImageGenerator'
 import { Job } from './types'
 
-type ActiveTab = 'broll' | 'outliers' | 'tts'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen'
 
 function App() {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -74,6 +75,13 @@ function App() {
               <span className="tab-icon">&#x1F3A4;</span>
               TTS Generator
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'imagegen' ? 'active' : ''}`}
+              onClick={() => setActiveTab('imagegen')}
+            >
+              <span className="tab-icon">&#x1F3A8;</span>
+              Image Generator
+            </button>
           </nav>
         </div>
       </header>
@@ -117,6 +125,10 @@ function App() {
 
         <div style={{ display: activeTab === 'tts' ? 'block' : 'none' }}>
           <TTSGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'imagegen' ? 'block' : 'none' }}>
+          <ImageGenerator />
         </div>
       </main>
 

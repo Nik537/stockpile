@@ -154,6 +154,9 @@ def load_config() -> dict:
         # TTS (Text-to-Speech) settings
         # URL of Chatterbox-TTS-Server running on Colab
         "tts_server_url": os.getenv("TTS_SERVER_URL", ""),
+        # AI Image Generation settings (fal.ai)
+        "fal_api_key": os.getenv("FAL_API_KEY", ""),
+        "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "flux-klein"),
     }
 
     return config

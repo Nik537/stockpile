@@ -159,3 +159,53 @@ export interface TTSGenerationParams {
   cfg_weight: number
   temperature: number
 }
+
+// Image Generation Types
+export type ImageGenStatus = 'idle' | 'generating' | 'completed' | 'error'
+export type ImageGenMode = 'generate' | 'edit'
+export type ImageGenModel = 'flux-klein' | 'z-image' | 'runpod-flux-schnell' | 'runpod-flux-dev'
+
+// Provider type for routing to correct API
+export type ImageGenProvider = 'fal' | 'runpod'
+
+export interface ImageGenServerStatus {
+  configured: boolean
+  available: boolean
+  default_model?: string
+  error?: string
+}
+
+export interface GeneratedImage {
+  url: string
+  width: number
+  height: number
+  content_type: string
+  seed?: number | null
+}
+
+export interface ImageGenerationResult {
+  images: GeneratedImage[]
+  model: string
+  prompt: string
+  generation_time_ms: number
+  cost_estimate: number
+}
+
+export interface ImageGenerationParams {
+  prompt: string
+  model: ImageGenModel
+  width: number
+  height: number
+  num_images: number
+  seed?: number | null
+  guidance_scale: number
+}
+
+export interface ImageEditParams {
+  prompt: string
+  image_url: string
+  model: ImageGenModel
+  strength: number
+  seed?: number | null
+  guidance_scale: number
+}

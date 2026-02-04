@@ -623,3 +623,104 @@ docker run -v $(pwd)/input:/app/input \
 - Enhanced error handling for throttling
 
 See `/COMPETITIVE_ANALYSIS_IMPLEMENTATION.md`, `/BUG_FIX_SUMMARY.md`, and `/RELIABILITY_IMPROVEMENTS_TEST_RESULTS.md` for details.
+
+## RunPod Public Endpoints
+
+RunPod provides pre-deployed public endpoints for popular AI models. These are managed by RunPod and require only an API key - no Docker deployment needed.
+
+### Configuration
+
+```bash
+RUNPOD_API_KEY=              # RunPod API key (Settings > API Keys)
+```
+
+### API Format
+
+**Base URL:** `https://api.runpod.ai/v2/{endpoint_slug}/{operation}`
+
+**Operations:**
+- `/runsync` - Synchronous (wait for result)
+- `/run` - Asynchronous (returns job ID)
+- `/status/{job_id}` - Check job status
+- `/health` - Endpoint health check
+
+**Authentication:** `Authorization: Bearer {RUNPOD_API_KEY}`
+
+### Available Public Endpoints
+
+#### Text-to-Speech
+
+| Model | Slug | Input | Output | Pricing |
+|-------|------|-------|--------|---------|
+| Chatterbox Turbo | `chatterbox-turbo` | `prompt` | `audio_url` (WAV) | ~$0.06/1000 chars |
+
+**Example:**
+```bash
+curl -X POST "https://api.runpod.ai/v2/chatterbox-turbo/runsync" \
+  -H "Authorization: Bearer $RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"input": {"prompt": "Hello world"}}'
+```
+
+**Response:**
+```json
+{
+  "status": "COMPLETED",
+  "output": {
+    "audio_url": "https://image.runpod.ai/chatterbox-turbo/xxx.wav",
+    "cost": 0.00432
+  }
+}
+```
+
+#### Image Generation
+
+| Model | Slug | Input | Output | Pricing |
+|-------|------|-------|--------|---------|
+| Flux Dev | `black-forest-labs-flux-1-dev` | `prompt`, `width`, `height` | `images[].url` | $0.02/megapixel |
+| Flux Schnell | `black-forest-labs-flux-1-schnell` | `prompt`, `width`, `height` | `images[].url` | $0.0024/megapixel |
+| Flux Kontext | `black-forest-labs-flux-1-kontext-dev` | `prompt`, `image_url` | `images[].url` | ~$0.02/megapixel |
+
+**Example (Flux Dev):**
+```bash
+curl -X POST "https://api.runpod.ai/v2/black-forest-labs-flux-1-dev/runsync" \
+  -H "Authorization: Bearer $RUNPOD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "prompt": "A futuristic city at sunset",
+      "width": 1024,
+      "height": 1024
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "status": "COMPLETED",
+  "output": {
+    "images": [{"url": "https://..."}],
+    "seed": 12345
+  }
+}
+```
+
+### Public vs Custom Endpoints
+
+| Feature | Public Endpoint | Custom Endpoint |
+|---------|-----------------|-----------------|
+| Setup | API key only | Docker build/push |
+| Maintenance | RunPod handles | You handle |
+| Customization | Limited | Full control |
+| Voice cloning | No | Yes (with voice_reference) |
+| Pricing | Usage-based | GPU time-based |
+
+### Service Integration
+
+The codebase supports both public and custom endpoints:
+
+- **TTS:** `TTSService.generate_public()` uses `chatterbox-turbo`
+- **Images:** `ImageGenerationService.generate_runpod()` uses Flux models
+
+See `src/services/tts_service.py` and `src/services/image_generation_service.py` for implementation.

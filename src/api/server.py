@@ -24,8 +24,17 @@ from pydantic import BaseModel
 from broll_processor import BRollProcessor
 from models.user_preferences import UserPreferences
 from models.outlier import OutlierVideo
+from models.image_generation import (
+    ImageGenerationModel,
+    ImageGenerationRequest,
+    ImageEditRequest,
+)
 from services.outlier_finder_service import OutlierFinderService
 from services.tts_service import TTSService, TTSServiceError
+from services.image_generation_service import (
+    ImageGenerationService,
+    ImageGenerationServiceError,
+)
 from utils.config import load_config
 
 # Configure logging to output to stderr
@@ -48,6 +57,21 @@ _background_tasks: set = set()
 
 # TTS service instance
 _tts_service: TTSService | None = None
+
+# Image generation service instance
+_image_gen_service: ImageGenerationService | None = None
+
+
+def get_image_gen_service() -> ImageGenerationService:
+    """Get or create the image generation service instance."""
+    global _image_gen_service
+    if _image_gen_service is None:
+        config = load_config()
+        _image_gen_service = ImageGenerationService(
+            api_key=config.get("fal_api_key", ""),
+            runpod_api_key=config.get("runpod_api_key", ""),
+        )
+    return _image_gen_service
 
 
 def get_tts_service() -> TTSService:
@@ -1048,6 +1072,311 @@ async def generate_tts(
                 Path(voice_path).unlink()
             except Exception as cleanup_error:
                 logger.warning(f"Failed to clean up voice file: {cleanup_error}")
+
+
+# =============================================================================
+# Image Generation Endpoints (fal.ai - Flux 2 Klein, Z-Image Turbo)
+# =============================================================================
+
+
+class ImageGenerateRequest(BaseModel):
+    """Request body for image generation."""
+
+    prompt: str
+    model: str = "flux-klein"  # "flux-klein" or "z-image"
+    width: int = 1024
+    height: int = 1024
+    num_images: int = 1
+    seed: int | None = None
+    guidance_scale: float = 7.5
+
+
+class ImageEditRequestBody(BaseModel):
+    """Request body for image editing."""
+
+    prompt: str
+    image_url: str  # URL or base64 data URL
+    model: str = "flux-klein"
+    strength: float = 0.75
+    seed: int | None = None
+    guidance_scale: float = 7.5
+
+
+@app.get("/api/image-generation/status")
+async def get_image_generation_status() -> dict:
+    """Check if image generation is configured.
+
+    Returns:
+        Status dict with 'configured', 'available', and optional 'error'.
+    """
+    service = get_image_gen_service()
+    return await service.check_health()
+
+
+@app.post("/api/generate-image")
+async def generate_image(request: ImageGenerateRequest) -> dict:
+    """Generate images from a text prompt.
+
+    Args:
+        request: Generation parameters
+
+    Returns:
+        Generation result with image URLs
+    """
+    service = get_image_gen_service()
+
+    # Validate model
+    try:
+        model = ImageGenerationModel(request.model)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Use 'flux-klein' or 'z-image'.",
+        )
+
+    # Check service is configured
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Image generation not configured. Set FAL_API_KEY in .env",
+        )
+
+    # Validate prompt
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    # Validate dimensions
+    if request.width < 256 or request.width > 2048:
+        raise HTTPException(
+            status_code=400, detail="Width must be between 256 and 2048"
+        )
+    if request.height < 256 or request.height > 2048:
+        raise HTTPException(
+            status_code=400, detail="Height must be between 256 and 2048"
+        )
+    if request.num_images < 1 or request.num_images > 4:
+        raise HTTPException(
+            status_code=400, detail="num_images must be between 1 and 4"
+        )
+
+    try:
+        gen_request = ImageGenerationRequest(
+            prompt=request.prompt.strip(),
+            model=model,
+            width=request.width,
+            height=request.height,
+            num_images=request.num_images,
+            seed=request.seed,
+            guidance_scale=request.guidance_scale,
+        )
+
+        result = await service.generate(gen_request)
+        return result.to_dict()
+
+    except ImageGenerationServiceError as e:
+        logger.error(f"Image generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/edit-image")
+async def edit_image(request: ImageEditRequestBody) -> dict:
+    """Edit an image using a text prompt.
+
+    Args:
+        request: Edit parameters including input image
+
+    Returns:
+        Generation result with edited image URLs
+    """
+    service = get_image_gen_service()
+
+    # Validate model
+    try:
+        model = ImageGenerationModel(request.model)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Use 'flux-klein' or 'z-image'.",
+        )
+
+    # Check service is configured
+    if not service.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Image generation not configured. Set FAL_API_KEY in .env",
+        )
+
+    # Validate prompt
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    # Validate image URL
+    if not request.image_url or not request.image_url.strip():
+        raise HTTPException(status_code=400, detail="Image URL is required")
+
+    # Validate strength
+    if request.strength < 0 or request.strength > 1:
+        raise HTTPException(
+            status_code=400, detail="Strength must be between 0 and 1"
+        )
+
+    try:
+        edit_request = ImageEditRequest(
+            prompt=request.prompt.strip(),
+            input_image_url=request.image_url.strip(),
+            model=model,
+            strength=request.strength,
+            seed=request.seed,
+            guidance_scale=request.guidance_scale,
+        )
+
+        result = await service.edit(edit_request)
+        return result.to_dict()
+
+    except ImageGenerationServiceError as e:
+        logger.error(f"Image editing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# RunPod Image Generation Endpoints (Flux Dev, Flux Schnell)
+# =============================================================================
+
+
+class RunPodImageGenerateRequest(BaseModel):
+    """Request body for RunPod image generation."""
+
+    prompt: str
+    model: str = "runpod-flux-schnell"  # "runpod-flux-dev" or "runpod-flux-schnell"
+    width: int = 1024
+    height: int = 1024
+    seed: int | None = None
+
+
+@app.get("/api/runpod-image/status")
+async def get_runpod_image_status() -> dict:
+    """Check if RunPod image generation is configured.
+
+    Returns:
+        Status dict with 'configured', 'available', and available models.
+    """
+    service = get_image_gen_service()
+    return await service.check_runpod_health()
+
+
+@app.post("/api/runpod-image/generate")
+async def generate_runpod_image(request: RunPodImageGenerateRequest) -> dict:
+    """Generate images using RunPod public endpoints (Flux Dev/Schnell).
+
+    Args:
+        request: Generation parameters
+
+    Returns:
+        Generation result with image URLs
+    """
+    service = get_image_gen_service()
+
+    # Validate model
+    try:
+        model = ImageGenerationModel(request.model)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model. Use 'runpod-flux-dev' or 'runpod-flux-schnell'.",
+        )
+
+    # Check service is configured
+    if not service.is_runpod_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="RunPod not configured. Set RUNPOD_API_KEY in .env",
+        )
+
+    # Validate prompt
+    if not request.prompt or not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    try:
+        gen_request = ImageGenerationRequest(
+            prompt=request.prompt.strip(),
+            model=model,
+            width=request.width,
+            height=request.height,
+            seed=request.seed,
+        )
+
+        result = await service.generate_runpod(gen_request)
+        return result.to_dict()
+
+    except ImageGenerationServiceError as e:
+        logger.error(f"RunPod image generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Public TTS Endpoint (RunPod Chatterbox Turbo)
+# =============================================================================
+
+
+class PublicTTSRequest(BaseModel):
+    """Request body for public TTS generation."""
+
+    text: str
+    voice: str = "Lucy"
+
+
+@app.get("/api/tts/public/status")
+async def get_public_tts_status() -> dict:
+    """Check if public TTS endpoint is configured.
+
+    Returns:
+        Status dict with 'configured' and 'available'.
+    """
+    service = get_tts_service()
+    return await service.check_public_health()
+
+
+@app.post("/api/tts/public/generate")
+async def generate_public_tts(request: PublicTTSRequest) -> dict:
+    """Generate TTS using RunPod's public Chatterbox Turbo endpoint.
+
+    This uses the pre-deployed public endpoint - no custom Docker image needed.
+    Note: Does NOT support voice cloning.
+
+    Args:
+        request: TTS parameters
+
+    Returns:
+        Dict with audio_url and cost
+    """
+    service = get_tts_service()
+
+    # Check service is configured
+    if not service.is_public_endpoint_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="RunPod not configured. Set RUNPOD_API_KEY in .env",
+        )
+
+    # Validate text
+    if not request.text or not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    try:
+        audio_url, cost = await service.generate_public(
+            text=request.text.strip(),
+            voice=request.voice,
+        )
+
+        return {
+            "audio_url": audio_url,
+            "cost": cost,
+            "voice": request.voice,
+        }
+
+    except TTSServiceError as e:
+        logger.error(f"Public TTS generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

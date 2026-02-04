@@ -14,6 +14,8 @@ import runpod
 import torch
 import io
 import base64
+import threading
+import time
 from chatterbox.tts import ChatterboxTTS
 import torchaudio
 
@@ -22,6 +24,40 @@ print("Loading ChatterboxTTS model...")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = ChatterboxTTS.from_pretrained(device=device)
 print(f"Model loaded on {device}!")
+
+
+def generate_tts_threaded(model, text, audio_prompt, exaggeration, cfg_weight, temperature):
+    """
+    Run TTS generation in a separate thread to avoid blocking heartbeats.
+    Returns a dict with 'wav' or 'error' key.
+    """
+    result = {"wav": None, "error": None, "done": False}
+
+    def _generate():
+        try:
+            if audio_prompt is not None:
+                result["wav"] = model.generate(
+                    text,
+                    audio_prompt=audio_prompt,
+                    exaggeration=exaggeration,
+                    cfg_weight=cfg_weight,
+                    temperature=temperature
+                )
+            else:
+                result["wav"] = model.generate(
+                    text,
+                    exaggeration=exaggeration,
+                    cfg_weight=cfg_weight,
+                    temperature=temperature
+                )
+        except Exception as e:
+            result["error"] = str(e)
+        finally:
+            result["done"] = True
+
+    thread = threading.Thread(target=_generate)
+    thread.start()
+    return thread, result
 
 
 def handler(job):
@@ -64,24 +100,32 @@ def handler(job):
             voice_buffer = io.BytesIO(voice_bytes)
             audio_prompt, _ = torchaudio.load(voice_buffer)
 
-        # Generate audio
+        # Generate audio in background thread to avoid blocking heartbeats
         print(f"Generating TTS for text: {text[:100]}...")
+        thread, result = generate_tts_threaded(
+            model, text, audio_prompt, exaggeration, cfg_weight, temperature
+        )
 
-        if audio_prompt is not None:
-            wav = model.generate(
-                text,
-                audio_prompt=audio_prompt,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,
-                temperature=temperature
-            )
-        else:
-            wav = model.generate(
-                text,
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,
-                temperature=temperature
-            )
+        # Send progress updates while generation runs (keeps heartbeat alive)
+        progress = 0
+        while not result["done"]:
+            progress = min(progress + 5, 95)
+            try:
+                runpod.serverless.progress_update(job, progress)
+            except Exception:
+                pass  # Progress update is optional, don't fail if it errors
+            time.sleep(3)  # Update every 3 seconds
+
+        # Wait for thread to fully complete
+        thread.join(timeout=300)  # 5 minute max wait
+
+        if result["error"]:
+            print(f"Error generating TTS: {result['error']}")
+            return {"error": result["error"]}
+
+        wav = result["wav"]
+        if wav is None:
+            return {"error": "Generation failed - no audio produced"}
 
         # Convert to MP3 bytes
         buffer = io.BytesIO()

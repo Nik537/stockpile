@@ -6,6 +6,15 @@ from .image import ImageResult, ImageNeed, ImagePlan, ScoredImage
 from .style import ContentStyle, VisualStyle, ColorTone, PacingStyle, TranscriptContext
 from .feedback import ContentFeedback, FeedbackStore, RejectionFilter
 from .outlier import OutlierVideo, ChannelStats, OutlierSearchResult
+from .image_generation import (
+    ImageGenerationModel,
+    ImageGenerationStatus,
+    ImageGenerationRequest,
+    ImageEditRequest,
+    GeneratedImage,
+    ImageGenerationResult,
+    ImageGenerationJob,
+)
 
 __all__ = [
     "VideoResult",
@@ -33,4 +42,12 @@ __all__ = [
     "OutlierVideo",
     "ChannelStats",
     "OutlierSearchResult",
+    # Image Generation
+    "ImageGenerationModel",
+    "ImageGenerationStatus",
+    "ImageGenerationRequest",
+    "ImageEditRequest",
+    "GeneratedImage",
+    "ImageGenerationResult",
+    "ImageGenerationJob",
 ]

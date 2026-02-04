@@ -17,6 +17,10 @@ SETTINGS_FILE = Path.home() / ".stockpile" / "tts_settings.json"
 RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 RUNPOD_ENDPOINT_ID = os.getenv("RUNPOD_ENDPOINT_ID", "")
 
+# RunPod public TTS endpoint
+RUNPOD_PUBLIC_TTS_ENDPOINT = "chatterbox-turbo"
+RUNPOD_API_BASE = "https://api.runpod.ai/v2"
+
 
 class TTSServiceError(Exception):
     """Error from TTS service."""
@@ -317,6 +321,138 @@ class TTSService:
             raise
         except Exception as e:
             raise TTSServiceError(f"RunPod TTS generation failed: {e}")
+
+    def is_public_endpoint_configured(self) -> bool:
+        """Check if RunPod API key is configured for public endpoint."""
+        return bool(self.runpod_api_key)
+
+    async def check_public_health(self) -> dict:
+        """Check if public TTS endpoint is configured.
+
+        Returns:
+            Health status dict with 'configured' and 'available'.
+        """
+        if not self.is_public_endpoint_configured():
+            return {
+                "configured": False,
+                "available": False,
+                "error": "RUNPOD_API_KEY not configured for public endpoint",
+            }
+
+        return {
+            "configured": True,
+            "available": True,
+            "endpoint": RUNPOD_PUBLIC_TTS_ENDPOINT,
+        }
+
+    async def generate_public(
+        self,
+        text: str,
+        voice: str = "Lucy",
+        output_format: str = "wav",
+    ) -> tuple[str, float]:
+        """Generate audio using RunPod's public Chatterbox Turbo endpoint.
+
+        This uses the pre-deployed public endpoint - no custom Docker image needed.
+        Note: Does NOT support voice cloning (use generate_runpod for that).
+
+        Args:
+            text: Text to convert to speech
+            voice: Voice to use (default: "Lucy")
+            output_format: Output format (wav or mp3)
+
+        Returns:
+            Tuple of (audio_url, cost)
+
+        Raises:
+            TTSServiceError: If generation fails
+        """
+        if not self.is_public_endpoint_configured():
+            raise TTSServiceError(
+                "RUNPOD_API_KEY not configured. Set it in your .env file."
+            )
+
+        url = f"{RUNPOD_API_BASE}/{RUNPOD_PUBLIC_TTS_ENDPOINT}/runsync"
+        headers = {
+            "Authorization": f"Bearer {self.runpod_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        # Public endpoint uses 'prompt' not 'text'
+        payload = {
+            "input": {
+                "prompt": text,
+                "voice": voice,
+                "format": output_format,
+            }
+        }
+
+        logger.info(
+            f"Generating TTS via public endpoint for {len(text)} characters "
+            f"(voice={voice})"
+        )
+
+        try:
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result = response.json()
+
+            # Check for RunPod execution errors
+            if result.get("status") == "FAILED":
+                error_msg = result.get("error", "Unknown error")
+                raise TTSServiceError(f"Public TTS endpoint failed: {error_msg}")
+
+            # Extract output - public endpoint returns audio_url
+            output = result.get("output", {})
+
+            if "error" in output:
+                raise TTSServiceError(f"TTS generation error: {output['error']}")
+
+            audio_url = output.get("audio_url") or output.get("result")
+            if not audio_url:
+                raise TTSServiceError("No audio URL returned from public endpoint")
+
+            cost = output.get("cost", 0.0)
+
+            logger.info(f"Public TTS generation complete: {audio_url} (cost: ${cost:.4f})")
+            return audio_url, cost
+
+        except httpx.TimeoutException:
+            raise TTSServiceError(
+                "Public TTS request timed out. Try again in a few seconds."
+            )
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", {}).get("message", str(e))
+            except Exception:
+                error_detail = e.response.text or str(e)
+            raise TTSServiceError(f"Public TTS API error: {error_detail}")
+        except TTSServiceError:
+            raise
+        except Exception as e:
+            raise TTSServiceError(f"Public TTS generation failed: {e}")
+
+    async def download_audio(self, audio_url: str) -> bytes:
+        """Download audio from a URL.
+
+        Args:
+            audio_url: URL to download audio from
+
+        Returns:
+            Audio bytes
+
+        Raises:
+            TTSServiceError: If download fails
+        """
+        try:
+            response = await self.client.get(audio_url)
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            raise TTSServiceError(f"Failed to download audio: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""
