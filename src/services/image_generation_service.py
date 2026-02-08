@@ -336,10 +336,24 @@ class ImageGenerationService:
             "models": [ImageGenerationModel.NANO_BANANA_PRO.value],
         }
 
+    @staticmethod
+    def _resolution_from_dimensions(width: int, height: int) -> str:
+        """Convert pixel dimensions to RunPod resolution string (1k/2k/4k)."""
+        max_dim = max(width, height)
+        if max_dim <= 1024:
+            return "1k"
+        elif max_dim <= 2048:
+            return "2k"
+        else:
+            return "4k"
+
     async def generate_runpod(
         self, request: ImageGenerationRequest
     ) -> ImageGenerationResult:
         """Generate images using RunPod Nano Banana Pro.
+
+        Note: nano-banana-pro-edit is an editing endpoint and does not support
+        pure text-to-image generation. This will raise an error.
 
         Args:
             request: The generation request
@@ -350,160 +364,20 @@ class ImageGenerationService:
         Raises:
             ImageGenerationServiceError: If generation fails
         """
-        if not self.is_runpod_configured():
-            raise ImageGenerationServiceError(
-                "RUNPOD_API_KEY not configured. Set it in your .env file."
-            )
-
-        endpoint_slug = RUNPOD_ENDPOINTS[ImageGenerationModel.NANO_BANANA_PRO]
-        url = f"{RUNPOD_API_BASE}/{endpoint_slug}/runsync"
-
-        headers = {
-            "Authorization": f"Bearer {self.runpod_api_key}",
-            "Content-Type": "application/json",
-        }
-
-        width = max(256, min(1536, request.width))
-        height = max(256, min(1536, request.height))
-
-        payload = {
-            "input": {
-                "prompt": request.prompt,
-                "width": width,
-                "height": height,
-            }
-        }
-
-        if request.seed is not None:
-            payload["input"]["seed"] = request.seed
-
-        if request.guidance_scale is not None:
-            payload["input"]["guidance"] = request.guidance_scale
-
-        logger.info(
-            f"Generating image with RunPod Nano Banana Pro "
-            f"({request.width}x{request.height})"
+        raise ImageGenerationServiceError(
+            "Nano Banana Pro only supports image editing, not text-to-image generation. "
+            "Use a Runware or Gemini model for text-to-image."
         )
-
-        start_time = time.time()
-
-        try:
-            response = await self.client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-
-            result_data = response.json()
-            generation_time_ms = int((time.time() - start_time) * 1000)
-
-            if result_data.get("status") == "FAILED":
-                error_msg = result_data.get("error", "Unknown error")
-                raise ImageGenerationServiceError(f"RunPod execution failed: {error_msg}")
-
-            output = result_data.get("output", {})
-            if "error" in output:
-                raise ImageGenerationServiceError(f"Generation error: {output['error']}")
-
-            images = []
-
-            # Handle different response formats
-            for img_data in output.get("images", []):
-                img_url = img_data.get("url", "") if isinstance(img_data, dict) else img_data
-                images.append(
-                    GeneratedImage(
-                        url=img_url,
-                        width=request.width,
-                        height=request.height,
-                        content_type="image/jpeg",
-                        seed=output.get("seed"),
-                    )
-                )
-
-            if not images and output.get("image_url"):
-                images.append(
-                    GeneratedImage(
-                        url=output.get("image_url"),
-                        width=request.width,
-                        height=request.height,
-                        content_type="image/jpeg",
-                        seed=output.get("seed"),
-                    )
-                )
-
-            if not images and output.get("image"):
-                img = output.get("image")
-                if isinstance(img, dict):
-                    img_url = img.get("url", "")
-                elif isinstance(img, str):
-                    if img.startswith("http"):
-                        img_url = img
-                    else:
-                        img_url = f"data:image/png;base64,{img}"
-                else:
-                    img_url = str(img)
-                images.append(
-                    GeneratedImage(
-                        url=img_url,
-                        width=request.width,
-                        height=request.height,
-                        content_type="image/png",
-                        seed=output.get("seed"),
-                    )
-                )
-
-            if not images and output.get("result"):
-                result_url = output.get("result")
-                if isinstance(result_url, str) and result_url.startswith("http"):
-                    images.append(
-                        GeneratedImage(
-                            url=result_url,
-                            width=request.width,
-                            height=request.height,
-                            content_type="image/jpeg",
-                            seed=output.get("seed"),
-                        )
-                    )
-
-            cost = output.get("cost", 0.0)
-            if not cost:
-                cost = self._calculate_cost(
-                    ImageGenerationModel.NANO_BANANA_PRO,
-                    request.width,
-                    request.height,
-                    len(images) or 1,
-                )
-
-            logger.info(
-                f"RunPod generated {len(images)} image(s) in {generation_time_ms}ms "
-                f"(cost: ${cost:.4f})"
-            )
-
-            return ImageGenerationResult(
-                images=images,
-                model=ImageGenerationModel.NANO_BANANA_PRO,
-                prompt=request.prompt,
-                generation_time_ms=generation_time_ms,
-                cost_estimate=cost,
-            )
-
-        except httpx.TimeoutException:
-            raise ImageGenerationServiceError(
-                "RunPod request timed out. The endpoint may be experiencing a cold start. "
-                "Try again in a few seconds."
-            )
-        except httpx.HTTPStatusError as e:
-            error_detail = ""
-            try:
-                error_data = e.response.json()
-                error_detail = error_data.get("error", str(e))
-            except Exception:
-                error_detail = e.response.text or str(e)
-            raise ImageGenerationServiceError(f"RunPod API error: {error_detail}")
-        except ImageGenerationServiceError:
-            raise
-        except Exception as e:
-            raise ImageGenerationServiceError(f"RunPod image generation failed: {e}")
 
     async def edit_runpod(self, request: ImageEditRequest) -> ImageGenerationResult:
         """Edit an image using RunPod Nano Banana Pro.
+
+        API format:
+          input.images: [url_string] - array of source image URLs
+          input.prompt: str - edit description
+          input.resolution: "1k"|"2k"|"4k"
+          output.result: url_string - edited image URL
+          output.cost: float
 
         Args:
             request: The edit request
@@ -527,10 +401,13 @@ class ImageGenerationService:
             "Content-Type": "application/json",
         }
 
+        resolution = self._resolution_from_dimensions(1024, 1024)
+
         payload = {
             "input": {
                 "prompt": request.prompt,
-                "image_url": request.input_image_url,
+                "images": [request.input_image_url],
+                "resolution": resolution,
             }
         }
 
@@ -559,39 +436,61 @@ class ImageGenerationService:
                 raise ImageGenerationServiceError(f"RunPod execution failed: {error_msg}")
 
             output = result_data.get("output", {})
-            if "error" in output:
-                raise ImageGenerationServiceError(f"Edit error: {output['error']}")
+            if isinstance(output, dict) and output.get("status") == "error":
+                raise ImageGenerationServiceError(f"Edit error: {output}")
 
             images = []
-            for img_data in output.get("images", []):
-                images.append(
-                    GeneratedImage(
-                        url=img_data.get("url", ""),
-                        width=1024,
-                        height=1024,
-                        content_type="image/png",
-                        seed=output.get("seed"),
-                    )
-                )
 
+            # Primary response format: output.result is a URL string
+            if output.get("result"):
+                result_url = output["result"]
+                if isinstance(result_url, str) and result_url.startswith("http"):
+                    images.append(
+                        GeneratedImage(
+                            url=result_url,
+                            width=1024,
+                            height=1024,
+                            content_type="image/jpeg",
+                            seed=output.get("seed"),
+                        )
+                    )
+
+            # Fallback: check images array
+            if not images:
+                for img_data in output.get("images", []):
+                    img_url = img_data.get("url", "") if isinstance(img_data, dict) else img_data
+                    if img_url:
+                        images.append(
+                            GeneratedImage(
+                                url=img_url,
+                                width=1024,
+                                height=1024,
+                                content_type="image/jpeg",
+                                seed=output.get("seed"),
+                            )
+                        )
+
+            # Fallback: image_url
             if not images and output.get("image_url"):
                 images.append(
                     GeneratedImage(
-                        url=output.get("image_url"),
+                        url=output["image_url"],
                         width=1024,
                         height=1024,
-                        content_type="image/png",
+                        content_type="image/jpeg",
                         seed=output.get("seed"),
                     )
                 )
 
-            cost = self._calculate_cost(
-                ImageGenerationModel.NANO_BANANA_PRO, 1024, 1024, len(images) or 1
-            )
+            cost = output.get("cost", 0.0)
+            if not cost:
+                cost = self._calculate_cost(
+                    ImageGenerationModel.NANO_BANANA_PRO, 1024, 1024, len(images) or 1
+                )
 
             logger.info(
                 f"RunPod edited {len(images)} image(s) in {generation_time_ms}ms "
-                f"(est. cost: ${cost:.4f})"
+                f"(cost: ${cost:.4f})"
             )
 
             return ImageGenerationResult(

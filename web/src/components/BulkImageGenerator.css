@@ -351,6 +351,18 @@
   color: white;
 }
 
+.preset-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.model-option.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
 .estimate-panel {
   display: flex;
   gap: var(--space-6);
@@ -773,22 +785,7 @@
   border-top-color: var(--color-primary-500);
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes spin, slideUp defined in index.css */
 
 /* ==========================================================================
    Responsive

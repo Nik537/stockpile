@@ -262,7 +262,13 @@ select:disabled {
   cursor: not-allowed;
 }
 
-/* Scrollbar Styling */
+/* Scrollbar Styling - Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* Scrollbar Styling - WebKit */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -361,6 +367,42 @@ select:disabled {
   50% {
     transform: translateY(-5px);
   }
+}
+
+/* ==========================================================================
+   Shared Button Styles
+   ========================================================================== */
+
+.btn-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent));
+  color: white;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-generate:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-generate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-generate .btn-icon {
+  font-size: 1.2rem;
 }
 
 /* Light Mode Overrides */

@@ -341,9 +341,10 @@ async def download_bulk_images(job_id: str) -> Response:
                     {
                         "index": r.index,
                         "prompt": r.prompt.prompt,
-                        "style": r.prompt.style,
+                        "rendering_style": r.prompt.rendering_style,
                         "mood": r.prompt.mood,
-                        "angle": r.prompt.angle,
+                        "composition": r.prompt.composition,
+                        "has_text_space": r.prompt.has_text_space,
                         "image_url": r.image_url,
                     }
                     for r in successful_results

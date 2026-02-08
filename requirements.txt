@@ -15,22 +15,24 @@ rich==14.0.0
 # Q1 IMPROVEMENT: CLIP Visual Matching (SINGLE BIGGEST quality improvement)
 # Uses OpenAI CLIP to compare video frames against text descriptions
 # Provides visual relevance scoring independent of metadata
-transformers==5.0.0
-torch==2.0.1
-torchvision==0.15.2
-opencv-python==4.13.0.90
+# ML deps are optional - Install with: pip install stockpile[clip]
+# Or manually: pip install torch torchvision transformers opencv-python
+# transformers==5.0.0
+# torch==2.0.1
+# torchvision==0.15.2
+# opencv-python==4.13.0.90
 pillow==11.0.0
 
 # Development dependencies
-ruff==0.1.15
-mypy==1.8.0
-pre-commit==3.6.0
+ruff>=0.9.0
+mypy>=1.14.0
+pre-commit>=4.0.0
 
 # Testing dependencies
-pytest==8.0.0
-pytest-asyncio==0.23.0
-pytest-cov==4.1.0
-pytest-mock==3.12.0
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+pytest-mock>=3.14.0
 
 # Caching
 diskcache==5.6.3
@@ -39,7 +41,7 @@ diskcache==5.6.3
 tqdm==4.66.1
 
 # Web API and WebSocket support
-fastapi==0.109.0
+fastapi>=0.115.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 aiofiles==23.2.1

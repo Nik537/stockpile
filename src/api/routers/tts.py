@@ -115,8 +115,8 @@ async def generate_tts(
     if voice_id:
         # Use voice from library
         library = get_voice_library()
-        voice = library.get_voice(voice_id)
-        if not voice:
+        library_voice = library.get_voice(voice_id)
+        if not library_voice:
             raise HTTPException(
                 status_code=404,
                 detail=f"Voice {voice_id} not found",

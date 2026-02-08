@@ -4,6 +4,14 @@ version = "0.1.0"
 description = "AI-powered B-roll automation pipeline"
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+clip = [
+    "torch>=2.0.1",
+    "torchvision>=0.15.2",
+    "transformers>=5.0.0",
+    "opencv-python>=4.13.0.90",
+]
+
 [tool.ruff]
 # Target Python 3.10+
 target-version = "py310"

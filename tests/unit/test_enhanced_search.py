@@ -325,16 +325,16 @@ class TestEnhancedEvaluationPrompt:
 
 
 class TestSearchWithFallback:
-    """Tests for search_with_fallback method."""
+    """Tests for search_with_fallback method in VideoSearchService."""
 
     @pytest.mark.asyncio
     async def test_search_with_fallback_primary_sufficient(self):
         """Test that primary search is used when results are sufficient."""
-        from src.broll_processor import BRollProcessor
+        from src.services.video_search_service import VideoSearchService
 
-        # Mock the processor
-        processor = Mock(spec=BRollProcessor)
-        processor.search_youtube_videos = AsyncMock(
+        # Mock dependencies
+        mock_source = Mock()
+        mock_source.search_videos = Mock(
             return_value=[
                 VideoResult(
                     video_id=f"v{i}",
@@ -346,12 +346,17 @@ class TestSearchWithFallback:
                 for i in range(10)
             ]
         )
-        processor.ai_service = Mock()
-        processor.ai_service.filter_by_negative_keywords = lambda x, y: x
+        mock_source.get_source_name = Mock(return_value="test")
 
-        # Bind the method to our mock
-        processor.search_with_fallback = BRollProcessor.search_with_fallback.__get__(
-            processor
+        mock_prefilter = Mock()
+        mock_ai_service = Mock()
+        mock_ai_service.filter_by_negative_keywords = lambda x, y: x
+
+        # Create VideoSearchService with mocked dependencies
+        service = VideoSearchService(
+            video_sources=[mock_source],
+            video_prefilter=mock_prefilter,
+            ai_service=mock_ai_service,
         )
 
         need = BRollNeed(
@@ -362,25 +367,22 @@ class TestSearchWithFallback:
             alternate_searches=["downtown", "urban"],
         )
 
-        results = await processor.search_with_fallback(need, min_results=5)
+        results = await service.search_with_fallback(need, min_results=5)
 
         # Should only call search once (primary is sufficient)
         assert len(results) == 10
-        processor.search_youtube_videos.assert_called_once_with("city skyline")
+        mock_source.search_videos.assert_called_once_with("city skyline")
 
     @pytest.mark.asyncio
     async def test_search_with_fallback_uses_alternates(self):
         """Test that alternate searches are used when primary is insufficient."""
-        from src.broll_processor import BRollProcessor
-
-        # Mock the processor
-        processor = Mock(spec=BRollProcessor)
+        from src.services.video_search_service import VideoSearchService
 
         # Primary returns 2 results (insufficient)
         # Each alternate returns 3 results
         call_count = [0]
 
-        async def mock_search(phrase):
+        def mock_search(phrase):
             call_count[0] += 1
             if call_count[0] == 1:  # Primary
                 return [
@@ -405,12 +407,18 @@ class TestSearchWithFallback:
                     for i in range(3)
                 ]
 
-        processor.search_youtube_videos = mock_search
-        processor.ai_service = Mock()
-        processor.ai_service.filter_by_negative_keywords = lambda x, y: x
+        mock_source = Mock()
+        mock_source.search_videos = mock_search
+        mock_source.get_source_name = Mock(return_value="test")
 
-        processor.search_with_fallback = BRollProcessor.search_with_fallback.__get__(
-            processor
+        mock_prefilter = Mock()
+        mock_ai_service = Mock()
+        mock_ai_service.filter_by_negative_keywords = lambda x, y: x
+
+        service = VideoSearchService(
+            video_sources=[mock_source],
+            video_prefilter=mock_prefilter,
+            ai_service=mock_ai_service,
         )
 
         need = BRollNeed(
@@ -421,7 +429,7 @@ class TestSearchWithFallback:
             alternate_searches=["downtown", "urban"],
         )
 
-        results = await processor.search_with_fallback(need, min_results=5)
+        results = await service.search_with_fallback(need, min_results=5)
 
         # Should have results from primary + alternates
         assert len(results) >= 5
@@ -430,11 +438,10 @@ class TestSearchWithFallback:
     @pytest.mark.asyncio
     async def test_search_with_fallback_applies_negative_filter(self):
         """Test that negative keywords filter is applied."""
-        from src.broll_processor import BRollProcessor
+        from src.services.video_search_service import VideoSearchService
 
-        # Mock the processor
-        processor = Mock(spec=BRollProcessor)
-        processor.search_youtube_videos = AsyncMock(
+        mock_source = Mock()
+        mock_source.search_videos = Mock(
             return_value=[
                 VideoResult(
                     video_id="v1",
@@ -452,16 +459,21 @@ class TestSearchWithFallback:
                 ),
             ]
         )
+        mock_source.get_source_name = Mock(return_value="test")
+
+        mock_prefilter = Mock()
 
         # Mock the filter to actually filter
         def mock_filter(videos, keywords):
             return [v for v in videos if not any(k.lower() in v.title.lower() for k in keywords)]
 
-        processor.ai_service = Mock()
-        processor.ai_service.filter_by_negative_keywords = mock_filter
+        mock_ai_service = Mock()
+        mock_ai_service.filter_by_negative_keywords = mock_filter
 
-        processor.search_with_fallback = BRollProcessor.search_with_fallback.__get__(
-            processor
+        service = VideoSearchService(
+            video_sources=[mock_source],
+            video_prefilter=mock_prefilter,
+            ai_service=mock_ai_service,
         )
 
         need = BRollNeed(
@@ -472,7 +484,7 @@ class TestSearchWithFallback:
             negative_keywords=["logo", "night"],
         )
 
-        results = await processor.search_with_fallback(need, min_results=1)
+        results = await service.search_with_fallback(need, min_results=1)
 
         # Should filter out the video with "Night" and "logo" in title
         assert len(results) == 1

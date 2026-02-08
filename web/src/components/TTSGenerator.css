@@ -166,41 +166,7 @@
   font-size: 1.2rem;
 }
 
-/* ==========================================================================
-   Generate Button
-   ========================================================================== */
-
-.btn-generate {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-4) var(--space-6);
-  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent));
-  color: white;
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-  border: none;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.btn-generate:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-glow);
-}
-
-.btn-generate:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-generate .btn-icon {
-  font-size: 1.2rem;
-}
+/* .btn-generate base styles consolidated in index.css */
 
 /* ==========================================================================
    Result Section
@@ -397,11 +363,7 @@
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin defined in index.css */
 
 /* ==========================================================================
    Responsive

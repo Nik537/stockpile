@@ -40,6 +40,9 @@ from services.image_sources import (
     GoogleImageSource,
 )
 from services.image_downloader import ImageAcquisitionService
+from services.transcription_planning_service import TranscriptionPlanningService
+from services.video_acquisition_service import VideoAcquisitionService
+from services.video_search_service import VideoSearchService
 from utils.cache import AIResponseCache, load_cache_from_config
 from utils.checkpoint import (
     ProcessingCheckpoint,
@@ -416,7 +419,62 @@ class BRollProcessor:
         # Feature 1: Style detection - will be populated per video during processing
         self.content_style: Optional[ContentStyle] = None
 
-        logger.info("stockpile initialized successfully")
+        # Store config values needed by decomposed services
+        self.max_videos_per_phrase = self.config.get("max_videos_per_phrase", 3)
+        self.evaluation_context_seconds = self.config.get("evaluation_context_seconds", 30.0)
+
+        # DECOMPOSITION: Create decomposed services for cleaner architecture
+        # VideoSearchService: handles multi-source search, fallback, and evaluation
+        self.video_search_service = VideoSearchService(
+            video_sources=self.video_sources,
+            video_prefilter=self.video_prefilter,
+            ai_service=self.ai_service,
+            feedback_service=self.feedback_service,
+            content_style=self.content_style,
+            content_filter=self.content_filter,
+            max_videos_per_phrase=self.max_videos_per_phrase,
+            evaluation_context_seconds=self.evaluation_context_seconds,
+        )
+
+        # TranscriptionPlanningService: handles transcription and B-roll planning
+        self.transcription_planning_service = TranscriptionPlanningService(
+            transcription_service=self.transcription_service,
+            ai_service=self.ai_service,
+            clips_per_minute=self.clips_per_minute,
+            content_filter=self.content_filter,
+        )
+
+        # VideoAcquisitionService: handles download, extraction, and verification
+        self.video_acquisition_service = VideoAcquisitionService(
+            video_downloader=self.video_downloader,
+            clip_extractor=self.clip_extractor,
+            semantic_verifier=self.semantic_verifier,
+            file_organizer=self.file_organizer,
+            video_search_service=self.video_search_service,
+            ai_service=self.ai_service,
+            feedback_service=self.feedback_service,
+            drive_service=self.drive_service,
+            download_semaphore=self.download_semaphore,
+            extraction_semaphore=self.extraction_semaphore,
+            ai_semaphore=self.ai_semaphore,
+            clips_per_need_target=self.config.get("clips_per_need_target", 5),
+            use_two_pass_download=self.config.get("use_two_pass_download", True),
+            competitive_analysis_enabled=self.config.get("competitive_analysis_enabled", True),
+            previews_per_need=self.config.get("previews_per_need", 2),
+            content_filter=self.content_filter,
+            delete_original_after_extraction=self.delete_original_after_extraction,
+            max_clip_duration=self.config.get("max_clip_duration", 15.0),
+            min_clip_duration=self.config.get("min_clip_duration", 4.0),
+            max_videos_per_phrase=self.max_videos_per_phrase,
+            preview_max_height=self.config.get("preview_max_height", 360),
+            clip_download_format=self.config.get(
+                "clip_download_format", "bestvideo[height<=1080]+bestaudio/best"
+            ),
+            reject_below_threshold=self.config.get("reject_below_threshold", True),
+            protected_input_files=self.protected_input_files,
+        )
+
+        logger.info("stockpile initialized successfully (with decomposed services)")
 
     def start(self) -> None:
         """Start the processor."""
@@ -609,14 +667,16 @@ class BRollProcessor:
                 f"audience='{self.content_style.target_audience}', "
                 f"visual_style={self.content_style.visual_style.value}"
             )
-            # Pass content style to image acquisition service
+            # Pass content style to image acquisition service and video search service
             if self.image_acquisition_service:
                 self.image_acquisition_service.set_content_style(self.content_style)
+            self.video_search_service.set_content_style(self.content_style)
         else:
             self.content_style = None
             logger.info("Style detection DISABLED (config)")
             if self.image_acquisition_service:
                 self.image_acquisition_service.set_content_style(None)
+            self.video_search_service.set_content_style(None)
 
         # Step 2: Plan B-roll needs (timeline-aware)
         if status:
@@ -1126,8 +1186,7 @@ class BRollProcessor:
     ) -> Optional[tuple[str, list[str]]]:
         """Process a single B-roll need: search, evaluate, download, extract clips.
 
-        Q4 IMPROVEMENT: Now accepts transcript_result and user_preferences
-        for context-aware video evaluation.
+        DELEGATED to VideoAcquisitionService for cleaner architecture.
 
         Args:
             need: BRollNeed object with search phrase and timestamp
@@ -1141,471 +1200,33 @@ class BRollProcessor:
         Returns:
             Tuple of (folder_name, list of clip files) or None if failed
         """
-        logger.info(
-            f"[{need_index}/{total_needs}] Processing: {need.search_phrase} "
-            f"at {need.timestamp:.1f}s"
+        return await self.video_acquisition_service.process_single_need(
+            need=need,
+            need_index=need_index,
+            total_needs=total_needs,
+            project_dir=project_dir,
+            drive_project_folder_id=drive_project_folder_id,
+            transcript_result=transcript_result,
+            user_preferences=user_preferences,
+            video_prefilter=self.video_prefilter,
         )
-
-        try:
-            # Q2 IMPROVEMENT: Use enhanced search with fallback and negative keyword filtering
-            if need.has_enhanced_metadata():
-                logger.info(
-                    f"  [{need_index}/{total_needs}] Using enhanced search "
-                    f"(alternates: {len(need.alternate_searches)}, "
-                    f"negatives: {len(need.negative_keywords)}, "
-                    f"style: {need.visual_style or 'any'})"
-                )
-                video_results = await self.search_with_fallback(need, min_results=5)
-            else:
-                # Fallback to simple search for non-enhanced B-roll needs
-                video_results = await self.search_youtube_videos(need.search_phrase)
-            logger.info(f"  [{need_index}/{total_needs}] Found {len(video_results)} videos")
-
-            # S5 IMPROVEMENT: Pre-filter videos before AI evaluation
-            # This reduces wasted API calls and download bandwidth
-            if video_results:
-                original_count = len(video_results)
-                video_results = self.video_prefilter.filter(video_results)
-                filter_diff = original_count - len(video_results)
-                if filter_diff > 0:
-                    logger.info(
-                        f"  [{need_index}/{total_needs}] Pre-filtered: {original_count} -> "
-                        f"{len(video_results)} videos ({filter_diff} removed)"
-                    )
-
-            if not video_results:
-                logger.info(
-                    f"  [{need_index}/{total_needs}] All videos filtered for: {need.search_phrase}"
-                )
-                return None
-
-            # Q2/Q4 IMPROVEMENT: Use context-aware evaluation with enhanced metadata
-            scored_videos = await self.evaluate_videos_enhanced(
-                need=need,
-                videos=video_results,
-                transcript_result=transcript_result,
-                user_preferences=user_preferences,
-            )
-            logger.info(f"  [{need_index}/{total_needs}] Selected {len(scored_videos)} top videos")
-
-            if not scored_videos:
-                logger.info(
-                    f"  [{need_index}/{total_needs}] No suitable videos found for: {need.search_phrase}"
-                )
-                return None
-
-            # Create timestamp-prefixed folder for this need
-            need_folder = self.file_organizer.create_need_folder(project_dir, need)
-            logger.info(f"  [{need_index}/{total_needs}] Output folder: {Path(need_folder).name}")
-
-            # Google Drive folder for this need
-            drive_need_folder_id = None
-            if self.drive_service and drive_project_folder_id:
-                loop = asyncio.get_event_loop()
-                drive_need_folder_id = await loop.run_in_executor(
-                    None,
-                    self.drive_service.create_phrase_folder,
-                    need.folder_name,  # Use timestamp-prefixed name
-                    drive_project_folder_id,
-                )
-
-            # Process videos - stop early if we hit target clip count
-            final_files = []
-            clips_target = self.config.get("clips_per_need_target", 5)
-
-            # Check if competitive analysis is enabled
-            competitive_mode = self.config.get("competitive_analysis_enabled", True)
-            previews_per_need = self.config.get("previews_per_need", 2)
-
-            loop = asyncio.get_event_loop()
-
-            if (
-                competitive_mode
-                and self.config.get("use_two_pass_download", True)
-                and self.clip_extractor
-            ):
-                # COMPETITIVE ANALYSIS MODE
-                logger.info(
-                    f"  [{need_index}/{total_needs}] Competitive analysis: downloading {previews_per_need} previews in parallel"
-                )
-
-                # Select top N videos for comparison
-                preview_videos = scored_videos[:previews_per_need]
-
-                # PHASE 2 PERFORMANCE: Download all previews in parallel
-                download_tasks = [
-                    self._download_preview_with_limit(
-                        video=video,
-                        need_folder=str(need_folder),
-                        need_index=need_index,
-                        video_idx=idx,
-                        total_videos=len(preview_videos),
-                    )
-                    for idx, video in enumerate(preview_videos, 1)
-                ]
-
-                # Wait for all downloads to complete
-                download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
-
-                # Filter out failures and exceptions
-                preview_files = [
-                    result
-                    for result in download_results
-                    if result is not None and not isinstance(result, Exception)
-                ]
-
-                if not preview_files:
-                    logger.warning(
-                        f"  [{need_index}/{total_needs}] No previews downloaded, skipping need"
-                    )
-                else:
-                    # Analyze all previews together to find best clip
-                    logger.info(
-                        f"  [{need_index}/{total_needs}] Analyzing {len(preview_files)} previews..."
-                    )
-
-                    try:
-                        # Fix 4: Pass broll_need for semantic context matching
-                        result = await loop.run_in_executor(
-                            None,
-                            lambda: self.clip_extractor.analyze_videos_competitive(
-                                preview_files,
-                                need.search_phrase,
-                                broll_need=need,
-                            ),
-                        )
-
-                        if result:
-                            source_video_path, best_segment = result
-
-                            # Find which video the winning segment came from
-                            source_video = None
-                            for video, preview_file in preview_files:
-                                if Path(preview_file) == source_video_path:
-                                    source_video = video
-                                    break
-
-                            if source_video:
-                                logger.info(
-                                    f"  [{need_index}/{total_needs}] Best clip: {best_segment.start_time:.1f}s-{best_segment.end_time:.1f}s from {source_video.video_id} (score: {best_segment.relevance_score}/10)"
-                                )
-
-                                # Download winner in high res
-                                clip_files = await loop.run_in_executor(
-                                    None,
-                                    self.video_downloader.download_clip_sections,
-                                    source_video,
-                                    [best_segment],
-                                    str(need_folder),
-                                    self.config.get(
-                                        "clip_download_format",
-                                        "bestvideo[height<=1080]+bestaudio/best",
-                                    ),
-                                )
-
-                                if clip_files:
-                                    final_files.extend(clip_files)
-                                    logger.info(
-                                        f"  [{need_index}/{total_needs}] Downloaded winning clip in high quality"
-                                    )
-
-                                    # Upload to Drive if configured
-                                    if self.drive_service and drive_need_folder_id:
-                                        for clip_file in clip_files:
-                                            await loop.run_in_executor(
-                                                None,
-                                                self.drive_service.upload_file,
-                                                clip_file,
-                                                drive_need_folder_id,
-                                            )
-                                else:
-                                    logger.warning(
-                                        f"  [{need_index}/{total_needs}] Failed to download winning clip"
-                                    )
-                            else:
-                                logger.warning(
-                                    f"  [{need_index}/{total_needs}] Could not identify source video for best clip"
-                                )
-                        else:
-                            logger.warning(
-                                f"  [{need_index}/{total_needs}] No good clips found in any preview"
-                            )
-
-                    except Exception as e:
-                        logger.error(
-                            f"  [{need_index}/{total_needs}] Competitive analysis failed: {e}"
-                        )
-
-                    # Cleanup all previews
-                    for video, preview_file in preview_files:
-                        try:
-                            Path(preview_file).unlink()
-                        except Exception as e:
-                            logger.warning(
-                                f"  [{need_index}/{total_needs}] Could not delete preview: {e}"
-                            )
-
-            else:
-                # SEQUENTIAL PROCESSING MODE (Original behavior)
-                logger.info(
-                    f"  [{need_index}/{total_needs}] Sequential processing: analyzing videos one by one"
-                )
-
-                for video_idx, video in enumerate(scored_videos, 1):
-                    # Early stopping if we have enough clips
-                    if len(final_files) >= clips_target:
-                        logger.info(
-                            f"  [{need_index}/{total_needs}] Target of {clips_target} clips reached, stopping early"
-                        )
-                        break
-
-                    logger.info(
-                        f"  [{need_index}/{total_needs}] Video {video_idx}/{len(scored_videos)}: {video.video_id}"
-                    )
-
-                    try:
-                        # Check if two-pass download is enabled and supported
-                        use_two_pass = (
-                            self.config.get("use_two_pass_download", True)
-                            and self.video_downloader._supports_section_downloads()
-                            and self.clip_extractor is not None
-                        )
-
-                        if use_two_pass:
-                            # TWO-PASS WORKFLOW (OPTIMIZED)
-                            logger.info(
-                                f"    [{need_index}/{total_needs}] Using two-pass download (preview + clips)"
-                            )
-
-                            # Pass 1: Download low-quality preview
-                            preview_file = await loop.run_in_executor(
-                                None,
-                                self.video_downloader.download_preview,
-                                video,
-                                str(need_folder),
-                                self.config.get("preview_max_height", 360),
-                            )
-
-                            if not preview_file:
-                                logger.warning(
-                                    f"    [{need_index}/{total_needs}] Preview download failed, trying traditional download"
-                                )
-                                use_two_pass = False
-                            else:
-                                logger.info(
-                                    f"    [{need_index}/{total_needs}] Preview downloaded, analyzing..."
-                                )
-
-                                # Analyze preview to get clip segments
-                                # Fix 4: Pass broll_need for semantic context matching
-                                segments = await loop.run_in_executor(
-                                    None,
-                                    lambda: self.clip_extractor.analyze_video(
-                                        preview_file,
-                                        need.search_phrase,
-                                        video.video_id,
-                                        broll_need=need,
-                                    ),
-                                )
-
-                                if segments and segments.analysis_success and segments.segments:
-                                    logger.info(
-                                        f"    [{need_index}/{total_needs}] Found {len(segments.segments)} clips, downloading in high quality..."
-                                    )
-
-                                    # Pass 2: Download only the identified clips in high quality
-                                    clip_files = await loop.run_in_executor(
-                                        None,
-                                        self.video_downloader.download_clip_sections,
-                                        video,
-                                        segments.segments,
-                                        str(need_folder),
-                                        self.config.get(
-                                            "clip_download_format",
-                                            "bestvideo[height<=1080]+bestaudio/best",
-                                        ),
-                                    )
-
-                                    if clip_files:
-                                        final_files.extend(clip_files)
-                                        logger.info(
-                                            f"    [{need_index}/{total_needs}] Downloaded {len(clip_files)} clips in high quality"
-                                        )
-
-                                        # Clean up preview
-                                        try:
-                                            Path(preview_file).unlink()
-                                            logger.debug(
-                                                f"    [{need_index}/{total_needs}] Deleted preview"
-                                            )
-                                        except Exception as e:
-                                            logger.warning(
-                                                f"    [{need_index}/{total_needs}] Could not delete preview: {e}"
-                                            )
-
-                                        # Upload clips to Drive if configured
-                                        if self.drive_service and drive_need_folder_id:
-                                            for clip_file in clip_files:
-                                                await loop.run_in_executor(
-                                                    None,
-                                                    self.drive_service.upload_file,
-                                                    clip_file,
-                                                    drive_need_folder_id,
-                                                )
-
-                                        continue  # Skip traditional workflow
-                                    else:
-                                        logger.warning(
-                                            f"    [{need_index}/{total_needs}] No clips downloaded, trying traditional download"
-                                        )
-                                        use_two_pass = False
-                                else:
-                                    logger.warning(
-                                        f"    [{need_index}/{total_needs}] No clips found in preview, trying traditional download"
-                                    )
-                                    use_two_pass = False
-
-                                # Clean up preview if falling back
-                                if not use_two_pass and preview_file:
-                                    try:
-                                        Path(preview_file).unlink()
-                                    except Exception:
-                                        pass
-
-                        if not use_two_pass:
-                            # TRADITIONAL WORKFLOW (FALLBACK)
-                            logger.info(
-                                f"    [{need_index}/{total_needs}] Using traditional download (full video + extraction)"
-                            )
-
-                            # Download full video
-                            downloaded_file = await loop.run_in_executor(
-                                None,
-                                self.video_downloader.download_single_video_to_folder,
-                                video,
-                                str(need_folder),
-                                self.drive_service,
-                                drive_need_folder_id,
-                            )
-
-                            if not downloaded_file:
-                                logger.warning(
-                                    f"    [{need_index}/{total_needs}] Failed to download {video.video_id}"
-                                )
-                                continue
-
-                            logger.info(
-                                f"    [{need_index}/{total_needs}] Downloaded: {Path(downloaded_file).name}"
-                            )
-
-                            # Extract clips from full video
-                            # Fix 4: Pass broll_need for semantic context matching
-                            if self.clip_extractor:
-                                clips, should_delete = await loop.run_in_executor(
-                                    None,
-                                    lambda: self.clip_extractor.process_downloaded_video(
-                                        downloaded_file,
-                                        need.search_phrase,
-                                        video.video_id,
-                                        output_dir=None,  # Use same directory as source
-                                        broll_need=need,
-                                    ),
-                                )
-
-                                if clips:
-                                    final_files.extend([c.clip_path for c in clips])
-                                    logger.info(
-                                        f"    [{need_index}/{total_needs}] Extracted {len(clips)} clips"
-                                    )
-
-                                    # Delete original immediately if clips extracted and setting enabled
-                                    if should_delete and self.delete_original_after_extraction:
-                                        self.clip_extractor.cleanup_original_video(downloaded_file)
-                                        logger.info(
-                                            f"    [{need_index}/{total_needs}] Deleted original: {Path(downloaded_file).name}"
-                                        )
-                                else:
-                                    # Keep original if no clips extracted
-                                    final_files.append(downloaded_file)
-                                    logger.info(
-                                        f"    [{need_index}/{total_needs}] No clips extracted, keeping original"
-                                    )
-                            else:
-                                final_files.append(downloaded_file)
-
-                    except Exception as e:
-                        logger.error(
-                            f"    [{need_index}/{total_needs}] Failed to process video {video.video_id}: {e}"
-                        )
-                        continue
-
-            logger.info(f"  [{need_index}/{total_needs}] Completed: {len(final_files)} clips total")
-
-            # S6 IMPROVEMENT: Semantic verification for extracted clips
-            # Verify clips match the original transcript context before finalizing
-            if self.semantic_verifier and final_files:
-                verified_files = await self._verify_clips_semantically(
-                    clip_paths=final_files,
-                    broll_need=need,
-                    need_index=need_index,
-                    total_needs=total_needs,
-                )
-
-                if verified_files:
-                    removed_count = len(final_files) - len(verified_files)
-                    if removed_count > 0:
-                        logger.info(
-                            f"  [{need_index}/{total_needs}] Semantic verification: "
-                            f"{len(verified_files)} passed, {removed_count} filtered out"
-                        )
-                    final_files = verified_files
-                else:
-                    logger.warning(
-                        f"  [{need_index}/{total_needs}] All clips failed semantic verification, "
-                        "keeping original files"
-                    )
-
-            # Clean up intermediate files (previews, webm, failed downloads) to save disk space
-            await loop.run_in_executor(
-                None,
-                self.video_downloader.cleanup_intermediate_files,
-                Path(need_folder),
-            )
-
-            return (need.folder_name, final_files)
-
-        except Exception as e:
-            logger.error(
-                f"[{need_index}/{total_needs}] Failed to process need '{need.search_phrase}': {e}"
-            )
-            return None
 
     async def transcribe_audio(self, file_path: str) -> TranscriptResult:
         """Transcribe audio content using Whisper with timestamps.
 
+        DELEGATED to TranscriptionPlanningService for cleaner architecture.
+
         Returns:
             TranscriptResult with text, segments (with timestamps), and duration
         """
-        if not self.transcription_service.is_supported_file(file_path):
-            raise ValueError(f"Unsupported file format: {Path(file_path).suffix}")
-
-        # Get full transcript with timestamps
-        transcript_result = await self.transcription_service.transcribe_audio(
-            file_path, with_timestamps=True
-        )
-        return transcript_result
+        return await self.transcription_planning_service.transcribe_audio(file_path)
 
     async def extract_search_phrases(self, transcript: str) -> list[str]:
-        """Extract relevant search phrases using Gemini AI (legacy method)."""
-        if not transcript or not transcript.strip():
-            logger.warning("Empty transcript provided for phrase extraction")
-            return []
+        """Extract relevant search phrases using Gemini AI (legacy method).
 
-        loop = asyncio.get_event_loop()
-        search_phrases = await loop.run_in_executor(
-            None, self.ai_service.extract_search_phrases, transcript
-        )
-        return search_phrases
+        DELEGATED to TranscriptionPlanningService for cleaner architecture.
+        """
+        return await self.transcription_planning_service.extract_search_phrases(transcript)
 
     async def plan_broll_needs(
         self,
@@ -1615,8 +1236,7 @@ class BRollProcessor:
     ) -> BRollPlan:
         """Plan timeline-aware B-roll needs from transcript.
 
-        Uses AI to identify specific moments in the source video that need
-        B-roll footage, with target density of clips_per_minute.
+        DELEGATED to TranscriptionPlanningService for cleaner architecture.
 
         Args:
             transcript_result: TranscriptResult with segments and timestamps
@@ -1626,34 +1246,14 @@ class BRollProcessor:
         Returns:
             BRollPlan with list of BRollNeed objects
         """
-        if not transcript_result.text or not transcript_result.text.strip():
-            logger.warning("Empty transcript provided for B-roll planning")
-            return BRollPlan(
-                source_duration=transcript_result.duration,
-                needs=[],
-                clips_per_minute=self.clips_per_minute,
-                source_file=source_file,
-            )
-
-        loop = asyncio.get_event_loop()
-        broll_plan = await loop.run_in_executor(
-            None,
-            lambda: self.ai_service.plan_broll_needs(
-                transcript_result,
-                self.clips_per_minute,
-                source_file,
-                self.content_filter,
-                user_preferences,
-            ),
+        return await self.transcription_planning_service.plan_broll_needs(
+            transcript_result, source_file, user_preferences
         )
-        return broll_plan
 
     async def transcribe_and_prompt(self, file_path: str) -> TranscriptResult:
         """Transcribe video and return result for interactive prompting.
 
-        Used by interactive mode to get transcript before asking questions.
-        This allows the UI to show transcript preview and generate context-aware
-        questions before proceeding with B-roll planning.
+        DELEGATED to TranscriptionPlanningService for cleaner architecture.
 
         Args:
             file_path: Path to video file to transcribe
@@ -1661,43 +1261,21 @@ class BRollProcessor:
         Returns:
             TranscriptResult with text, segments, and duration
         """
-        return await self.transcribe_audio(file_path)
+        return await self.transcription_planning_service.transcribe_and_prompt(file_path)
 
     async def search_youtube_videos(self, phrase: str) -> list[VideoResult]:
         """Search video sources for videos matching the phrase.
 
-        Currently searches YouTube only, but abstraction allows for multi-source search.
+        DELEGATED to VideoSearchService for cleaner architecture.
         """
-        if not phrase or not phrase.strip():
-            logger.warning("Empty search phrase provided")
-            return []
-
-        # PHASE 3 FEATURES: Multi-source video search
-        # For now, search all sources and combine results
-        # Future: add source priority, deduplication, etc.
-        all_results = []
-
-        for source in self.video_sources:
-            try:
-                loop = asyncio.get_event_loop()
-                results = await loop.run_in_executor(None, source.search_videos, phrase)
-                all_results.extend(results)
-                logger.debug(f"Source '{source.get_source_name()}' returned {len(results)} videos")
-            except Exception as e:
-                logger.warning(f"Search failed for source '{source.get_source_name()}': {e}")
-                continue
-
-        logger.info(f"Total videos from all sources: {len(all_results)}")
-        return all_results
+        return await self.video_search_service.search_youtube_videos(phrase)
 
     async def search_with_fallback(
         self, need: BRollNeed, min_results: int = 5
     ) -> list[VideoResult]:
         """Search for videos with fallback to alternate search phrases.
 
-        Q2 ENHANCEMENT: Uses enhanced B-roll need metadata to search with
-        primary phrase first, then alternates if insufficient results.
-        Also filters out videos with negative keywords.
+        DELEGATED to VideoSearchService for cleaner architecture.
 
         Args:
             need: BRollNeed with primary search and optional alternates
@@ -1706,76 +1284,16 @@ class BRollProcessor:
         Returns:
             List of VideoResult objects, filtered by negative keywords
         """
-        # Search with primary phrase first
-        results = await self.search_youtube_videos(need.search_phrase)
-        logger.info(f"Primary search '{need.search_phrase}': {len(results)} results")
-
-        # If insufficient results and we have alternates, try them
-        if len(results) < min_results and need.alternate_searches:
-            logger.info(
-                f"Insufficient results ({len(results)} < {min_results}), "
-                f"trying {len(need.alternate_searches)} alternate searches"
-            )
-
-            for i, alt_phrase in enumerate(need.alternate_searches):
-                if len(results) >= min_results * 2:
-                    logger.info(f"Sufficient results ({len(results)}), stopping alternates")
-                    break
-
-                alt_results = await self.search_youtube_videos(alt_phrase)
-                logger.info(f"Alternate search {i+1} '{alt_phrase}': {len(alt_results)} results")
-
-                # Add only new results (deduplicate by video_id)
-                existing_ids = {r.video_id for r in results}
-                new_results = [r for r in alt_results if r.video_id not in existing_ids]
-                results.extend(new_results)
-
-            logger.info(f"Total after fallback searches: {len(results)} results")
-
-        # Q2 ENHANCEMENT: Filter by negative keywords
-        if need.negative_keywords and results:
-            original_count = len(results)
-            results = self.ai_service.filter_by_negative_keywords(
-                results, need.negative_keywords
-            )
-            if len(results) < original_count:
-                logger.info(
-                    f"Negative keyword filter: {original_count} -> {len(results)} videos"
-                )
-
-        return results
+        return await self.video_search_service.search_with_fallback(need, min_results)
 
     async def evaluate_videos(self, phrase: str, videos: list[VideoResult]) -> list[ScoredVideo]:
         """Evaluate videos using Gemini AI (legacy method).
 
+        DELEGATED to VideoSearchService for cleaner architecture.
+
         NOTE: For Q4 context-aware evaluation, use evaluate_videos_enhanced instead.
-
-        Feature 1 & 3: Now includes content_style and feedback_context for better selection.
         """
-        if not videos:
-            logger.info(f"No videos to evaluate for phrase: {phrase}")
-            return []
-
-        # Feature 3: Get feedback context
-        feedback_context = ""
-        if self.feedback_service:
-            feedback_context = self.feedback_service.get_prompt_additions(phrase)
-
-        loop = asyncio.get_event_loop()
-        scored_videos = await loop.run_in_executor(
-            None,
-            lambda: self.ai_service.evaluate_videos(
-                phrase,
-                videos,
-                self.content_filter,
-                content_style=self.content_style,  # Feature 1
-                feedback_context=feedback_context,  # Feature 3
-            )
-        )
-
-        max_videos = self.config.get("max_videos_per_phrase", 3)
-        limited_videos = scored_videos[:max_videos]
-        return limited_videos
+        return await self.video_search_service.evaluate_videos(phrase, videos)
 
     async def evaluate_videos_enhanced(
         self,
@@ -1786,12 +1304,7 @@ class BRollProcessor:
     ) -> list[ScoredVideo]:
         """Evaluate videos using context-aware AI scoring (Q4 improvement).
 
-        This enhanced evaluation method passes full context to the AI:
-        - Transcript segment around the B-roll timestamp
-        - B-roll metadata (visual_style, time_of_day, movement, etc.)
-        - User preferences (style, content to avoid, mood)
-
-        This results in more relevant scoring compared to the legacy evaluate_videos method.
+        DELEGATED to VideoSearchService for cleaner architecture.
 
         Args:
             need: BRollNeed with search phrase, timestamp, and enhanced metadata
@@ -1802,49 +1315,9 @@ class BRollProcessor:
         Returns:
             List of scored videos, limited to max_videos_per_phrase
         """
-        if not videos:
-            logger.info(f"No videos to evaluate for phrase: {need.search_phrase}")
-            return []
-
-        # Q4 IMPROVEMENT: Extract transcript segment around the B-roll timestamp
-        transcript_segment = ""
-        if transcript_result:
-            # Get transcript text around the B-roll timestamp (default: 30 seconds context)
-            context_seconds = self.config.get("evaluation_context_seconds", 30.0)
-            transcript_segment = transcript_result.get_text_around_timestamp(
-                need.timestamp, context_seconds
-            )
-            if transcript_segment:
-                logger.debug(
-                    f"Evaluation context for '{need.search_phrase}' at {need.timestamp:.1f}s: "
-                    f"'{transcript_segment[:100]}...'"
-                )
-
-        # Feature 3: Get feedback context
-        feedback_context = ""
-        if self.feedback_service:
-            feedback_context = self.feedback_service.get_prompt_additions(need.search_phrase)
-
-        loop = asyncio.get_event_loop()
-        # Q2/Q4 IMPROVEMENT: Pass full context to evaluation for better scoring
-        # BRollNeed includes enhanced metadata: visual_style, time_of_day, movement, negative_keywords
-        # Feature 1 & 3: Also pass content_style and feedback_context
-        scored_videos = await loop.run_in_executor(
-            None,
-            lambda: self.ai_service.evaluate_videos(
-                search_phrase=need.search_phrase,
-                video_results=videos,
-                content_filter=self.content_filter,
-                transcript_segment=transcript_segment,
-                broll_need=need,  # Q2: Passes visual_style, movement, negative_keywords
-                content_style=self.content_style,  # Feature 1
-                feedback_context=feedback_context,  # Feature 3
-            ),
+        return await self.video_search_service.evaluate_videos_enhanced(
+            need, videos, transcript_result, user_preferences
         )
-
-        max_videos = self.config.get("max_videos_per_phrase", 3)
-        limited_videos = scored_videos[:max_videos]
-        return limited_videos
 
     async def _create_project_structure(self, file_path: str, source_filename: str) -> str:
         """Create the project folder structure upfront."""
@@ -1934,6 +1407,8 @@ class BRollProcessor:
     ) -> list[str]:
         """Extract clips from downloaded videos using AI analysis.
 
+        DELEGATED to VideoAcquisitionService for cleaner architecture.
+
         Args:
             downloaded_files: List of downloaded video file paths
             phrase: Search phrase for context
@@ -1942,61 +1417,9 @@ class BRollProcessor:
         Returns:
             List of final file paths (clips if extraction succeeded, originals otherwise)
         """
-        if not self.clip_extractor:
-            return downloaded_files
-
-        # Build a lookup from video path to video ID
-        video_id_lookup = {}
-        for video_path in downloaded_files:
-            path_lower = video_path.lower()
-            for sv in scored_videos:
-                if sv.video_id.lower() in path_lower:
-                    video_id_lookup[video_path] = sv.video_id
-                    break
-            if video_path not in video_id_lookup:
-                # Fallback: extract from filename pattern
-                video_id_lookup[video_path] = "unknown"
-
-        # PHASE 2 PERFORMANCE: Extract clips from all videos in parallel
-        extraction_tasks = [
-            self._extract_clips_from_single_video(
-                video_path=video_path,
-                video_id=video_id_lookup.get(video_path, "unknown"),
-                phrase=phrase,
-            )
-            for video_path in downloaded_files
-        ]
-
-        # Wait for all extractions to complete
-        extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-
-        # Collect results
-        final_files = []
-        originals_to_delete = []
-
-        for result in extraction_results:
-            if isinstance(result, Exception):
-                logger.error(f"Clip extraction task failed: {result}")
-                continue
-
-            clip_paths, original_to_delete = result
-            final_files.extend(clip_paths)
-            if original_to_delete:
-                originals_to_delete.append(original_to_delete)
-
-        # Clean up original videos (with input protection check)
-        for original_path in originals_to_delete:
-            # CRITICAL: Never delete protected input files
-            if self._is_protected_file(original_path):
-                logger.warning(f"BLOCKED deletion of protected input file: {original_path}")
-                continue
-
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, self.clip_extractor.cleanup_original_video, original_path
-            )
-
-        return final_files
+        return await self.video_acquisition_service.extract_clips_from_videos(
+            downloaded_files, phrase, scored_videos
+        )
 
     async def _download_preview_with_limit(
         self,
@@ -2008,6 +1431,8 @@ class BRollProcessor:
     ) -> Optional[tuple["ScoredVideo", str]]:
         """Download a single preview video with semaphore limiting.
 
+        DELEGATED to VideoAcquisitionService for cleaner architecture.
+
         Args:
             video: Video to download
             need_folder: Output folder
@@ -2018,33 +1443,9 @@ class BRollProcessor:
         Returns:
             Tuple of (video, preview_file_path) or None if download failed
         """
-        async with self.download_semaphore:
-            try:
-                logger.info(
-                    f"    [{need_index}] Downloading preview {video_idx}/{total_videos}: {video.video_id}"
-                )
-
-                loop = asyncio.get_event_loop()
-                preview_file = await loop.run_in_executor(
-                    None,
-                    self.video_downloader.download_preview,
-                    video,
-                    str(need_folder),
-                    self.config.get("preview_max_height", 360),
-                )
-
-                if preview_file:
-                    logger.info(
-                        f"    [{need_index}] Preview {video_idx} downloaded: {Path(preview_file).name}"
-                    )
-                    return (video, preview_file)
-                else:
-                    logger.warning(f"    [{need_index}] Preview {video_idx} download failed")
-                    return None
-
-            except Exception as e:
-                logger.error(f"    [{need_index}] Failed to download preview {video_idx}: {e}")
-                return None
+        return await self.video_acquisition_service._download_preview_with_limit(
+            video, need_folder, need_index, video_idx, total_videos
+        )
 
     async def _extract_clips_from_single_video(
         self,
@@ -2055,49 +1456,20 @@ class BRollProcessor:
     ) -> tuple[list[str], Optional[str]]:
         """Extract clips from a single video with semaphore limiting.
 
+        DELEGATED to VideoAcquisitionService for cleaner architecture.
+
         Args:
             video_path: Path to video file
             video_id: Video ID for identification
             phrase: Search phrase for context
-            broll_need: Optional BRollNeed for semantic context matching (Fix 4)
+            broll_need: Optional BRollNeed for semantic context matching
 
         Returns:
             Tuple of (list of clip paths, original path to delete or None)
         """
-        async with self.extraction_semaphore:
-            try:
-                logger.info(f"Extracting clips from: {Path(video_path).name}")
-
-                loop = asyncio.get_event_loop()
-                # Fix 4: Pass broll_need for semantic context matching when available
-                clips, should_delete = await loop.run_in_executor(
-                    None,
-                    lambda: self.clip_extractor.process_downloaded_video(
-                        video_path,
-                        phrase,
-                        video_id,
-                        output_dir=None,  # Use same directory as source
-                        broll_need=broll_need,
-                    ),
-                )
-
-                if clips:
-                    clip_paths = [c.clip_path for c in clips]
-                    logger.info(f"Extracted {len(clips)} clips from {Path(video_path).name}")
-                    return (
-                        clip_paths,
-                        video_path
-                        if should_delete and self.delete_original_after_extraction
-                        else None,
-                    )
-                else:
-                    logger.info(f"No clips extracted, keeping original: {Path(video_path).name}")
-                    return ([video_path], None)
-
-            except Exception as e:
-                logger.error(f"Failed to extract clips from {Path(video_path).name}: {e}")
-                # On error, keep the original file
-                return ([video_path], None)
+        return await self.video_acquisition_service._extract_clips_from_single_video(
+            video_path, video_id, phrase, broll_need
+        )
 
     def _is_protected_file(self, file_path: str) -> bool:
         """Check if a file path is a protected input file that must NOT be deleted.
@@ -2120,8 +1492,7 @@ class BRollProcessor:
     ) -> list[str]:
         """Verify clips semantically match the original transcript context.
 
-        S6 IMPROVEMENT: Uses SemanticVerifier to analyze extracted clips and verify
-        they match the original transcript context and contain required visual elements.
+        DELEGATED to VideoAcquisitionService for cleaner architecture.
 
         Args:
             clip_paths: List of clip file paths to verify
@@ -2132,87 +1503,6 @@ class BRollProcessor:
         Returns:
             List of verified clip paths that pass semantic verification threshold
         """
-        if not self.semantic_verifier:
-            return clip_paths
-
-        if not clip_paths:
-            return clip_paths
-
-        logger.info(
-            f"  [{need_index}/{total_needs}] Running semantic verification on {len(clip_paths)} clips"
+        return await self.video_acquisition_service._verify_clips_semantically(
+            clip_paths, broll_need, need_index, total_needs
         )
-
-        verified_files = []
-        rejected_files = []
-
-        for clip_path in clip_paths:
-            clip_file = Path(clip_path)
-            if not clip_file.exists():
-                logger.warning(f"  [{need_index}/{total_needs}] Clip not found: {clip_path}")
-                continue
-
-            try:
-                # Verify clip against BRollNeed context
-                result = await self.semantic_verifier.verify_clip(
-                    clip_path=clip_file,
-                    broll_need=broll_need,
-                )
-
-                if result.passed:
-                    verified_files.append(clip_path)
-                    logger.info(
-                        f"    [{need_index}/{total_needs}] Verified {clip_file.name}: "
-                        f"score={result.similarity_score:.2%}, "
-                        f"matched={len(result.matched_elements)}/{len(result.matched_elements) + len(result.missing_elements)}"
-                    )
-                else:
-                    rejected_files.append((clip_path, result))
-                    logger.warning(
-                        f"    [{need_index}/{total_needs}] Rejected {clip_file.name}: "
-                        f"score={result.similarity_score:.2%} < threshold, "
-                        f"missing={result.missing_elements}"
-                    )
-
-            except Exception as e:
-                logger.error(
-                    f"    [{need_index}/{total_needs}] Verification failed for {clip_file.name}: {e}"
-                )
-                # On error, keep the clip (don't reject due to verification errors)
-                verified_files.append(clip_path)
-
-        # If all clips were rejected, keep the best scoring one with a warning
-        if not verified_files and rejected_files:
-            # Sort by score descending and take the best
-            rejected_files.sort(key=lambda x: x[1].similarity_score, reverse=True)
-            best_path, best_result = rejected_files[0]
-            verified_files.append(best_path)
-            logger.warning(
-                f"  [{need_index}/{total_needs}] All clips below threshold, keeping best: "
-                f"{Path(best_path).name} (score={best_result.similarity_score:.2%})"
-            )
-
-            # Clean up rejected clips (except the one we're keeping)
-            reject_below_threshold = self.config.get("reject_below_threshold", True)
-            if reject_below_threshold:
-                for path, result in rejected_files[1:]:
-                    try:
-                        Path(path).unlink()
-                        logger.debug(f"    [{need_index}/{total_needs}] Deleted rejected clip: {path}")
-                    except Exception as e:
-                        logger.warning(
-                            f"    [{need_index}/{total_needs}] Could not delete rejected clip: {e}"
-                        )
-        elif rejected_files:
-            # Clean up rejected clips
-            reject_below_threshold = self.config.get("reject_below_threshold", True)
-            if reject_below_threshold:
-                for path, result in rejected_files:
-                    try:
-                        Path(path).unlink()
-                        logger.debug(f"    [{need_index}/{total_needs}] Deleted rejected clip: {path}")
-                    except Exception as e:
-                        logger.warning(
-                            f"    [{need_index}/{total_needs}] Could not delete rejected clip: {e}"
-                        )
-
-        return verified_files
