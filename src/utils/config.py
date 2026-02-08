@@ -162,9 +162,22 @@ def load_config() -> dict:
     return config
 
 
-def validate_config(config: dict) -> list[str]:
-    """Validate configuration and return list of errors."""
+logger = logging.getLogger(__name__)
+
+
+def validate_config_with_warnings(config: dict) -> tuple[list[str], list[str]]:
+    """Validate configuration and return tuple of (errors, warnings).
+
+    Args:
+        config: Configuration dictionary from load_config()
+
+    Returns:
+        Tuple of (errors, warnings) where:
+        - errors: List of critical configuration errors that prevent operation
+        - warnings: List of non-critical warnings about missing optional features
+    """
     errors = []
+    warnings = []
 
     # Check required API key
     if not config.get("gemini_api_key"):
@@ -210,52 +223,116 @@ def validate_config(config: dict) -> list[str]:
                 "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET required for Google Drive integration"
             )
 
-    # YouTube search is handled by yt-dlp directly, no API key validation needed
+    # ==========================================================================
+    # Numeric range validation
+    # ==========================================================================
 
+    # clips_per_minute must be > 0 (controls B-roll density)
+    clips_per_minute = config.get("clips_per_minute", 2.0)
+    if clips_per_minute <= 0:
+        errors.append(f"CLIPS_PER_MINUTE must be > 0 (got {clips_per_minute})")
+
+    # min_clip_duration must be > 0
+    min_clip_duration = config.get("min_clip_duration", 4.0)
+    if min_clip_duration <= 0:
+        errors.append(f"MIN_CLIP_DURATION must be > 0 (got {min_clip_duration})")
+
+    # max_clip_duration must be > min_clip_duration
+    max_clip_duration = config.get("max_clip_duration", 15.0)
+    if max_clip_duration <= min_clip_duration:
+        errors.append(
+            f"MAX_CLIP_DURATION ({max_clip_duration}) must be > MIN_CLIP_DURATION ({min_clip_duration})"
+        )
+
+    # max_clips_per_video must be > 0
+    max_clips_per_video = config.get("max_clips_per_video", 3)
+    if max_clips_per_video <= 0:
+        errors.append(f"MAX_CLIPS_PER_VIDEO must be > 0 (got {max_clips_per_video})")
+
+    # max_videos_per_phrase must be > 0
+    max_videos_per_phrase = config.get("max_videos_per_phrase", 3)
+    if max_videos_per_phrase <= 0:
+        errors.append(f"MAX_VIDEOS_PER_PHRASE must be > 0 (got {max_videos_per_phrase})")
+
+    # parallel_downloads must be > 0
+    parallel_downloads = config.get("parallel_downloads", 3)
+    if parallel_downloads <= 0:
+        errors.append(f"PARALLEL_DOWNLOADS must be > 0 (got {parallel_downloads})")
+
+    # parallel_extractions must be > 0
+    parallel_extractions = config.get("parallel_extractions", 2)
+    if parallel_extractions <= 0:
+        errors.append(f"PARALLEL_EXTRACTIONS must be > 0 (got {parallel_extractions})")
+
+    # parallel_ai_calls must be > 0
+    parallel_ai_calls = config.get("parallel_ai_calls", 5)
+    if parallel_ai_calls <= 0:
+        errors.append(f"PARALLEL_AI_CALLS must be > 0 (got {parallel_ai_calls})")
+
+    # ==========================================================================
+    # Warnings for missing optional-but-recommended API keys
+    # ==========================================================================
+
+    # YOUTUBE_API_KEY - recommended for outlier finder feature
+    if not config.get("youtube_api_key"):
+        warnings.append(
+            "YOUTUBE_API_KEY not set - outlier finder feature will have limited functionality"
+        )
+
+    # FAL_API_KEY - recommended for image generation
+    if not config.get("fal_api_key"):
+        warnings.append(
+            "FAL_API_KEY not set - fal.ai image generation (Flux Klein, Z-Image) will be unavailable"
+        )
+
+    # RUNPOD_API_KEY - recommended for TTS and image generation
+    # Note: We check for the key in config, but it might be loaded differently
+    # The config doesn't include runpod_api_key by default, so we check env directly
+    runpod_api_key = os.getenv("RUNPOD_API_KEY")
+    if not runpod_api_key:
+        warnings.append(
+            "RUNPOD_API_KEY not set - RunPod TTS and Flux image generation will be unavailable"
+        )
+
+    # Log warnings (they don't prevent operation but user should be aware)
+    for warning in warnings:
+        logger.warning(warning)
+
+    return errors, warnings
+
+
+def validate_config(config: dict) -> list[str]:
+    """Validate configuration and return list of errors.
+
+    This is the backward-compatible version that returns only errors.
+    For errors and warnings, use validate_config_with_warnings() instead.
+
+    Args:
+        config: Configuration dictionary from load_config()
+
+    Returns:
+        List of critical configuration errors
+    """
+    errors, _ = validate_config_with_warnings(config)
     return errors
 
 
 def setup_logging(log_level: str = "INFO") -> None:
-    """Set up logging configuration with Rich for beautiful terminal output."""
-    # Clear any existing handlers
-    logging.root.handlers.clear()
+    """Set up logging configuration.
 
-    # Rich handler for beautiful console output
-    rich_handler = RichHandler(
-        show_time=True,
-        show_level=True,
-        show_path=False,
-        rich_tracebacks=True,
-        markup=False,  # Disable markup to avoid conflicts
-    )
-
-    # File handler for plain text logging (always in src directory)
-    log_file = PROJECT_ROOT / "src" / "broll_processor.log"
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-
-    # Configure root logger
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        handlers=[rich_handler, file_handler],
-        format="%(message)s",
-    )
-
-    # Suppress noisy third-party loggers
-    noisy_loggers = [
-        "httpx",
-        "google_genai",
-        "google_genai.models",
-        "googleapiclient.discovery_cache",
-        "google_auth_oauthlib.flow",
-        "urllib3.connectionpool",
-        "requests.packages.urllib3.connectionpool",
-    ]
-
-    for logger_name in noisy_loggers:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
+    Uses structlog for structured logging. Falls back to basic logging
+    if structlog is not installed.
+    """
+    try:
+        from utils.logging import setup_logging as _setup_structlog
+        _setup_structlog(log_level=log_level, json_output=False)
+    except ImportError:
+        # Fallback to basic logging if structlog not installed
+        logging.basicConfig(
+            level=getattr(logging, log_level.upper()),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            handlers=[logging.StreamHandler()],
+        )
 
 
 def get_supported_video_formats() -> list[str]:

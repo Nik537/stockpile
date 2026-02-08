@@ -15,6 +15,11 @@ from .image_generation import (
     ImageGenerationResult,
     ImageGenerationJob,
 )
+from .bulk_image import (
+    BulkImagePrompt,
+    BulkImageResult,
+    BulkImageJob,
+)
 
 __all__ = [
     "VideoResult",
@@ -50,4 +55,8 @@ __all__ = [
     "GeneratedImage",
     "ImageGenerationResult",
     "ImageGenerationJob",
+    # Bulk Image Generation
+    "BulkImagePrompt",
+    "BulkImageResult",
+    "BulkImageJob",
 ]

@@ -209,3 +209,96 @@ export interface ImageEditParams {
   seed?: number | null
   guidance_scale: number
 }
+
+// Bulk Image Generation Types
+export type BulkImageStatus =
+  | 'pending'
+  | 'generating_prompts'
+  | 'generating_images'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type BulkImageModel =
+  | 'runpod-flux-schnell'
+  | 'runpod-flux-dev'
+  | 'flux-klein'
+  | 'z-image'
+  | 'runpod-qwen-image'
+  | 'runpod-qwen-image-lora'
+  | 'runpod-seedream-3'
+  | 'runpod-seedream-4'
+  | 'gemini-flash'
+  | 'replicate-flux-klein'
+
+export interface BulkImagePrompt {
+  index: number
+  prompt: string
+  rendering_style: string  // cartoon, claymation, isometric-3d, watercolor, etc.
+  mood: string
+  composition: string  // centered-character, scene, product-hero, poster, etc.
+  has_text_space: boolean  // Whether prompt includes space for text/slogans
+}
+
+export interface BulkImageResult {
+  index: number
+  prompt: BulkImagePrompt
+  image_url: string | null
+  width: number
+  height: number
+  generation_time_ms: number
+  status: 'completed' | 'failed'
+  error?: string
+}
+
+export interface BulkImageJob {
+  job_id: string
+  meta_prompt: string
+  model: BulkImageModel
+  width: number
+  height: number
+  status: BulkImageStatus
+  total_count: number
+  completed_count: number
+  failed_count: number
+  prompts: BulkImagePrompt[]
+  results: BulkImageResult[]
+  total_cost: number
+  estimated_cost: number
+  error?: string
+  created_at: string
+  completed_at?: string
+}
+
+export type BulkImageWSMessageType =
+  | 'status'
+  | 'image_complete'
+  | 'image_failed'
+  | 'complete'
+  | 'error'
+
+export interface BulkImageWSMessage {
+  type: BulkImageWSMessageType
+  // Status message
+  status?: BulkImageStatus
+  total_count?: number
+  completed_count?: number
+  failed_count?: number
+  error?: string
+  // Image complete/failed message
+  index?: number
+  image_url?: string | null
+  prompt?: BulkImagePrompt
+  // Complete message
+  total_cost?: number
+  results?: BulkImageResult[]
+  // Error message
+  message?: string
+}
+
+export interface BulkImagePromptsResponse {
+  job_id: string
+  prompts: BulkImagePrompt[]
+  estimated_cost: number
+  estimated_time_seconds: number
+}

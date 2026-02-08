@@ -19,40 +19,23 @@ from models.video import ScoredVideo, VideoResult
 from utils.cache import AIResponseCache, compute_content_hash
 from utils.retry import APIRateLimitError, NetworkError, retry_api_call
 
+# Import prompts from dedicated module
+from services.prompts import (
+    PROMPT_VERSIONS,
+    strip_markdown_code_blocks,
+    BROLL_EXTRACTOR_V6,
+    BROLL_PLANNER_V3,
+    BASIC_EVALUATOR,
+    EVALUATOR_V4,
+    IMAGE_QUERY_GENERATOR,
+    IMAGE_QUERY_CONTEXT_AWARE,
+    IMAGE_SELECTOR,
+    STYLE_ANALYZER,
+    CONTEXT_QUESTION_GENERATOR,
+    BULK_IMAGE_PROMPT_GENERATOR,
+)
+
 logger = logging.getLogger(__name__)
-
-
-# S2 IMPROVEMENT: Prompt version identifiers for cache invalidation
-# IMPORTANT: Increment these when prompts change to invalidate stale cached responses
-PROMPT_VERSIONS = {
-    "extract_search_phrases": "v6",
-    "generate_context_questions": "v1",
-    "plan_broll_needs": "v3",  # B-roll planning with original_context and required_elements
-    "evaluate_videos": "v4",  # Video evaluation with semantic context scoring + negative examples
-    "generate_image_queries": "v1",  # Image query generation for parallel image acquisition
-    "select_best_image": "v2",  # AI-powered image selection from candidates (v2: + ContentStyle)
-    "detect_content_style": "v1",  # Feature 1: Content style/mood detection
-    "generate_image_queries_with_context": "v1",  # Feature 2: Image queries with ±10s context window
-}
-
-
-def strip_markdown_code_blocks(text: str) -> str:
-    """Strip markdown code blocks from AI response text.
-
-    Args:
-        text: Raw text that may contain markdown code blocks
-
-    Returns:
-        Cleaned text with markdown code blocks removed
-    """
-    text = text.strip()
-    if text.startswith("```json"):
-        text = text[7:]  # Remove ```json
-    elif text.startswith("```"):
-        text = text[3:]  # Remove ```
-    if text.endswith("```"):
-        text = text[:-3]  # Remove ```
-    return text.strip()
 
 
 class AIService:
@@ -95,40 +78,8 @@ class AIService:
             logger.warning("Empty transcript provided for phrase extraction")
             return []
 
-        # B-Roll Extractor v6 prompt (from original n8n workflow)
-        prompt = f"""You are B-RollExtractor v6.
-
-GOAL
-Turn the transcript into stock-footage search phrases an editor can paste into Pexels, YouTube, etc.
-
-OUTPUT
-Return one JSON string array and nothing else.
-
-Example: ["Berlin Wall falling", "vintage CRT monitor close-up", "Hitler with Stalin", "Mao era parade"]
-
-RULES
-• ≥10 phrases.
-• 2–6 words each.
-• Must name a tangible scene, person, object or event (no pure ideas).
-• Use simple connectors ("with", "in", "during") to relate entities.
-• No duplicates or name-spamming combos ("Hitler Stalin Mao").
-• No markdown, no extra keys, no surrounding text.
-
-GOOD
-"1930s Kremlin meeting"
-"Stalin official portrait"
-"Hitler with Stalin"
-
-BAD
-"policy shift"         (abstract)
-"Power dynamics"        (abstract)
-"Hitler Stalin Mao"     (unclear)
-"massive power"         (no concrete noun)
-
-TRANSCRIPT ↓
-<<<
-{transcript}
->>>"""
+        # B-Roll Extractor v6 prompt (from prompts module)
+        prompt = BROLL_EXTRACTOR_V6.format(transcript=transcript)
 
         try:
             response = self.client.models.generate_content(
@@ -233,53 +184,13 @@ TRANSCRIPT ↓
         if len(transcript_result.text) > 1000:
             transcript_preview += "..."
 
-        prompt = f"""You are a creative B-roll planning assistant.
-
-Analyze this video transcript and generate {max_questions} targeted questions to help select the best B-roll footage style.
-
-TRANSCRIPT PREVIEW:
-<<<
-{transcript_preview}
->>>
-
-VIDEO INFO:
-- Duration: {duration_minutes:.1f} minutes
-- Language: {transcript_result.language or 'English'}
-
-GENERATE QUESTIONS ABOUT:
-1. Visual style that matches the content tone (documentary, cinematic, raw, etc.)
-2. Time period/era based on topics discussed
-3. Location types that complement the subjects mentioned
-4. Any specific content preferences based on subjects in the transcript
-
-PREFERENCE FIELDS YOU CAN MAP TO:
-- era_period (e.g., "modern", "historical", "1950s")
-- location_type (e.g., "urban", "nature", "indoor")
-- color_mood (e.g., "warm", "cold", "vibrant")
-- content_focus (e.g., "people", "objects", "landscapes")
-- custom_notes (for anything else)
-
-OUTPUT FORMAT (JSON array):
-[
-  {{
-    "question_id": "q1",
-    "question_text": "Your video discusses urban development. What era should the B-roll emphasize?",
-    "preference_field": "era_period",
-    "options": ["Mix of historical and modern", "Primarily historical (pre-1950)", "Mid-century (1950-1990)", "Contemporary (1990-present)"],
-    "allows_custom": true,
-    "context_reason": "Video mentions city planning evolution over decades"
-  }}
-]
-
-RULES:
-1. Generate EXACTLY {max_questions} questions
-2. Questions MUST be based on actual transcript content
-3. Each question maps to ONE preference_field
-4. Provide 3-4 relevant options per question
-5. Always allow custom input (allows_custom: true)
-6. Include brief context_reason explaining why you asked
-7. Return ONLY the JSON array, no markdown, no extra text
-"""
+        # Context Question Generator prompt (from prompts module)
+        prompt = CONTEXT_QUESTION_GENERATOR.format(
+            max_questions=max_questions,
+            transcript_preview=transcript_preview,
+            duration_minutes=duration_minutes,
+            language=transcript_result.language or "English",
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -411,66 +322,12 @@ RULES:
 
         duration_minutes = transcript_result.duration / 60.0
 
-        prompt = f"""You are a Content Style Analyzer for video B-roll matching.
-
-TASK: Analyze this video transcript to understand its content, audience, and visual style requirements.
-This analysis will be used to select matching B-roll images and video clips.
-
-TRANSCRIPT:
-<<<
-{transcript_preview}
->>>
-
-VIDEO INFO:
-- Duration: {duration_minutes:.1f} minutes
-- Language: {transcript_result.language or 'English'}
-
-ANALYZE THE FOLLOWING:
-
-1. TOPIC ANALYSIS:
-   - What is the main topic/subject?
-   - What are the key topic keywords (5-10 words)?
-
-2. AUDIENCE ANALYSIS:
-   - Who is the target audience?
-   - What skill/knowledge level is this for? (beginner/intermediate/advanced/professional/general)
-   - Any demographic hints from the language used?
-
-3. VISUAL STYLE:
-   - What visual style matches this content? (cinematic/documentary/raw/professional/energetic/moody/vintage/modern)
-   - What color tone fits? (warm/cool/neutral/desaturated/vibrant/high_contrast/low_contrast)
-   - What pacing? (fast/moderate/slow/mixed)
-
-4. MOOD/TONE:
-   - What is the overall tone? (serious/casual/inspirational/technical/entertaining)
-   - 3-5 mood keywords that describe this content
-
-5. IMAGERY GUIDANCE:
-   - What types of imagery should be used? (5-8 specific examples)
-   - What types of imagery should be AVOIDED? (5-8 specific examples that would look out of place)
-
-OUTPUT FORMAT (JSON):
-{{
-  "topic": "Main topic in 5-10 words",
-  "topic_keywords": ["keyword1", "keyword2", "keyword3", ...],
-  "target_audience": "Description of target viewer",
-  "audience_level": "beginner|intermediate|advanced|professional|general",
-  "audience_demographics": "Demographic hints if any",
-  "content_type": "educational|motivational|tutorial|vlog|documentary|entertainment|corporate",
-  "tone": "serious|casual|inspirational|technical|entertaining",
-  "visual_style": "cinematic|documentary|raw|professional|energetic|moody|vintage|modern",
-  "color_tone": "warm|cool|neutral|desaturated|vibrant|high_contrast|low_contrast",
-  "pacing": "fast|moderate|slow|mixed",
-  "mood_keywords": ["mood1", "mood2", "mood3"],
-  "preferred_imagery": ["specific imagery type 1", "specific imagery type 2", ...],
-  "avoid_imagery": ["imagery to avoid 1", "imagery to avoid 2", ...],
-  "is_talking_head": true|false,
-  "is_tutorial": true|false,
-  "is_entertainment": true|false,
-  "is_corporate": true|false
-}}
-
-Return ONLY the JSON object, no markdown, no extra text."""
+        # Content Style Analyzer prompt (from prompts module)
+        prompt = STYLE_ANALYZER.format(
+            transcript_preview=transcript_preview,
+            duration_minutes=duration_minutes,
+            language=transcript_result.language or "English",
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -673,88 +530,25 @@ Return ONLY the JSON object, no markdown, no extra text."""
 
         # Q2 ENHANCEMENT: Enhanced planning prompt with alternate searches, negatives, and visual metadata
         # Fix 4: Added original_context and required_elements for semantic context preservation
-        prompt = f"""You are B-RollPlanner v3 (Semantic Context Aware).
+        # B-Roll Planner v3 prompt (from prompts module)
+        prompt = BROLL_PLANNER_V3.format(
+            total_clips_needed=total_clips_needed,
+            source_duration=transcript_result.duration,
+            duration_minutes=duration_minutes,
+            language=transcript_result.language or "unknown",
+            timestamped_transcript=timestamped_transcript,
+            first_clip_time=transcript_result.duration * 0.05,
+            last_clip_time=transcript_result.duration * 0.95,
+            clips_per_minute=clips_per_minute,
+        )
 
-GOAL
-Identify specific moments in this video that need B-roll footage. You must identify approximately {total_clips_needed} B-roll opportunities spread across the video.
+        # Append optional content filter section
+        if content_filter:
+            prompt += f"\n17. CONTENT FILTER: {content_filter}"
 
-For each moment, provide ENHANCED search metadata AND semantic context:
-- Primary search phrase (most specific)
-- 2-3 alternate search phrases (synonyms, related terms)
-- Negative keywords (what should NOT appear in results)
-- Visual style preference (cinematic, documentary, raw, vlog)
-- Time of day if relevant (golden hour, night, day)
-- Camera movement preference (static, pan, drone, handheld, tracking)
-- FULL ORIGINAL CONTEXT from transcript (50-150 characters)
-- REQUIRED VISUAL ELEMENTS that must appear in the clip (3-6 specific items)
-
-INPUT
-- Source video duration: {transcript_result.duration:.1f} seconds ({duration_minutes:.1f} minutes)
-- Target density: {clips_per_minute} clips per minute = {total_clips_needed} total clips needed
-- Language detected: {transcript_result.language or 'unknown'}
-
-TRANSCRIPT WITH TIMESTAMPS
-<<<
-{timestamped_transcript}
->>>
-
-OUTPUT FORMAT
-Return ONLY a JSON array with this exact structure:
-[
-  {{
-    "timestamp": 30.5,
-    "search_phrase": "coffee shop interior morning busy",
-    "description": "Busy cafe scene with remote workers",
-    "context": "talking about remote work culture",
-    "original_context": "The coffee shop was packed with remote workers typing on laptops during the morning rush, everyone with their headphones in, completely focused on their screens.",
-    "required_elements": ["people", "laptops", "coffee shop interior", "busy atmosphere", "morning light"],
-    "suggested_duration": 5,
-    "alternate_searches": [
-      "cafe coworking space laptops",
-      "remote workers coffee shop",
-      "people working laptops cafe"
-    ],
-    "negative_keywords": ["empty", "night", "text overlay", "logo", "watermark"],
-    "visual_style": "cinematic",
-    "time_of_day": "morning",
-    "movement": "slow pan"
-  }}
-]
-
-RULES
-1. Identify exactly {total_clips_needed} B-roll needs (+-2 is acceptable)
-2. Spread clips EVENLY across the video timeline:
-   - First clip around {transcript_result.duration * 0.05:.0f}s
-   - Last clip before {transcript_result.duration * 0.95:.0f}s
-   - Even spacing between clips
-3. timestamp: Specific moment in source video (seconds) where B-roll should appear
-4. search_phrase: 2-6 words, MUST name tangible scenes/objects/events for YouTube search
-   - Include visual descriptors (aerial, close-up, wide shot)
-   - GOOD: "Berlin Wall falling", "vintage CRT monitor close-up", "coffee shop interior"
-   - BAD: "power dynamics", "abstract concept", "feeling of change"
-5. alternate_searches: 2-3 synonym or related search phrases for fallback
-6. negative_keywords: 3-5 terms that should NOT appear in video titles/descriptions
-   - Always include: "watermark", "logo", "text overlay" for stock footage
-   - Add content-specific exclusions based on context
-7. visual_style: One of "cinematic", "documentary", "raw", "vlog", or null if any
-8. time_of_day: "golden hour", "night", "day", "morning", or null if doesn't matter
-9. movement: "static", "pan", "drone", "handheld", "tracking", or null if any
-10. description: What the editor should see (40-55 characters, be descriptive)
-11. context: 10-20 words summary from the transcript around this moment
-12. suggested_duration: How long the B-roll should play (4-15 seconds)
-13. original_context: CRITICAL - The EXACT transcript segment (50-150 chars) that this B-roll supports.
-    - Copy the actual words from the transcript around this timestamp
-    - This preserves the full meaning for downstream AI evaluation
-    - Example: "More and more people are working from coffee shops and co-working spaces"
-14. required_elements: 3-6 SPECIFIC visual elements that MUST appear in the selected clip
-    - Be concrete: "laptops" not "technology", "morning light" not "lighting"
-    - Include people, objects, settings, atmosphere, lighting as applicable
-    - These will be used to filter clips during evaluation
-15. NO duplicates or very similar search phrases
-16. Return ONLY the JSON array, no markdown, no extra text
-{f'17. CONTENT FILTER: {content_filter}' if content_filter else ''}
-
-{self._format_user_preferences(user_preferences) if user_preferences and user_preferences.has_preferences() else ''}"""
+        # Append optional user preferences section
+        if user_preferences and user_preferences.has_preferences():
+            prompt += f"\n\n{self._format_user_preferences(user_preferences)}"
 
         try:
             response = self.client.models.generate_content(
@@ -1120,29 +914,11 @@ RULES
             )
         else:
             # Original evaluation prompt (fallback for non-enhanced needs)
-            evaluator_prompt = f"""You are B-Roll Evaluator. Your goal is to select the most visually relevant YouTube videos for a given search phrase.
-
-You will be given a search phrase and a list of YouTube search results including their titles and descriptions.
-
-SEARCH PHRASE:
-"{search_phrase}"
-
-YOUTUBE RESULTS:
----
-{results_text}
----
-
-TASK:
-1. Analyze the title and description of each video.
-2. Compare them against the search phrase.
-3. Choose the videos that are most likely to contain generic, high-quality B-roll footage matching the phrase.
-4. Prioritize cinematic shots, stock footage, documentary clips. Avoid vlogs, talk shows, tutorials, or videos with prominent branding.
-5. Rate each video from 1-10 based on B-roll potential.
-
-OUTPUT:
-Return a JSON array of objects with video_id and score for videos scoring 6 or higher, ordered by score (highest first).
-Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
-Return only the JSON array, nothing else."""
+            # Basic Evaluator prompt (from prompts module)
+            evaluator_prompt = BASIC_EVALUATOR.format(
+                search_phrase=search_phrase,
+                results_text=results_text,
+            )
 
         try:
             response = self.client.models.generate_content(
@@ -1578,57 +1354,19 @@ SOURCE VIDEO STYLE (match B-roll to this style):
 {feedback_context}
 """
 
-        return f"""You are B-Roll Evaluator v4 (Semantic Context-Aware).
-
-Your task is to evaluate videos based on how well they match the ORIGINAL CONTEXT from the transcript,
-not just the search keywords. A video can match keywords but completely miss the meaning.
-
-DERIVED SEARCH PHRASE: "{search_phrase}"
-{original_context_section}
-{required_elements_section}
-YOUTUBE RESULTS:
----
-{results_text}
----
-{visual_preferences}
-{context_section}
-{user_prefs_section}
-{content_style_section}
-{feedback_section}
-{negative_examples_section}
-SCORING WEIGHTS (total 100%):
-1. **SEMANTIC MATCH TO ORIGINAL CONTEXT (50%)** - Does the video capture the MEANING of what's being discussed?
-   - A video about "coffee shop remote work" should show people working, not just coffee being poured
-   - The visual must support the NARRATIVE, not just contain matching keywords
-2. **REQUIRED ELEMENTS PRESENT (20%)** - Are all the required visual elements visible?
-   - Check each required element against the video title/description
-   - Each missing element reduces the score significantly
-3. **TECHNICAL QUALITY (15%)** - Resolution, stability, lighting, production value
-   - Cinematic/stock footage quality preferred
-   - Avoid amateur, shaky, or poorly lit content
-4. **ABSENCE OF UNWANTED ELEMENTS (10%)** - No text overlays, logos, watermarks, branding
-   - Deduct points for vlogs, talk shows, tutorials, reaction videos
-   - Deduct points for prominent branding or advertising
-5. **SOURCE PREFERENCE (5%)** - When comparing videos of similar quality, slightly prefer YouTube content
-   - YouTube content often has more authentic, real-world footage
-   - Stock footage is acceptable but YouTube is preferred for variety and authenticity
-
-REJECTION CRITERIA (automatic low scores):
-- Score <=3: Video shows the OPPOSITE of what was described (e.g., search for "people working" but video shows empty office)
-- Score <=4: More than 2 required elements are missing from the video
-- Score <=5: Video matches keywords but completely misses the semantic meaning
-
-RATING SCALE:
-- 9-10: Perfect semantic match + all required elements + high quality + clean footage
-- 7-8: Good semantic match + most required elements present + decent quality
-- 6: Acceptable match but missing some elements or context alignment
-- <6: Not suitable (don't include in output)
-
-OUTPUT FORMAT:
-Return a JSON array of objects with video_id and score for videos scoring 6 or higher.
-Order by score (highest first).
-Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
-Return ONLY the JSON array, nothing else."""
+        # Context-Aware Evaluator v4 prompt (from prompts module)
+        return EVALUATOR_V4.format(
+            search_phrase=search_phrase,
+            original_context_section=original_context_section,
+            required_elements_section=required_elements_section,
+            results_text=results_text,
+            visual_preferences=visual_preferences,
+            context_section=context_section,
+            user_prefs_section=user_prefs_section,
+            content_style_section=content_style_section,
+            feedback_section=feedback_section,
+            negative_examples_section=negative_examples_section,
+        )
 
     @retry_api_call(max_retries=3, base_delay=1.0)
     def generate_image_queries(
@@ -1703,43 +1441,11 @@ Return ONLY the JSON array, nothing else."""
         # Format transcript for prompt
         transcript_formatted = transcript_result.format_with_timestamps()
 
-        prompt = f"""You are an Image Query Generator for video content.
-
-TASK: Analyze this transcript and generate an optimized image search phrase for each timestamp.
-The images will be used as visual aids (B-roll) at these specific moments in a video.
-
-TRANSCRIPT:
-{transcript_formatted}
-
-TIMESTAMPS TO GENERATE QUERIES FOR:
-{timestamps}
-
-RULES FOR SEARCH PHRASES:
-1. Each search phrase should be 2-5 words
-2. Focus on concrete, visual concepts that stock photo sites can match
-3. Avoid abstract concepts - prefer "coffee shop laptop" over "productivity"
-4. Include visual style hints when relevant: "aerial", "close-up", "silhouette"
-5. Match the emotional tone of the transcript at that moment
-6. Consider what visual would BEST illustrate what's being discussed
-
-OUTPUT FORMAT:
-Return a JSON array with one object per timestamp:
-[
-  {{
-    "timestamp": 0,
-    "search_phrase": "city skyline sunset",
-    "required_elements": ["buildings", "sky", "sunset colors"],
-    "visual_style": "cinematic"
-  }},
-  {{
-    "timestamp": 5,
-    "search_phrase": "laptop coffee shop",
-    "required_elements": ["laptop", "coffee", "workspace"],
-    "visual_style": "lifestyle"
-  }}
-]
-
-Return ONLY the JSON array, nothing else."""
+        # Image Query Generator prompt (from prompts module)
+        prompt = IMAGE_QUERY_GENERATOR.format(
+            transcript_formatted=transcript_formatted,
+            timestamps=timestamps,
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -1892,47 +1598,13 @@ CONTENT STYLE (use this to guide image selection):
 {content_style.to_prompt_context()}
 """
 
-        prompt = f"""You are an Image Query Generator with Context Awareness.
-
-TASK: Analyze this transcript and generate optimized image search phrases.
-For each timestamp, you have access to ±{context_window} seconds of surrounding context.
-Use this extended context to understand what's being discussed and generate better queries.
-
-TRANSCRIPT WITH TIMESTAMPS:
-{transcript_result.format_with_timestamps()}
-{style_guidance}
-TIMESTAMPS WITH CONTEXT WINDOWS:
-{json.dumps(timestamp_contexts, indent=2)}
-
-ANALYSIS REQUIREMENTS:
-For each timestamp, analyze the ±{context_window}s context window to:
-1. Identify key THEMES (main topics being discussed)
-2. Extract ENTITIES (people, places, objects mentioned)
-3. Detect EMOTIONAL TONE (serious, excited, contemplative, etc.)
-4. Generate a search phrase that captures the semantic meaning
-
-RULES FOR SEARCH PHRASES:
-1. 2-5 words, focused on concrete visuals
-2. Consider the FULL context window, not just the exact timestamp
-3. Match the emotional tone of the surrounding discussion
-4. Avoid generic terms - be specific to what's being discussed
-5. Include visual style hints when relevant
-
-OUTPUT FORMAT:
-Return a JSON array with enhanced context for each timestamp:
-[
-  {{
-    "timestamp": 0,
-    "search_phrase": "intense gym training session",
-    "required_elements": ["athlete", "weights", "gym equipment"],
-    "visual_style": "raw",
-    "themes": ["fitness", "dedication", "training"],
-    "entities": ["gym", "athlete"],
-    "emotional_tone": "motivated"
-  }}
-]
-
-Return ONLY the JSON array, nothing else."""
+        # Context-Aware Image Query Generator prompt (from prompts module)
+        prompt = IMAGE_QUERY_CONTEXT_AWARE.format(
+            context_window=context_window,
+            transcript_with_timestamps=transcript_result.format_with_timestamps(),
+            style_guidance=style_guidance,
+            timestamp_contexts=json.dumps(timestamp_contexts, indent=2),
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -2099,28 +1771,14 @@ SOURCE VIDEO STYLE:
 {feedback_context}
 """
 
-        prompt = f"""You are an Image Selector for video content.
-
-TASK: Select the BEST image from these candidates to use as a visual aid in a video.
-
-SEARCH PHRASE: "{search_phrase}"
-TRANSCRIPT CONTEXT: "{context[:300]}"
-{style_section}{feedback_section}
-CANDIDATES:
-{candidates_text}
-
-SELECTION CRITERIA (in order of importance):
-1. RELEVANCE (40%): Which image best matches the search phrase AND transcript context?
-2. STYLE CONSISTENCY (25%): If style info provided, match the source video's visual style
-3. AVOIDS PAST ISSUES (20%): If feedback history provided, avoid patterns that were rejected before
-4. SOURCE QUALITY (10%): Prefer web search results (google) for variety; stock sites (pexels, pixabay) are backup
-5. RESOLUTION (5%): Higher resolution is better
-
-OUTPUT:
-Return ONLY a JSON object with the best index and brief reason:
-{{"best_index": 0, "reason": "Best match for context"}}
-
-Return ONLY the JSON object, nothing else."""
+        # Image Selector prompt (from prompts module)
+        prompt = IMAGE_SELECTOR.format(
+            search_phrase=search_phrase,
+            context=context[:300],
+            style_section=style_section,
+            feedback_section=feedback_section,
+            candidates_text=candidates_text,
+        )
 
         try:
             response = self.client.models.generate_content(
@@ -2155,3 +1813,74 @@ Return ONLY the JSON object, nothing else."""
         except Exception as e:
             logger.warning(f"Image selection failed: {e}")
             return 0
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    def generate_bulk_image_prompts(
+        self,
+        meta_prompt: str,
+        count: int = 100,
+    ) -> list[dict]:
+        """Generate unique image prompts from a meta-prompt using single Gemini call.
+
+        Args:
+            meta_prompt: High-level creative concept (e.g., "spring cleaning ads for 3D printing")
+            count: Number of unique prompts to generate (10-200)
+
+        Returns:
+            List of dicts with keys: prompt, style, mood, angle
+        """
+        if not meta_prompt or not meta_prompt.strip():
+            logger.warning("Empty meta-prompt provided for bulk image generation")
+            return []
+
+        # Clamp count to valid range
+        count = max(10, min(200, count))
+
+        # Bulk Image Prompt Generator prompt (from prompts module)
+        prompt = BULK_IMAGE_PROMPT_GENERATOR.format(
+            count=count,
+            meta_prompt=meta_prompt,
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,  # Balanced for creativity with consistency
+                ),
+            )
+
+            if not response.text:
+                logger.error("AI response is empty for bulk image prompt generation")
+                return []
+
+            text = strip_markdown_code_blocks(response.text)
+            prompts_data = json.loads(text)
+
+            # Validate response
+            if not isinstance(prompts_data, list):
+                logger.error("AI response is not a list")
+                return []
+
+            # Validate each prompt has required fields
+            validated_prompts = []
+            for i, item in enumerate(prompts_data):
+                if isinstance(item, dict) and "prompt" in item:
+                    validated_prompts.append({
+                        "prompt": item.get("prompt", ""),
+                        "rendering_style": item.get("rendering_style", "3d-render"),
+                        "mood": item.get("mood", "neutral"),
+                        "composition": item.get("composition", "scene"),
+                        "has_text_space": item.get("has_text_space", False),
+                    })
+
+            logger.info(f"Generated {len(validated_prompts)} bulk image prompts")
+            return validated_prompts
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse bulk image prompts response: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Bulk image prompt generation failed: {e}")
+            raise

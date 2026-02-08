@@ -4,7 +4,7 @@ import './UploadForm.css'
 import { UserPreferences } from '../types'
 
 interface UploadFormProps {
-  onJobCreated: (jobId: string) => void
+  onJobCreated: () => void
 }
 
 function UploadForm({ onJobCreated }: UploadFormProps) {
@@ -47,8 +47,8 @@ function UploadForm({ onJobCreated }: UploadFormProps) {
         throw new Error('Upload failed')
       }
 
-      const data = await response.json()
-      onJobCreated(data.job_id)
+      await response.json()
+      onJobCreated()
 
       // Reset form
       setPreferences({

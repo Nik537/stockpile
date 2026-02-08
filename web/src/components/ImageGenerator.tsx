@@ -249,12 +249,14 @@ function ImageGenerator() {
     document.body.removeChild(a)
   }
 
-  // Preset dimensions
+  // Preset dimensions with exact ratios
   const dimensionPresets = [
     { label: 'Square (1:1)', width: 1024, height: 1024 },
     { label: 'Landscape (16:9)', width: 1920, height: 1080 },
     { label: 'Portrait (9:16)', width: 1080, height: 1920 },
-    { label: 'Wide (21:9)', width: 1920, height: 820 },
+    { label: 'Standard (4:3)', width: 1024, height: 768 },
+    { label: 'Portrait (3:4)', width: 768, height: 1024 },
+    { label: 'Wide (21:9)', width: 2016, height: 864 },
     { label: 'Social (4:5)', width: 1080, height: 1350 },
   ]
 

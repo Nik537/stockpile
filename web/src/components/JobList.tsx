@@ -1,13 +1,10 @@
-import { Job } from '../types'
+import { useJobStore } from '../stores'
 import JobCard from './JobCard'
 import './JobList.css'
 
-interface JobListProps {
-  jobs: Job[]
-  onJobDeleted: (jobId: string) => void
-}
+function JobList() {
+  const { jobs, deleteJob } = useJobStore()
 
-function JobList({ jobs, onJobDeleted }: JobListProps) {
   if (jobs.length === 0) {
     return (
       <div className="empty-state">
@@ -27,7 +24,7 @@ function JobList({ jobs, onJobDeleted }: JobListProps) {
   return (
     <div className="job-list">
       {jobs.map((job) => (
-        <JobCard key={job.id} job={job} onDeleted={onJobDeleted} />
+        <JobCard key={job.id} job={job} onDeleted={deleteJob} />
       ))}
     </div>
   )

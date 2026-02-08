@@ -5,42 +5,21 @@ import UploadForm from './components/UploadForm'
 import OutlierFinder from './components/OutlierFinder'
 import TTSGenerator from './components/TTSGenerator'
 import ImageGenerator from './components/ImageGenerator'
-import { Job } from './types'
+import BulkImageGenerator from './components/BulkImageGenerator'
+import { useJobStore } from './stores'
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage'
 
 function App() {
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [loading, setLoading] = useState(true)
+  const { loading, fetchJobs } = useJobStore()
   const [activeTab, setActiveTab] = useState<ActiveTab>('broll')
-
-  const fetchJobs = async () => {
-    try {
-      const response = await fetch('/api/jobs')
-      const data = await response.json()
-      setJobs(data.jobs)
-    } catch (error) {
-      console.error('Failed to fetch jobs:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
     fetchJobs()
     // Refresh jobs every 5 seconds
     const interval = setInterval(fetchJobs, 5000)
     return () => clearInterval(interval)
-  }, [])
-
-  const handleJobCreated = (_jobId: string) => {
-    // Immediately refresh jobs list
-    fetchJobs()
-  }
-
-  const handleJobDeleted = (jobId: string) => {
-    setJobs(jobs.filter(job => job.id !== jobId))
-  }
+  }, [fetchJobs])
 
   return (
     <div className="app">
@@ -82,6 +61,13 @@ function App() {
               <span className="tab-icon">&#x1F3A8;</span>
               Image Generator
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'bulkimage' ? 'active' : ''}`}
+              onClick={() => setActiveTab('bulkimage')}
+            >
+              <span className="tab-icon">&#x1F5BC;</span>
+              Bulk Images
+            </button>
           </nav>
         </div>
       </header>
@@ -97,7 +83,7 @@ function App() {
                 <p className="section-description">Drop your video to generate curated B-roll footage</p>
               </div>
             </div>
-            <UploadForm onJobCreated={handleJobCreated} />
+            <UploadForm onJobCreated={fetchJobs} />
           </section>
 
           <section className="jobs-section">
@@ -114,7 +100,7 @@ function App() {
                 <span className="loading-text">Loading jobs...</span>
               </div>
             ) : (
-              <JobList jobs={jobs} onJobDeleted={handleJobDeleted} />
+              <JobList />
             )}
           </section>
         </div>
@@ -129,6 +115,10 @@ function App() {
 
         <div style={{ display: activeTab === 'imagegen' ? 'block' : 'none' }}>
           <ImageGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'bulkimage' ? 'block' : 'none' }}>
+          <BulkImageGenerator />
         </div>
       </main>
 

@@ -40,7 +40,7 @@ from services.image_sources import (
     GoogleImageSource,
 )
 from services.image_downloader import ImageAcquisitionService
-from utils.cache import load_cache_from_config
+from utils.cache import AIResponseCache, load_cache_from_config
 from utils.checkpoint import (
     ProcessingCheckpoint,
     cleanup_checkpoint,
@@ -48,6 +48,7 @@ from utils.checkpoint import (
 )
 from utils.config import load_config, validate_config
 from utils.cost_tracker import CostTracker
+from utils.logging import clear_job_context, set_job_context
 from utils.progress import ProcessingStatus
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,34 @@ logger = logging.getLogger(__name__)
 class BRollProcessor:
     """Central orchestrator for stockpile."""
 
-    def __init__(self, config: Optional[dict] = None):
-        """Initialize the stockpile with configuration."""
+    def __init__(
+        self,
+        config: Optional[dict] = None,
+        # Dependency injection - all optional for backward compatibility
+        ai_service: Optional["AIService"] = None,
+        notification_service: Optional["NotificationService"] = None,
+        video_sources: Optional[list] = None,
+        image_sources: Optional[list] = None,
+        image_acquisition_service: Optional["ImageAcquisitionService"] = None,
+        transcription_service: Optional["TranscriptionService"] = None,
+        video_downloader: Optional["VideoDownloader"] = None,
+        file_organizer: Optional["FileOrganizer"] = None,
+        drive_service: Optional["DriveService"] = None,
+        file_monitor: Optional["FileMonitor"] = None,
+        clip_extractor: Optional["ClipExtractor"] = None,
+        cost_tracker: Optional["CostTracker"] = None,
+        video_prefilter: Optional["VideoPreFilter"] = None,
+        semantic_verifier: Optional["SemanticVerifier"] = None,
+        feedback_service: Optional["FeedbackService"] = None,
+        ai_cache: Optional["AIResponseCache"] = None,
+    ):
+        """Initialize the stockpile with configuration.
+
+        All service parameters are optional for dependency injection.
+        When not provided, services are created internally using config.
+        This enables testing with mock services while maintaining
+        backward compatibility with existing code.
+        """
         self.config = config or load_config()
         self.processing_files: set[str] = set()
         self.protected_input_files: set[str] = set()  # Input videos that must NEVER be deleted
@@ -76,114 +103,145 @@ class BRollProcessor:
 
         # S2 IMPROVEMENT: Initialize AI response cache
         # Provides 100% cost savings on re-runs with same content
-        cache_config = {
-            "cache_enabled": self.config.get("ai_cache_enabled", True),
-            "cache_dir": self.config.get("ai_cache_dir", ".cache/ai_responses"),
-            "cache_ttl_days": self.config.get("ai_cache_ttl_days", 30),
-            "cache_max_size_gb": self.config.get("ai_cache_max_size_gb", 1.0),
-        }
-        self.ai_cache = load_cache_from_config(cache_config)
-        if self.ai_cache and self.ai_cache.enabled:
-            logger.info(
-                f"[S2] AI response caching ENABLED: dir={cache_config['cache_dir']}, "
-                f"TTL={cache_config['cache_ttl_days']}d, max_size={cache_config['cache_max_size_gb']}GB"
-            )
+        if ai_cache is not None:
+            self.ai_cache = ai_cache
+            if self.ai_cache and getattr(self.ai_cache, 'enabled', False):
+                logger.info("[S2] AI response caching ENABLED (injected)")
+            else:
+                logger.info("[S2] AI response caching DISABLED (injected)")
         else:
-            logger.info("[S2] AI response caching DISABLED")
+            cache_config = {
+                "cache_enabled": self.config.get("ai_cache_enabled", True),
+                "cache_dir": self.config.get("ai_cache_dir", ".cache/ai_responses"),
+                "cache_ttl_days": self.config.get("ai_cache_ttl_days", 30),
+                "cache_max_size_gb": self.config.get("ai_cache_max_size_gb", 1.0),
+            }
+            self.ai_cache = load_cache_from_config(cache_config)
+            if self.ai_cache and self.ai_cache.enabled:
+                logger.info(
+                    f"[S2] AI response caching ENABLED: dir={cache_config['cache_dir']}, "
+                    f"TTL={cache_config['cache_ttl_days']}d, max_size={cache_config['cache_max_size_gb']}GB"
+                )
+            else:
+                logger.info("[S2] AI response caching DISABLED")
 
-        self.ai_service = AIService(gemini_api_key, gemini_model, cache=self.ai_cache)
+        if ai_service is not None:
+            self.ai_service = ai_service
+        else:
+            self.ai_service = AIService(gemini_api_key, gemini_model, cache=self.ai_cache)
 
         client_id = self.config.get("google_client_id")
         client_secret = self.config.get("google_client_secret")
-        if client_id and client_secret:
-            notification_email = self.config.get("notification_email")
-            self.notification_service = NotificationService(
-                client_id, client_secret, notification_email
-            )
+        if notification_service is not None:
+            self.notification_service = notification_service
         else:
-            self.notification_service = None
+            if client_id and client_secret:
+                notification_email = self.config.get("notification_email")
+                self.notification_service = NotificationService(
+                    client_id, client_secret, notification_email
+                )
+            else:
+                self.notification_service = None
 
         # PHASE 3 FEATURES: Video source abstraction for multi-platform support
         # Q3 IMPROVEMENT: Multi-source search (YouTube, Pexels, Pixabay)
         max_videos_per_phrase = self.config.get("max_videos_per_phrase", 3)
-        self.video_sources: list[VideoSource] = []
 
-        # Get enabled search sources from config
-        search_sources = self.config.get("search_sources", ["youtube", "pexels", "pixabay"])
-        prefer_stock = self.config.get("prefer_stock_footage", True)
+        if video_sources is not None:
+            self.video_sources: list[VideoSource] = video_sources
+            logger.info(
+                f"[VideoSources] Active sources (injected): {[s.get_source_name() for s in self.video_sources]}"
+            )
+        else:
+            self.video_sources: list[VideoSource] = []
 
-        # Initialize video sources based on configuration order
-        # If prefer_stock_footage is True, reorder to put stock sources first
-        source_order = list(search_sources)
-        if prefer_stock:
-            stock_sources = [s for s in source_order if s in ("pexels", "pixabay")]
-            other_sources = [s for s in source_order if s not in ("pexels", "pixabay")]
-            source_order = stock_sources + other_sources
+            # Get enabled search sources from config
+            search_sources = self.config.get("search_sources", ["youtube", "pexels", "pixabay"])
+            prefer_stock = self.config.get("prefer_stock_footage", True)
 
-        for source_name in source_order:
-            source_name = source_name.strip().lower()
+            # Initialize video sources based on configuration order
+            # If prefer_stock_footage is True, reorder to put stock sources first
+            source_order = list(search_sources)
+            if prefer_stock:
+                stock_sources = [s for s in source_order if s in ("pexels", "pixabay")]
+                other_sources = [s for s in source_order if s not in ("pexels", "pixabay")]
+                source_order = stock_sources + other_sources
 
-            if source_name == "youtube":
-                youtube_source = YouTubeVideoSource(max_results=max_videos_per_phrase * 3)
-                self.video_sources.append(youtube_source)
-                logger.info("[VideoSources] Enabled: YouTube")
-
-            elif source_name == "pexels":
-                pexels_source = PexelsVideoSource(max_results=max_videos_per_phrase * 3)
-                if pexels_source.is_configured():
-                    self.video_sources.append(pexels_source)
-                    logger.info("[VideoSources] Enabled: Pexels (CC0 stock footage)")
-                else:
-                    logger.debug("[VideoSources] Pexels skipped - no API key configured")
-
-            elif source_name == "pixabay":
-                pixabay_source = PixabayVideoSource(max_results=max_videos_per_phrase * 3)
-                if pixabay_source.is_configured():
-                    self.video_sources.append(pixabay_source)
-                    logger.info("[VideoSources] Enabled: Pixabay (CC0 stock footage)")
-                else:
-                    logger.debug("[VideoSources] Pixabay skipped - no API key configured")
-
-            else:
-                logger.warning(f"[VideoSources] Unknown source '{source_name}' - skipping")
-
-        if not self.video_sources:
-            # Fallback to YouTube if no sources configured
-            logger.warning("[VideoSources] No valid sources configured, falling back to YouTube")
-            self.video_sources.append(YouTubeVideoSource(max_results=max_videos_per_phrase * 3))
-
-        logger.info(
-            f"[VideoSources] Active sources: {[s.get_source_name() for s in self.video_sources]}"
-        )
-
-        # IMAGE ACQUISITION: Initialize image sources for parallel image downloads
-        self.image_sources: list[ImageSource] = []
-        self.image_acquisition_service: Optional[ImageAcquisitionService] = None
-
-        image_acquisition_enabled = self.config.get("image_acquisition_enabled", True)
-        if image_acquisition_enabled:
-            image_source_names = self.config.get("image_sources", ["pexels", "pixabay", "google"])
-
-            for source_name in image_source_names:
+            for source_name in source_order:
                 source_name = source_name.strip().lower()
 
-                if source_name == "pexels":
-                    pexels_img_source = PexelsImageSource(max_results=5)
-                    if pexels_img_source.is_configured():
-                        self.image_sources.append(pexels_img_source)
-                        logger.debug("[ImageSources] Enabled: Pexels Photos")
+                if source_name == "youtube":
+                    youtube_source = YouTubeVideoSource(max_results=max_videos_per_phrase * 3)
+                    self.video_sources.append(youtube_source)
+                    logger.info("[VideoSources] Enabled: YouTube")
+
+                elif source_name == "pexels":
+                    pexels_source = PexelsVideoSource(max_results=max_videos_per_phrase * 3)
+                    if pexels_source.is_configured():
+                        self.video_sources.append(pexels_source)
+                        logger.info("[VideoSources] Enabled: Pexels (CC0 stock footage)")
+                    else:
+                        logger.debug("[VideoSources] Pexels skipped - no API key configured")
 
                 elif source_name == "pixabay":
-                    pixabay_img_source = PixabayImageSource(max_results=5)
-                    if pixabay_img_source.is_configured():
-                        self.image_sources.append(pixabay_img_source)
-                        logger.debug("[ImageSources] Enabled: Pixabay Images")
+                    pixabay_source = PixabayVideoSource(max_results=max_videos_per_phrase * 3)
+                    if pixabay_source.is_configured():
+                        self.video_sources.append(pixabay_source)
+                        logger.info("[VideoSources] Enabled: Pixabay (CC0 stock footage)")
+                    else:
+                        logger.debug("[VideoSources] Pixabay skipped - no API key configured")
 
-                elif source_name == "google":
-                    google_img_source = GoogleImageSource(max_results=5)
-                    if google_img_source.is_configured():
-                        self.image_sources.append(google_img_source)
-                        logger.debug("[ImageSources] Enabled: Google Images")
+                else:
+                    logger.warning(f"[VideoSources] Unknown source '{source_name}' - skipping")
+
+            if not self.video_sources:
+                # Fallback to YouTube if no sources configured
+                logger.warning("[VideoSources] No valid sources configured, falling back to YouTube")
+                self.video_sources.append(YouTubeVideoSource(max_results=max_videos_per_phrase * 3))
+
+            logger.info(
+                f"[VideoSources] Active sources: {[s.get_source_name() for s in self.video_sources]}"
+            )
+
+        # IMAGE ACQUISITION: Initialize image sources for parallel image downloads
+        if image_sources is not None:
+            self.image_sources: list[ImageSource] = image_sources
+            logger.info(
+                f"[ImageSources] Image sources (injected): {[s.get_source_name() for s in self.image_sources]}"
+            )
+        else:
+            self.image_sources: list[ImageSource] = []
+
+            image_acquisition_enabled = self.config.get("image_acquisition_enabled", True)
+            if image_acquisition_enabled:
+                image_source_names = self.config.get("image_sources", ["pexels", "pixabay", "google"])
+
+                for source_name in image_source_names:
+                    source_name = source_name.strip().lower()
+
+                    if source_name == "pexels":
+                        pexels_img_source = PexelsImageSource(max_results=5)
+                        if pexels_img_source.is_configured():
+                            self.image_sources.append(pexels_img_source)
+                            logger.debug("[ImageSources] Enabled: Pexels Photos")
+
+                    elif source_name == "pixabay":
+                        pixabay_img_source = PixabayImageSource(max_results=5)
+                        if pixabay_img_source.is_configured():
+                            self.image_sources.append(pixabay_img_source)
+                            logger.debug("[ImageSources] Enabled: Pixabay Images")
+
+                    elif source_name == "google":
+                        google_img_source = GoogleImageSource(max_results=5)
+                        if google_img_source.is_configured():
+                            self.image_sources.append(google_img_source)
+                            logger.debug("[ImageSources] Enabled: Google Images")
+
+        if image_acquisition_service is not None:
+            self.image_acquisition_service: Optional[ImageAcquisitionService] = image_acquisition_service
+            logger.info("[ImageSources] Image acquisition service (injected)")
+        else:
+            self.image_acquisition_service: Optional[ImageAcquisitionService] = None
 
             if self.image_sources:
                 self.image_acquisition_service = ImageAcquisitionService(
@@ -198,48 +256,72 @@ class BRollProcessor:
                     f"interval={self.config.get('image_interval_seconds', 5.0)}s"
                 )
             else:
-                logger.info("[ImageSources] Image acquisition DISABLED (no sources configured)")
-        else:
-            logger.info("[ImageSources] Image acquisition DISABLED (config)")
+                image_acquisition_enabled = self.config.get("image_acquisition_enabled", True)
+                if image_acquisition_enabled:
+                    logger.info("[ImageSources] Image acquisition DISABLED (no sources configured)")
+                else:
+                    logger.info("[ImageSources] Image acquisition DISABLED (config)")
 
         whisper_model = self.config.get("whisper_model", "base")
-        self.transcription_service = TranscriptionService(whisper_model)
+        if transcription_service is not None:
+            self.transcription_service = transcription_service
+        else:
+            self.transcription_service = TranscriptionService(whisper_model)
 
         output_dir = self.config.get("local_output_folder", "../output")
-        self.video_downloader = VideoDownloader(output_dir)
-        self.file_organizer = FileOrganizer(output_dir)
-
-        output_folder_id = self.config.get("google_drive_output_folder_id")
-        if output_folder_id:
-            if not client_id:
-                raise ValueError("Google Drive requires GOOGLE_CLIENT_ID environment variable")
-            if not client_secret:
-                raise ValueError("Google Drive requires GOOGLE_CLIENT_SECRET environment variable")
-            self.drive_service = DriveService(client_id, client_secret, output_folder_id)
+        if video_downloader is not None:
+            self.video_downloader = video_downloader
         else:
-            self.drive_service = None
+            self.video_downloader = VideoDownloader(output_dir)
 
-        self.file_monitor = FileMonitor(self.config, self._handle_new_file)
+        if file_organizer is not None:
+            self.file_organizer = file_organizer
+        else:
+            self.file_organizer = FileOrganizer(output_dir)
+
+        if drive_service is not None:
+            self.drive_service = drive_service
+        else:
+            output_folder_id = self.config.get("google_drive_output_folder_id")
+            if output_folder_id:
+                if not client_id:
+                    raise ValueError("Google Drive requires GOOGLE_CLIENT_ID environment variable")
+                if not client_secret:
+                    raise ValueError("Google Drive requires GOOGLE_CLIENT_SECRET environment variable")
+                self.drive_service = DriveService(client_id, client_secret, output_folder_id)
+            else:
+                self.drive_service = None
+
+        if file_monitor is not None:
+            self.file_monitor = file_monitor
+        else:
+            self.file_monitor = FileMonitor(self.config, self._handle_new_file)
 
         # Initialize clip extractor if enabled
-        clip_extraction_enabled = self.config.get("clip_extraction_enabled", True)
-        if clip_extraction_enabled:
-            self.clip_extractor = ClipExtractor(
-                api_key=gemini_api_key,
-                model_name=gemini_model,
-                min_clip_duration=self.config.get("min_clip_duration", 4.0),
-                max_clip_duration=self.config.get("max_clip_duration", 15.0),
-                max_clips_per_video=self.config.get("max_clips_per_video", 3),
-                cache=self.ai_cache,  # S2 IMPROVEMENT: Inject cache for video analysis
-            )
-            self.delete_original_after_extraction = self.config.get(
-                "delete_original_after_extraction", True
-            )
-            logger.info("Clip extraction enabled (with AI cache)")
+        # Always read delete_original_after_extraction from config, even when clip_extractor is injected
+        self.delete_original_after_extraction = self.config.get(
+            "delete_original_after_extraction", True
+        )
+
+        if clip_extractor is not None:
+            self.clip_extractor = clip_extractor
+            logger.info("Clip extraction enabled (injected)")
         else:
-            self.clip_extractor = None
-            self.delete_original_after_extraction = False
-            logger.info("Clip extraction disabled")
+            clip_extraction_enabled = self.config.get("clip_extraction_enabled", True)
+            if clip_extraction_enabled:
+                self.clip_extractor = ClipExtractor(
+                    api_key=gemini_api_key,
+                    model_name=gemini_model,
+                    min_clip_duration=self.config.get("min_clip_duration", 4.0),
+                    max_clip_duration=self.config.get("max_clip_duration", 15.0),
+                    max_clips_per_video=self.config.get("max_clips_per_video", 3),
+                    cache=self.ai_cache,  # S2 IMPROVEMENT: Inject cache for video analysis
+                )
+                logger.info("Clip extraction enabled (with AI cache)")
+            else:
+                self.clip_extractor = None
+                self.delete_original_after_extraction = False
+                logger.info("Clip extraction disabled")
 
         # Timeline-aware B-roll planning configuration
         self.clips_per_minute = self.config.get("clips_per_minute", 2.0)
@@ -261,56 +343,75 @@ class BRollProcessor:
         )
 
         # PHASE 3 FEATURES: Cost tracking
-        budget_limit = self.config.get("budget_limit_usd", 0.0)
-        self.cost_tracker = CostTracker(
-            budget_limit_usd=budget_limit if budget_limit > 0 else None
-        )
-        if budget_limit > 0:
-            logger.info(f"Cost tracking enabled with budget limit: ${budget_limit:.2f}")
+        if cost_tracker is not None:
+            self.cost_tracker = cost_tracker
+            logger.info("Cost tracking enabled (injected)")
         else:
-            logger.info("Cost tracking enabled (no budget limit)")
+            budget_limit = self.config.get("budget_limit_usd", 0.0)
+            self.cost_tracker = CostTracker(
+                budget_limit_usd=budget_limit if budget_limit > 0 else None
+            )
+            if budget_limit > 0:
+                logger.info(f"Cost tracking enabled with budget limit: ${budget_limit:.2f}")
+            else:
+                logger.info("Cost tracking enabled (no budget limit)")
 
         # S5 IMPROVEMENT: Video pre-filtering before downloads
         # Filters videos based on metadata (views, duration, keywords) to avoid wasted bandwidth
-        self.video_prefilter = VideoPreFilter(self.config)
-        logger.info(
-            f"Video pre-filter enabled: min_views={self.video_prefilter.filter_config.min_view_count}, "
-            f"max_duration={self.video_prefilter.filter_config.max_prefilter_duration}s, "
-            f"blocked_keywords={len(self.video_prefilter.filter_config.blocked_title_keywords)}"
-        )
+        if video_prefilter is not None:
+            self.video_prefilter = video_prefilter
+            logger.info("Video pre-filter enabled (injected)")
+        else:
+            self.video_prefilter = VideoPreFilter(self.config)
+            logger.info(
+                f"Video pre-filter enabled: min_views={self.video_prefilter.filter_config.min_view_count}, "
+                f"max_duration={self.video_prefilter.filter_config.max_prefilter_duration}s, "
+                f"blocked_keywords={len(self.video_prefilter.filter_config.blocked_title_keywords)}"
+            )
 
         # S6 IMPROVEMENT: Semantic verification for clip quality assurance
         # Verifies extracted clips semantically match original transcript context
-        semantic_verification_enabled = self.config.get("semantic_verification_enabled", False)
-        if semantic_verification_enabled:
-            self.semantic_verifier = SemanticVerifier(
-                model_name=gemini_model,
-                api_key=gemini_api_key,
-            )
-            logger.info(
-                f"Semantic verification ENABLED: threshold={self.config.get('semantic_match_threshold', 0.9)}, "
-                f"reject_below_threshold={self.config.get('reject_below_threshold', True)}"
-            )
+        if semantic_verifier is not None:
+            self.semantic_verifier = semantic_verifier
+            logger.info("Semantic verification ENABLED (injected)")
         else:
-            self.semantic_verifier = None
-            logger.info("Semantic verification DISABLED")
+            semantic_verification_enabled = self.config.get("semantic_verification_enabled", False)
+            if semantic_verification_enabled:
+                self.semantic_verifier = SemanticVerifier(
+                    model_name=gemini_model,
+                    api_key=gemini_api_key,
+                )
+                logger.info(
+                    f"Semantic verification ENABLED: threshold={self.config.get('semantic_match_threshold', 0.9)}, "
+                    f"reject_below_threshold={self.config.get('reject_below_threshold', True)}"
+                )
+            else:
+                self.semantic_verifier = None
+                logger.info("Semantic verification DISABLED")
 
         # Feature 3: Feedback Loop - learns from user rejections to improve selection
-        feedback_enabled = self.config.get("feedback_enabled", True)
-        if feedback_enabled:
-            feedback_dir = self.config.get("feedback_dir", ".stockpile")
-            self.feedback_service = FeedbackService(feedback_dir)
-            stats = self.feedback_service.get_statistics()
-            logger.info(
-                f"Feedback system ENABLED: {stats['total_rejections']} rejections, "
-                f"{stats['total_approvals']} approvals stored in {feedback_dir}"
-            )
-            # Connect feedback service to image acquisition
+        if feedback_service is not None:
+            self.feedback_service = feedback_service
+            logger.info("Feedback system ENABLED (injected)")
+            # Connect feedback service to image acquisition even when injected
             if self.image_acquisition_service:
                 self.image_acquisition_service.feedback_service = self.feedback_service
         else:
-            self.feedback_service = None
-            logger.info("Feedback system DISABLED")
+            feedback_enabled = self.config.get("feedback_enabled", True)
+            if feedback_enabled:
+                feedback_dir = self.config.get("feedback_dir", ".stockpile")
+                self.feedback_service = FeedbackService(feedback_dir)
+                stats = self.feedback_service.get_statistics()
+                logger.info(
+                    f"Feedback system ENABLED: {stats['total_rejections']} rejections, "
+                    f"{stats['total_approvals']} approvals stored in {feedback_dir}"
+                )
+                # Connect feedback service to image acquisition
+                if self.image_acquisition_service:
+                    self.image_acquisition_service.feedback_service = self.feedback_service
+            else:
+                self.feedback_service = None
+                logger.info("Feedback system DISABLED")
 
         # Feature 1: Style detection - will be populated per video during processing
         self.content_style: Optional[ContentStyle] = None
@@ -369,6 +470,12 @@ class BRollProcessor:
         self.protected_input_files.add(str(input_path))
         logger.info(f"Protected input video: {input_path}")
 
+        # PHASE 3A: Set job context for correlated logging
+        # Generate a simple job ID from the file path hash
+        job_id = str(abs(hash(file_path)))[:8]
+        set_job_context(job_id)
+        logger.info(f"Job context set: {job_id}")
+
         # PHASE 3 FEATURES: Load checkpoint if resuming
         output_dir = self.config.get("local_output_folder", "../output")
         checkpoint_path = get_checkpoint_path(file_path, output_dir)
@@ -425,6 +532,8 @@ class BRollProcessor:
 
         finally:
             self.processing_files.discard(file_path)
+            # PHASE 3A: Clear job context after processing completes
+            clear_job_context()
 
     async def _execute_pipeline(
         self,

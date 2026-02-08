@@ -110,6 +110,8 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 pythonpath = ["src"]
 
+# Async test configuration
+asyncio_mode = "auto"
 
 # Coverage settings
 addopts = [

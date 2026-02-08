@@ -87,3 +87,72 @@ def sample_transcript() -> str:
     """
 
 
+@pytest.fixture
+def sample_broll_plan():
+    """Sample B-roll plan for integration testing."""
+    from models.broll_need import BRollNeed, BRollPlan
+
+    return BRollPlan(
+        source_duration=60.0,
+        needs=[
+            BRollNeed(
+                timestamp=10.0,
+                search_phrase="city skyline aerial",
+                description="Aerial view of city skyline",
+                context="urban development discussion",
+            ),
+        ],
+        clips_per_minute=2.0,
+    )
+
+
+@pytest.fixture
+def sample_video_results():
+    """Sample video results for integration testing."""
+    from models.video import VideoResult
+
+    return [
+        VideoResult(
+            video_id="vid_001",
+            title="City Skyline Drone Footage",
+            url="https://youtube.com/watch?v=vid001",
+            duration=45,
+            description="Beautiful aerial drone footage of city skyline at sunset",
+        ),
+    ]
+
+
+@pytest.fixture
+def sample_transcript_result():
+    """Sample TranscriptResult for integration testing."""
+    from models.broll_need import TranscriptResult, TranscriptSegment
+
+    segments = [
+        TranscriptSegment(
+            start=0.0, end=15.0, text="Welcome to this video about AI and automation."
+        ),
+        TranscriptSegment(
+            start=15.0,
+            end=30.0,
+            text="Today we'll discuss how artificial intelligence is changing content creation.",
+        ),
+        TranscriptSegment(
+            start=30.0,
+            end=45.0,
+            text="Let's start by looking at some real-world examples.",
+        ),
+        TranscriptSegment(
+            start=45.0,
+            end=60.0,
+            text="Many creators are now using AI for video editing and enhancement.",
+        ),
+    ]
+
+    return TranscriptResult(
+        text="Welcome to this video about AI and automation. Today we'll discuss how artificial intelligence is changing content creation. Let's start by looking at some real-world examples. Many creators are now using AI for video editing and enhancement.",
+        segments=segments,
+        duration=60.0,
+        language="en",
+    )
+
+

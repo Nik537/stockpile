@@ -1,25 +1,25 @@
 # Core dependencies
 # faster-whisper is a CTranslate2 reimplementation of OpenAI Whisper (4x faster)
-faster-whisper>=0.10.0
-numpy>=1.24.0
-google-genai
-yt-dlp
-google-api-python-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-watchdog
-python-dotenv
-rich
+faster-whisper==1.2.1
+numpy==2.4.1
+google-genai==1.60.0
+yt-dlp==2025.11.12
+google-api-python-client==2.187.0
+google-auth==2.47.0
+google-auth-oauthlib==1.2.4
+google-auth-httplib2==0.2.1
+watchdog==6.0.0
+python-dotenv==1.2.1
+rich==14.0.0
 
 # Q1 IMPROVEMENT: CLIP Visual Matching (SINGLE BIGGEST quality improvement)
 # Uses OpenAI CLIP to compare video frames against text descriptions
 # Provides visual relevance scoring independent of metadata
-transformers>=4.35.0
-torch>=2.0.0
-torchvision>=0.15.0
-opencv-python>=4.8.0
-pillow>=10.0.0
+transformers==5.0.0
+torch==2.0.1
+torchvision==0.15.2
+opencv-python==4.13.0.90
+pillow==11.0.0
 
 # Development dependencies
 ruff==0.1.15
@@ -46,19 +46,25 @@ aiofiles==23.2.1
 pyyaml==6.0.1
 # Q3: Multi-source video search (Pexels, Pixabay)
 # Required for async HTTP requests to stock footage APIs
-aiohttp>=3.9.0
+aiohttp==3.11.18
 
 # TTS Service - async HTTP client for Chatterbox-TTS-Server
-httpx>=0.27.0
+httpx==0.28.1
+
+# SQLite Job Persistence
+aiosqlite==0.21.0
+
+# Structured Logging (Phase 3A)
+structlog>=24.1.0
 
 # Outlier Finder Enhancement - Phase 2: Turso Cloud Database
 # libsql with embedded replicas for cloud+local sync
-libsql-experimental>=0.0.47
+libsql-experimental==0.0.55
 
 # Outlier Finder Enhancement - Phase 3: Reddit Integration
 # Higher rate limits with authenticated Reddit API access
-praw>=7.7.1
+praw==7.8.1
 
 # Outlier Finder Enhancement - Phase 5: Cloudflare R2 Storage
 # S3-compatible API for R2
-boto3>=1.34.0
+boto3==1.42.39

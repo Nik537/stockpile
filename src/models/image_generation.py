@@ -18,6 +18,21 @@ class ImageGenerationModel(str, Enum):
     RUNPOD_FLUX_SCHNELL = "runpod-flux-schnell"
     RUNPOD_FLUX_KONTEXT = "runpod-flux-kontext"  # Image editing
 
+    # RunPod Qwen models (cheap, good text rendering)
+    RUNPOD_QWEN_IMAGE = "runpod-qwen-image"
+    RUNPOD_QWEN_IMAGE_LORA = "runpod-qwen-image-lora"
+    RUNPOD_QWEN_IMAGE_EDIT = "runpod-qwen-image-edit"
+
+    # RunPod Seedream models
+    RUNPOD_SEEDREAM_3 = "runpod-seedream-3"
+    RUNPOD_SEEDREAM_4 = "runpod-seedream-4"
+
+    # Gemini (Google) - FREE 500/day
+    GEMINI_FLASH = "gemini-flash"
+
+    # Replicate models
+    REPLICATE_FLUX_KLEIN = "replicate-flux-klein"
+
 
 class ImageGenerationStatus(str, Enum):
     """Status of an image generation job."""
