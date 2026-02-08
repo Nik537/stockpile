@@ -26,7 +26,7 @@ function BulkImageGenerator() {
   // Step 2: Review state
   const [jobId, setJobId] = useState<string | null>(null)
   const [prompts, setPrompts] = useState<BulkImagePrompt[]>([])
-  const [model, setModel] = useState<BulkImageModel>('runpod-flux-schnell')
+  const [model, setModel] = useState<BulkImageModel>('runware-flux-klein-4b')
   const [width, setWidth] = useState(1024)
   const [height, setHeight] = useState(1024)
   const [estimatedCost, setEstimatedCost] = useState(0)
@@ -49,26 +49,20 @@ function BulkImageGenerator() {
   // Model pricing per megapixel
   const MODEL_PRICING: Record<BulkImageModel, number> = {
     'gemini-flash': 0,  // FREE 500/day
-    'runpod-flux-schnell': 0.0024,  // CHEAPEST paid
-    'replicate-flux-klein': 0.003,  // Fast
-    'z-image': 0.005,
-    'flux-klein': 0.012,
-    'runpod-flux-dev': 0.02,
-    'runpod-qwen-image': 0.02,
-    'runpod-qwen-image-lora': 0.02,
-    'runpod-seedream-3': 0.03,
-    'runpod-seedream-4': 0.027,
+    'runware-flux-klein-4b': 0.0006,
+    'runware-flux-klein-9b': 0.00078,
+    'runware-z-image': 0.0006,
+    'nano-banana-pro': 0.04,
   }
 
   // Recalculate cost estimate when model/dimensions change
   useEffect(() => {
     if (prompts.length > 0) {
-      const megapixels = (width * height) / 1_000_000
-      const pricePerMp = MODEL_PRICING[model] || 0.02
-      setEstimatedCost(megapixels * prompts.length * pricePerMp)
+      const pricePerImage = MODEL_PRICING[model] || 0.001
+      setEstimatedCost(prompts.length * pricePerImage)
 
       // Estimate time: Klein is fastest, then Schnell, Gemini is medium
-      const fastModels = ['replicate-flux-klein', 'runpod-flux-schnell', 'z-image', 'flux-klein']
+      const fastModels = ['runware-flux-klein-4b', 'runware-z-image', 'runware-flux-klein-9b']
       const timePerImage = fastModels.includes(model) ? 3 : 6
       const batches = Math.ceil(prompts.length / 10)
       setEstimatedTime(batches * timePerImage)
@@ -434,76 +428,62 @@ function BulkImageGenerator() {
                       <span className="model-price">500/day</span>
                     </div>
                   </label>
-                  {/* Budget tier */}
-                  <label className={`model-option ${model === 'runpod-flux-schnell' ? 'selected' : ''}`}>
+                  {/* Budget tier - Runware */}
+                  <label className={`model-option ${model === 'runware-flux-klein-4b' ? 'selected' : ''}`}>
                     <input
                       type="radio"
                       name="model"
-                      value="runpod-flux-schnell"
-                      checked={model === 'runpod-flux-schnell'}
+                      value="runware-flux-klein-4b"
+                      checked={model === 'runware-flux-klein-4b'}
                       onChange={(e) => setModel(e.target.value as BulkImageModel)}
                     />
                     <div className="model-info">
-                      <span className="model-name">Flux Schnell</span>
+                      <span className="model-name">Flux Klein 4B</span>
                       <span className="model-badge budget">Cheapest</span>
-                      <span className="model-price">$0.0024/MP</span>
+                      <span className="model-price">$0.0006/img</span>
                     </div>
                   </label>
-                  <label className={`model-option ${model === 'replicate-flux-klein' ? 'selected' : ''}`}>
+                  <label className={`model-option ${model === 'runware-z-image' ? 'selected' : ''}`}>
                     <input
                       type="radio"
                       name="model"
-                      value="replicate-flux-klein"
-                      checked={model === 'replicate-flux-klein'}
+                      value="runware-z-image"
+                      checked={model === 'runware-z-image'}
                       onChange={(e) => setModel(e.target.value as BulkImageModel)}
                     />
                     <div className="model-info">
-                      <span className="model-name">Flux Klein</span>
-                      <span className="model-badge budget">Fastest</span>
-                      <span className="model-price">~$0.003/img</span>
+                      <span className="model-name">Z-Image</span>
+                      <span className="model-badge budget">Fast</span>
+                      <span className="model-price">$0.0006/img</span>
                     </div>
                   </label>
-                  {/* Quality tier */}
-                  <label className={`model-option ${model === 'runpod-flux-dev' ? 'selected' : ''}`}>
+                  <label className={`model-option ${model === 'runware-flux-klein-9b' ? 'selected' : ''}`}>
                     <input
                       type="radio"
                       name="model"
-                      value="runpod-flux-dev"
-                      checked={model === 'runpod-flux-dev'}
+                      value="runware-flux-klein-9b"
+                      checked={model === 'runware-flux-klein-9b'}
                       onChange={(e) => setModel(e.target.value as BulkImageModel)}
                     />
                     <div className="model-info">
-                      <span className="model-name">Flux Dev</span>
+                      <span className="model-name">Flux Klein 9B</span>
                       <span className="model-badge quality">Quality</span>
-                      <span className="model-price">$0.02/MP</span>
+                      <span className="model-price">$0.00078/img</span>
                     </div>
                   </label>
-                  <label className={`model-option ${model === 'runpod-qwen-image' ? 'selected' : ''}`}>
+                  {/* RunPod tier */}
+                  <label className={`model-option ${model === 'nano-banana-pro' ? 'selected' : ''}`}>
                     <input
                       type="radio"
                       name="model"
-                      value="runpod-qwen-image"
-                      checked={model === 'runpod-qwen-image'}
+                      value="nano-banana-pro"
+                      checked={model === 'nano-banana-pro'}
                       onChange={(e) => setModel(e.target.value as BulkImageModel)}
                     />
                     <div className="model-info">
-                      <span className="model-name">Qwen Image</span>
-                      <span className="model-badge text">Best Text</span>
-                      <span className="model-price">$0.02/MP</span>
-                    </div>
-                  </label>
-                  <label className={`model-option ${model === 'runpod-seedream-4' ? 'selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name="model"
-                      value="runpod-seedream-4"
-                      checked={model === 'runpod-seedream-4'}
-                      onChange={(e) => setModel(e.target.value as BulkImageModel)}
-                    />
-                    <div className="model-info">
-                      <span className="model-name">Seedream 4</span>
-                      <span className="model-badge quality">Premium</span>
-                      <span className="model-price">$0.027/MP</span>
+                      <span className="model-name">Nano Banana Pro</span>
+                      <span className="model-badge quality">Edit/Inpaint</span>
+                      <span className="model-price">$0.04/img</span>
                     </div>
                   </label>
                 </div>

@@ -142,7 +142,7 @@ async def generate_bulk_image_prompts(request: BulkImagePromptsRequest) -> dict:
         job = BulkImageJob(
             job_id=job_id,
             meta_prompt=request.meta_prompt.strip(),
-            model="runpod-flux-schnell",  # Default, will be set in generate
+            model="runware-flux-klein-4b",  # Default, will be set in generate
             width=1024,
             height=1024,
             total_count=len(prompts),
@@ -152,9 +152,9 @@ async def generate_bulk_image_prompts(request: BulkImagePromptsRequest) -> dict:
 
         # Calculate estimates
         estimated_cost = service.calculate_estimated_cost(
-            len(prompts), "runpod-flux-schnell", 1024, 1024
+            len(prompts), "runware-flux-klein-4b", 1024, 1024
         )
-        estimated_time = service.calculate_estimated_time(len(prompts), "runpod-flux-schnell")
+        estimated_time = service.calculate_estimated_time(len(prompts), "runware-flux-klein-4b")
         job.estimated_cost = estimated_cost
 
         # Store job
@@ -191,13 +191,10 @@ async def start_bulk_image_generation(request: BulkImageGenerateRequest) -> dict
         raise HTTPException(status_code=400, detail="Prompts are required")
 
     # Supported models by provider
-    RUNPOD_MODELS = {
-        "runpod-flux-schnell", "runpod-flux-dev", "runpod-qwen-image",
-        "runpod-qwen-image-lora", "runpod-seedream-3", "runpod-seedream-4"
-    }
+    RUNWARE_MODELS = {"runware-flux-klein-4b", "runware-flux-klein-9b", "runware-z-image"}
     GEMINI_MODELS = {"gemini-flash"}
-    REPLICATE_MODELS = {"replicate-flux-klein"}
-    ALL_MODELS = RUNPOD_MODELS | GEMINI_MODELS | REPLICATE_MODELS
+    RUNPOD_MODELS = {"nano-banana-pro"}
+    ALL_MODELS = RUNWARE_MODELS | GEMINI_MODELS | RUNPOD_MODELS
 
     if request.model not in ALL_MODELS:
         raise HTTPException(
@@ -208,20 +205,20 @@ async def start_bulk_image_generation(request: BulkImageGenerateRequest) -> dict
     # Check the appropriate provider is configured
     image_service = get_image_gen_service()
 
-    if request.model in RUNPOD_MODELS and not image_service.is_runpod_configured():
+    if request.model in RUNWARE_MODELS and not image_service.is_runware_configured():
         raise HTTPException(
             status_code=400,
-            detail="RUNPOD_API_KEY not configured. Set it in your .env file.",
+            detail="RUNWARE_API_KEY not configured. Set it in your .env file.",
         )
     elif request.model in GEMINI_MODELS and not image_service.is_gemini_configured():
         raise HTTPException(
             status_code=400,
             detail="GEMINI_API_KEY not configured. Set it in your .env file.",
         )
-    elif request.model in REPLICATE_MODELS and not image_service.is_replicate_configured():
+    elif request.model in RUNPOD_MODELS and not image_service.is_runpod_configured():
         raise HTTPException(
             status_code=400,
-            detail="REPLICATE_API_KEY not configured. Set it in your .env file.",
+            detail="RUNPOD_API_KEY not configured. Set it in your .env file.",
         )
 
     job = bulk_image_jobs[request.job_id]

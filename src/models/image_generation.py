@@ -1,4 +1,4 @@
-"""Models for AI image generation using fal.ai (Flux 2 Klein, Z-Image Turbo)."""
+"""Models for AI image generation (Runware, Gemini, Nano Banana Pro)."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,29 +9,11 @@ from typing import Optional
 class ImageGenerationModel(str, Enum):
     """Supported image generation models."""
 
-    # fal.ai models
-    FLUX_KLEIN = "flux-klein"
-    Z_IMAGE = "z-image"
-
-    # RunPod public endpoint models
-    RUNPOD_FLUX_DEV = "runpod-flux-dev"
-    RUNPOD_FLUX_SCHNELL = "runpod-flux-schnell"
-    RUNPOD_FLUX_KONTEXT = "runpod-flux-kontext"  # Image editing
-
-    # RunPod Qwen models (cheap, good text rendering)
-    RUNPOD_QWEN_IMAGE = "runpod-qwen-image"
-    RUNPOD_QWEN_IMAGE_LORA = "runpod-qwen-image-lora"
-    RUNPOD_QWEN_IMAGE_EDIT = "runpod-qwen-image-edit"
-
-    # RunPod Seedream models
-    RUNPOD_SEEDREAM_3 = "runpod-seedream-3"
-    RUNPOD_SEEDREAM_4 = "runpod-seedream-4"
-
-    # Gemini (Google) - FREE 500/day
-    GEMINI_FLASH = "gemini-flash"
-
-    # Replicate models
-    REPLICATE_FLUX_KLEIN = "replicate-flux-klein"
+    RUNWARE_FLUX_KLEIN_4B = "runware-flux-klein-4b"     # $0.0006/img
+    RUNWARE_FLUX_KLEIN_9B = "runware-flux-klein-9b"     # $0.00078/img
+    RUNWARE_Z_IMAGE = "runware-z-image"                  # $0.0006/img
+    GEMINI_FLASH = "gemini-flash"                        # FREE (500/day)
+    NANO_BANANA_PRO = "nano-banana-pro"                  # RunPod public endpoint
 
 
 class ImageGenerationStatus(str, Enum):
@@ -48,7 +30,7 @@ class ImageGenerationRequest:
     """Request for text-to-image generation."""
 
     prompt: str
-    model: ImageGenerationModel = ImageGenerationModel.FLUX_KLEIN
+    model: ImageGenerationModel = ImageGenerationModel.RUNWARE_FLUX_KLEIN_4B
     width: int = 1024
     height: int = 1024
     num_images: int = 1
@@ -74,14 +56,15 @@ class ImageEditRequest:
 
     prompt: str
     input_image_url: str  # URL or data:image/... base64
-    model: ImageGenerationModel = ImageGenerationModel.FLUX_KLEIN
+    model: ImageGenerationModel = ImageGenerationModel.NANO_BANANA_PRO
     strength: float = 0.75  # How much to transform (0=none, 1=complete)
     seed: Optional[int] = None
     guidance_scale: float = 7.5
+    mask_image: Optional[str] = None  # base64 data URL for inpainting mask
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API requests."""
-        return {
+        result = {
             "prompt": self.prompt,
             "input_image_url": self.input_image_url,
             "model": self.model.value,
@@ -89,6 +72,9 @@ class ImageEditRequest:
             "seed": self.seed,
             "guidance_scale": self.guidance_scale,
         }
+        if self.mask_image:
+            result["mask_image"] = self.mask_image
+        return result
 
 
 @dataclass

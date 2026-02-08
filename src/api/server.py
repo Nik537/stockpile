@@ -10,7 +10,7 @@ Routers:
     - broll: B-roll video processing endpoints
     - outliers: Outlier finder endpoints
     - tts: Text-to-speech endpoints
-    - images: Image generation endpoints (fal.ai, RunPod, Gemini, Replicate)
+    - images: Image generation endpoints (Runware, Gemini, Nano Banana Pro)
     - bulk_images: Bulk image generation endpoints
 """
 

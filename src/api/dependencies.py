@@ -4,6 +4,7 @@ from services.ai_service import AIService
 from services.bulk_image_service import BulkImageService
 from services.image_generation_service import ImageGenerationService
 from services.tts_service import TTSService
+from services.voice_library import VoiceLibrary
 from utils.config import load_config
 
 # Service singletons
@@ -11,6 +12,7 @@ _tts_service: TTSService | None = None
 _image_gen_service: ImageGenerationService | None = None
 _bulk_image_service: BulkImageService | None = None
 _ai_service: AIService | None = None
+_voice_library: VoiceLibrary | None = None
 
 
 def get_image_gen_service() -> ImageGenerationService:
@@ -19,8 +21,9 @@ def get_image_gen_service() -> ImageGenerationService:
     if _image_gen_service is None:
         config = load_config()
         _image_gen_service = ImageGenerationService(
-            api_key=config.get("fal_api_key", ""),
+            api_key="",  # fal.ai no longer used
             runpod_api_key=config.get("runpod_api_key", ""),
+            runware_api_key=config.get("runware_api_key", ""),
         )
     return _image_gen_service
 
@@ -55,3 +58,11 @@ def get_bulk_image_service() -> BulkImageService:
             image_gen_service=get_image_gen_service(),
         )
     return _bulk_image_service
+
+
+def get_voice_library() -> VoiceLibrary:
+    """Get or create the voice library instance."""
+    global _voice_library
+    if _voice_library is None:
+        _voice_library = VoiceLibrary()
+    return _voice_library

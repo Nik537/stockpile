@@ -61,7 +61,7 @@ class BulkImageJob:
 
     job_id: str
     meta_prompt: str
-    model: str  # runpod-flux-schnell or runpod-flux-dev
+    model: str  # e.g. runware-flux-klein-4b, gemini-flash, nano-banana-pro
     width: int
     height: int
     total_count: int

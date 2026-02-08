@@ -154,9 +154,11 @@ def load_config() -> dict:
         # TTS (Text-to-Speech) settings
         # URL of Chatterbox-TTS-Server running on Colab
         "tts_server_url": os.getenv("TTS_SERVER_URL", ""),
-        # AI Image Generation settings (fal.ai)
+        # AI Image Generation settings
         "fal_api_key": os.getenv("FAL_API_KEY", ""),
-        "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "flux-klein"),
+        "runpod_api_key": os.getenv("RUNPOD_API_KEY", ""),
+        "runware_api_key": os.getenv("RUNWARE_API_KEY", ""),
+        "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "runware-flux-klein-4b"),
     }
 
     return config
@@ -279,19 +281,16 @@ def validate_config_with_warnings(config: dict) -> tuple[list[str], list[str]]:
             "YOUTUBE_API_KEY not set - outlier finder feature will have limited functionality"
         )
 
-    # FAL_API_KEY - recommended for image generation
-    if not config.get("fal_api_key"):
+    # RUNWARE_API_KEY - recommended for cheapest image generation
+    if not config.get("runware_api_key"):
         warnings.append(
-            "FAL_API_KEY not set - fal.ai image generation (Flux Klein, Z-Image) will be unavailable"
+            "RUNWARE_API_KEY not set - Runware image generation (Flux Klein, Z-Image) will be unavailable"
         )
 
-    # RUNPOD_API_KEY - recommended for TTS and image generation
-    # Note: We check for the key in config, but it might be loaded differently
-    # The config doesn't include runpod_api_key by default, so we check env directly
-    runpod_api_key = os.getenv("RUNPOD_API_KEY")
-    if not runpod_api_key:
+    # RUNPOD_API_KEY - recommended for TTS and Nano Banana Pro
+    if not config.get("runpod_api_key"):
         warnings.append(
-            "RUNPOD_API_KEY not set - RunPod TTS and Flux image generation will be unavailable"
+            "RUNPOD_API_KEY not set - RunPod TTS and Nano Banana Pro will be unavailable"
         )
 
     # Log warnings (they don't prevent operation but user should be aware)

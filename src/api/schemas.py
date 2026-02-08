@@ -212,7 +212,7 @@ class ImageGenerateRequest(BaseModel):
     """Request body for image generation."""
 
     prompt: str
-    model: str = "flux-klein"  # "flux-klein" or "z-image"
+    model: str = "runware-flux-klein-4b"
     width: int = 1024
     height: int = 1024
     num_images: int = 1
@@ -225,17 +225,18 @@ class ImageEditRequestBody(BaseModel):
 
     prompt: str
     image_url: str  # URL or base64 data URL
-    model: str = "flux-klein"
+    model: str = "nano-banana-pro"
     strength: float = 0.75
     seed: int | None = None
     guidance_scale: float = 7.5
+    mask_image: str | None = None  # base64 data URL for inpainting mask
 
 
 class RunPodImageGenerateRequest(BaseModel):
     """Request body for RunPod image generation."""
 
     prompt: str
-    model: str = "runpod-flux-schnell"  # "runpod-flux-dev" or "runpod-flux-schnell"
+    model: str = "nano-banana-pro"
     width: int = 1024
     height: int = 1024
     seed: int | None = None
@@ -246,6 +247,17 @@ class PublicTTSRequest(BaseModel):
 
     text: str
     voice: str = "Lucy"
+
+
+class VoiceResponse(BaseModel):
+    """Voice library entry response."""
+
+    id: str
+    name: str
+    is_preset: bool
+    audio_path: str
+    created_at: str
+    duration_seconds: float
 
 
 class BulkImagePromptsRequest(BaseModel):
@@ -271,6 +283,6 @@ class BulkImageGenerateRequest(BaseModel):
 
     job_id: str
     prompts: list[BulkImagePromptItem]
-    model: str = "runpod-flux-schnell"
+    model: str = "runware-flux-klein-4b"
     width: int = 1024
     height: int = 1024

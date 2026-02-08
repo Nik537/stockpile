@@ -17,7 +17,7 @@ export const useImageStore = create<ImageState>((set) => ({
   generatedImages: [],
   generating: false,
   error: null,
-  selectedModel: 'flux-klein',
+  selectedModel: 'runware-flux-klein-4b',
   generate: (images) => set({ generatedImages: images, generating: false }),
   setGenerating: (generating) => set({ generating }),
   setError: (error) => set({ error, generating: false }),

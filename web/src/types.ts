@@ -162,11 +162,8 @@ export interface TTSGenerationParams {
 
 // Image Generation Types
 export type ImageGenStatus = 'idle' | 'generating' | 'completed' | 'error'
-export type ImageGenMode = 'generate' | 'edit'
-export type ImageGenModel = 'flux-klein' | 'z-image' | 'runpod-flux-schnell' | 'runpod-flux-dev'
-
-// Provider type for routing to correct API
-export type ImageGenProvider = 'fal' | 'runpod'
+export type ImageGenMode = 'generate' | 'edit' | 'inpaint'
+export type ImageGenModel = 'runware-flux-klein-4b' | 'runware-z-image' | 'runware-flux-klein-9b' | 'gemini-flash' | 'nano-banana-pro'
 
 export interface ImageGenServerStatus {
   configured: boolean
@@ -210,6 +207,16 @@ export interface ImageEditParams {
   guidance_scale: number
 }
 
+export interface ImageInpaintParams {
+  prompt: string
+  image_url: string
+  mask_image: string
+  model: ImageGenModel
+  strength: number
+  seed?: number | null
+  guidance_scale: number
+}
+
 // Bulk Image Generation Types
 export type BulkImageStatus =
   | 'pending'
@@ -220,16 +227,11 @@ export type BulkImageStatus =
   | 'cancelled'
 
 export type BulkImageModel =
-  | 'runpod-flux-schnell'
-  | 'runpod-flux-dev'
-  | 'flux-klein'
-  | 'z-image'
-  | 'runpod-qwen-image'
-  | 'runpod-qwen-image-lora'
-  | 'runpod-seedream-3'
-  | 'runpod-seedream-4'
+  | 'runware-flux-klein-4b'
+  | 'runware-flux-klein-9b'
+  | 'runware-z-image'
   | 'gemini-flash'
-  | 'replicate-flux-klein'
+  | 'nano-banana-pro'
 
 export interface BulkImagePrompt {
   index: number
@@ -301,4 +303,14 @@ export interface BulkImagePromptsResponse {
   prompts: BulkImagePrompt[]
   estimated_cost: number
   estimated_time_seconds: number
+}
+
+// Voice Library Types
+export interface Voice {
+  id: string
+  name: string
+  is_preset: boolean
+  audio_path: string
+  created_at: string
+  duration_seconds: number
 }

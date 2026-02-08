@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum concurrent image generations by provider
 MAX_CONCURRENT_DEFAULT = 10
-MAX_CONCURRENT_REPLICATE = 1  # Replicate has strict rate limits for low-credit accounts
 MAX_CONCURRENT_GEMINI = 5  # Gemini has 15 RPM limit
-REPLICATE_MIN_REQUEST_INTERVAL = 11  # 6 RPM = 10s between requests, add 1s buffer
 
 
 class BulkImageService:
@@ -41,12 +39,8 @@ class BulkImageService:
         """
         self.ai_service = ai_service
         self.image_gen_service = image_gen_service
-        # Different semaphores for different providers (rate limit handling)
         self.semaphore_default = asyncio.Semaphore(MAX_CONCURRENT_DEFAULT)
-        self.semaphore_replicate = asyncio.Semaphore(MAX_CONCURRENT_REPLICATE)
         self.semaphore_gemini = asyncio.Semaphore(MAX_CONCURRENT_GEMINI)
-        # Track last Replicate request time for rate limiting
-        self._last_replicate_request_time: float = 0.0
 
     def generate_job_id(self) -> str:
         """Generate a unique job ID."""
@@ -54,35 +48,17 @@ class BulkImageService:
 
     # Model string to enum mapping
     MODEL_MAP = {
-        "runpod-flux-schnell": ImageGenerationModel.RUNPOD_FLUX_SCHNELL,
-        "runpod-flux-dev": ImageGenerationModel.RUNPOD_FLUX_DEV,
-        "flux-klein": ImageGenerationModel.FLUX_KLEIN,
-        "z-image": ImageGenerationModel.Z_IMAGE,
-        "runpod-qwen-image": ImageGenerationModel.RUNPOD_QWEN_IMAGE,
-        "runpod-qwen-image-lora": ImageGenerationModel.RUNPOD_QWEN_IMAGE_LORA,
-        "runpod-qwen-image-edit": ImageGenerationModel.RUNPOD_QWEN_IMAGE_EDIT,
-        "runpod-seedream-3": ImageGenerationModel.RUNPOD_SEEDREAM_3,
-        "runpod-seedream-4": ImageGenerationModel.RUNPOD_SEEDREAM_4,
-        # Gemini (FREE 500/day)
+        "runware-flux-klein-4b": ImageGenerationModel.RUNWARE_FLUX_KLEIN_4B,
+        "runware-flux-klein-9b": ImageGenerationModel.RUNWARE_FLUX_KLEIN_9B,
+        "runware-z-image": ImageGenerationModel.RUNWARE_Z_IMAGE,
         "gemini-flash": ImageGenerationModel.GEMINI_FLASH,
-        # Replicate
-        "replicate-flux-klein": ImageGenerationModel.REPLICATE_FLUX_KLEIN,
+        "nano-banana-pro": ImageGenerationModel.NANO_BANANA_PRO,
     }
 
     # Provider routing
-    RUNPOD_MODELS = {
-        "runpod-flux-schnell",
-        "runpod-flux-dev",
-        "runpod-qwen-image",
-        "runpod-qwen-image-lora",
-        "runpod-qwen-image-edit",
-        "runpod-seedream-3",
-        "runpod-seedream-4",
-    }
-
+    RUNWARE_MODELS = {"runware-flux-klein-4b", "runware-flux-klein-9b", "runware-z-image"}
     GEMINI_MODELS = {"gemini-flash"}
-
-    REPLICATE_MODELS = {"replicate-flux-klein"}
+    RUNPOD_MODELS = {"nano-banana-pro"}
 
     def calculate_estimated_cost(
         self,
@@ -95,19 +71,16 @@ class BulkImageService:
 
         Args:
             count: Number of images to generate
-            model: Model name (e.g., "runpod-flux-schnell")
+            model: Model name (e.g., "runware-flux-klein-4b")
             width: Image width
             height: Image height
 
         Returns:
             Estimated cost in USD
         """
-        megapixels = (width * height) / 1_000_000
-
-        # Map model string to enum for pricing lookup
-        model_enum = self.MODEL_MAP.get(model, ImageGenerationModel.RUNPOD_FLUX_SCHNELL)
-        price_per_mp = PRICING_PER_MP.get(model_enum, 0.0024)
-        return megapixels * count * price_per_mp
+        model_enum = self.MODEL_MAP.get(model, ImageGenerationModel.RUNWARE_FLUX_KLEIN_4B)
+        price = PRICING_PER_MP.get(model_enum, 0.0006)
+        return count * price
 
     def calculate_estimated_time(
         self,
@@ -123,11 +96,9 @@ class BulkImageService:
         Returns:
             Estimated time in seconds
         """
-        # Fast models: schnell, z-image, klein
-        fast_models = {"runpod-flux-schnell", "z-image", "flux-klein"}
+        fast_models = {"runware-flux-klein-4b", "runware-z-image"}
         time_per_image = 3 if model in fast_models else 6
 
-        # Calculate batches needed
         batches = (count + MAX_CONCURRENT_DEFAULT - 1) // MAX_CONCURRENT_DEFAULT
         return batches * time_per_image
 
@@ -145,10 +116,8 @@ class BulkImageService:
         Returns:
             List of BulkImagePrompt objects
         """
-        # Call AI service to generate prompts
         raw_prompts = self.ai_service.generate_bulk_image_prompts(meta_prompt, count)
 
-        # Convert to BulkImagePrompt objects
         prompts = []
         for i, raw in enumerate(raw_prompts):
             prompts.append(
@@ -182,31 +151,17 @@ class BulkImageService:
         Returns:
             BulkImageResult with success or failure
         """
-        # Select appropriate semaphore based on provider rate limits
-        if model in self.REPLICATE_MODELS:
-            semaphore = self.semaphore_replicate
-        elif model in self.GEMINI_MODELS:
+        if model in self.GEMINI_MODELS:
             semaphore = self.semaphore_gemini
         else:
             semaphore = self.semaphore_default
 
         async with semaphore:
-            # Enforce rate limiting for Replicate BEFORE the request
-            if model in self.REPLICATE_MODELS:
-                elapsed = time.time() - self._last_replicate_request_time
-                if elapsed < REPLICATE_MIN_REQUEST_INTERVAL:
-                    wait_time = REPLICATE_MIN_REQUEST_INTERVAL - elapsed
-                    logger.debug(f"Rate limiting: waiting {wait_time:.1f}s before Replicate request")
-                    await asyncio.sleep(wait_time)
-                # Update timestamp BEFORE request (so failures also count)
-                self._last_replicate_request_time = time.time()
-
             start_time = time.time()
 
             try:
-                # Map model string to enum
                 model_enum = self.MODEL_MAP.get(
-                    model, ImageGenerationModel.RUNPOD_FLUX_SCHNELL
+                    model, ImageGenerationModel.RUNWARE_FLUX_KLEIN_4B
                 )
 
                 request = ImageGenerationRequest(
@@ -218,19 +173,17 @@ class BulkImageService:
                 )
 
                 # Route to correct provider
-                if model in self.RUNPOD_MODELS:
-                    result = await self.image_gen_service.generate_runpod(request)
+                if model in self.RUNWARE_MODELS:
+                    result = await self.image_gen_service.generate_runware(request)
                 elif model in self.GEMINI_MODELS:
                     result = await self.image_gen_service.generate_gemini(request)
-                elif model in self.REPLICATE_MODELS:
-                    result = await self.image_gen_service.generate_replicate(request)
+                elif model in self.RUNPOD_MODELS:
+                    result = await self.image_gen_service.generate_runpod(request)
                 else:
-                    # fal.ai models (flux-klein, z-image)
-                    result = await self.image_gen_service.generate(request)
+                    result = await self.image_gen_service.generate_image(request)
 
                 generation_time_ms = int((time.time() - start_time) * 1000)
 
-                # Get the image URL
                 image_url = None
                 if result.images:
                     image_url = result.images[0].url
@@ -288,7 +241,6 @@ class BulkImageService:
         """
         job.status = "generating_images"
 
-        # Create tasks for all prompts
         tasks = []
         for prompt in job.prompts:
             task = asyncio.create_task(
@@ -301,7 +253,6 @@ class BulkImageService:
             )
             tasks.append(task)
 
-        # Process results as they complete
         total_cost = 0.0
         for coro in asyncio.as_completed(tasks):
             result = await coro
@@ -309,29 +260,24 @@ class BulkImageService:
 
             if result.status == "completed":
                 job.completed_count += 1
-                # Calculate cost for this image
-                megapixels = (result.width * result.height) / 1_000_000
                 model_enum = self.MODEL_MAP.get(
-                    job.model, ImageGenerationModel.RUNPOD_FLUX_SCHNELL
+                    job.model, ImageGenerationModel.RUNWARE_FLUX_KLEIN_4B
                 )
-                price_per_mp = PRICING_PER_MP.get(model_enum, 0.0024)
-                total_cost += megapixels * price_per_mp
+                price = PRICING_PER_MP.get(model_enum, 0.0006)
+                total_cost += price
             else:
                 job.failed_count += 1
 
             job.total_cost = total_cost
 
-            # Call progress callback if provided
             if on_progress:
                 try:
                     await on_progress(result)
                 except Exception as e:
                     logger.warning(f"Progress callback error: {e}")
 
-        # Sort results by index for consistent ordering
         job.results.sort(key=lambda r: r.index)
 
-        # Update final status
         if job.failed_count == job.total_count:
             job.status = "failed"
             job.error = "All image generations failed"

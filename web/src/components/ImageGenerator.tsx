@@ -1,36 +1,37 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   GeneratedImage,
-  ImageEditParams,
-  ImageGenerationParams,
   ImageGenerationResult,
   ImageGenMode,
   ImageGenModel,
   ImageGenServerStatus,
   ImageGenStatus,
 } from '../types'
+import InpaintingCanvas from './InpaintingCanvas'
 import './ImageGenerator.css'
 
 const API_BASE = ''  // Same origin
 const IMAGE_GEN_MODEL_KEY = 'stockpile_image_gen_model'
 
-// Helper to determine provider from model
-const getProvider = (model: ImageGenModel): 'fal' | 'runpod' => {
-  return model.startsWith('runpod-') ? 'runpod' : 'fal'
-}
+const MODEL_INFO = [
+  { id: 'runware-flux-klein-4b' as ImageGenModel, name: 'Flux Klein 4B', price: '$0.0006/img', badge: 'Cheapest', badgeClass: 'budget' },
+  { id: 'runware-z-image' as ImageGenModel, name: 'Z-Image Turbo', price: '$0.0006/img', badge: 'Fast', badgeClass: '' },
+  { id: 'runware-flux-klein-9b' as ImageGenModel, name: 'Flux Klein 9B', price: '$0.0008/img', badge: 'Quality', badgeClass: 'quality' },
+  { id: 'gemini-flash' as ImageGenModel, name: 'Gemini Flash', price: 'FREE', badge: 'Free - 500/day', badgeClass: 'free' },
+  { id: 'nano-banana-pro' as ImageGenModel, name: 'Nano Banana Pro', price: '~$0.04/img', badge: 'Best Quality', badgeClass: 'premium' },
+]
 
 function ImageGenerator() {
   // Mode and model state
   const [mode, setMode] = useState<ImageGenMode>('generate')
   const [model, setModel] = useState<ImageGenModel>(() => {
     const saved = localStorage.getItem(IMAGE_GEN_MODEL_KEY)
-    const validModels: ImageGenModel[] = ['flux-klein', 'z-image', 'runpod-flux-schnell', 'runpod-flux-dev']
-    return validModels.includes(saved as ImageGenModel) ? (saved as ImageGenModel) : 'runpod-flux-schnell'
+    const validModels: ImageGenModel[] = ['runware-flux-klein-4b', 'runware-z-image', 'runware-flux-klein-9b', 'gemini-flash', 'nano-banana-pro']
+    return validModels.includes(saved as ImageGenModel) ? (saved as ImageGenModel) : 'runware-flux-klein-4b'
   })
 
-  // Server status (for fal.ai and RunPod)
+  // Server status
   const [serverStatus, setServerStatus] = useState<ImageGenServerStatus | null>(null)
-  const [runpodStatus, setRunpodStatus] = useState<{ configured: boolean; available: boolean; error?: string } | null>(null)
 
   // Generation state
   const [prompt, setPrompt] = useState('')
@@ -50,44 +51,35 @@ function ImageGenerator() {
   const [inputImagePreview, setInputImagePreview] = useState<string | null>(null)
   const [strength, setStrength] = useState(0.75)
 
+  // Inpainting state
+  const [inpaintImageUrl, setInpaintImageUrl] = useState<string | null>(null)
+
   // Save model preference
   useEffect(() => {
     localStorage.setItem(IMAGE_GEN_MODEL_KEY, model)
   }, [model])
 
-  // Check server status on mount (both fal.ai and RunPod)
-  const checkServerStatus = useCallback(async () => {
-    // Check fal.ai status
+  // Check server status on mount
+  const checkStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/image-generation/status`)
-      const data: ImageGenServerStatus = await response.json()
+      const response = await fetch(`${API_BASE}/api/image/status`)
+      const data = await response.json()
       setServerStatus(data)
     } catch (e) {
-      console.error('Failed to check fal.ai image generation status:', e)
-      setServerStatus({ configured: false, available: false, error: 'Failed to connect to server' })
-    }
-
-    // Check RunPod status
-    try {
-      const response = await fetch(`${API_BASE}/api/runpod-image/status`)
-      const data = await response.json()
-      setRunpodStatus(data)
-    } catch (e) {
-      console.error('Failed to check RunPod image generation status:', e)
-      setRunpodStatus({ configured: false, available: false, error: 'Failed to connect to server' })
+      console.error('Failed to check image generation status:', e)
+      setServerStatus({ configured: false, available: false, error: 'Failed to connect' })
     }
   }, [])
 
   useEffect(() => {
-    checkServerStatus()
-  }, [checkServerStatus])
+    checkStatus()
+  }, [checkStatus])
 
   // Handle image file selection for edit mode
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       setInputImage(file)
-      // Create preview URL
       const url = URL.createObjectURL(file)
       setInputImagePreview(url)
     }
@@ -110,56 +102,24 @@ function ImageGenerator() {
       return
     }
 
-    const provider = getProvider(model)
-
-    // Check provider-specific configuration
-    if (provider === 'fal' && !serverStatus?.configured) {
-      setError('fal.ai not configured. Set FAL_API_KEY in .env')
-      return
-    }
-    if (provider === 'runpod' && !runpodStatus?.configured) {
-      setError('RunPod not configured. Set RUNPOD_API_KEY in .env')
-      return
-    }
-
     setStatus('generating')
     setError(null)
     setResult(null)
 
     try {
-      let response: Response
-
-      if (provider === 'runpod') {
-        // Use RunPod API
-        const params = {
-          prompt: prompt.trim(),
-          model,
-          width,
-          height,
-          seed: seed ? parseInt(seed, 10) : null,
-        }
-        response = await fetch(`${API_BASE}/api/runpod-image/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        })
-      } else {
-        // Use fal.ai API
-        const params: ImageGenerationParams = {
+      const response = await fetch(`${API_BASE}/api/image/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           prompt: prompt.trim(),
           model,
           width,
           height,
           num_images: numImages,
-          guidance_scale: guidanceScale,
           seed: seed ? parseInt(seed, 10) : null,
-        }
-        response = await fetch(`${API_BASE}/api/generate-image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        })
-      }
+          guidance_scale: guidanceScale,
+        }),
+      })
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -175,7 +135,7 @@ function ImageGenerator() {
     }
   }
 
-  // Edit image
+  // Edit image (upload-based)
   const handleEdit = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
@@ -187,32 +147,24 @@ function ImageGenerator() {
       return
     }
 
-    if (!serverStatus?.configured) {
-      setError('Image generation not configured. Set FAL_API_KEY in .env')
-      return
-    }
-
     setStatus('generating')
     setError(null)
     setResult(null)
 
     try {
-      // Convert image to data URL
       const imageDataUrl = await fileToDataUrl(inputImage)
 
-      const params: ImageEditParams = {
-        prompt: prompt.trim(),
-        image_url: imageDataUrl,
-        model,
-        strength,
-        guidance_scale: guidanceScale,
-        seed: seed ? parseInt(seed, 10) : null,
-      }
-
-      const response = await fetch(`${API_BASE}/api/edit-image`, {
+      const response = await fetch(`${API_BASE}/api/image/edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          image_url: imageDataUrl,
+          model,
+          strength,
+          guidance_scale: guidanceScale,
+          seed: seed ? parseInt(seed, 10) : null,
+        }),
       })
 
       if (!response.ok) {
@@ -229,11 +181,59 @@ function ImageGenerator() {
     }
   }
 
+  // Inpainting apply handler
+  const handleInpaintApply = async (maskDataUrl: string, editPrompt: string) => {
+    if (!inpaintImageUrl) return
+
+    setStatus('generating')
+    setError(null)
+
+    try {
+      const response = await fetch(`${API_BASE}/api/image/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: editPrompt,
+          image_url: inpaintImageUrl,
+          mask_image: maskDataUrl,
+          model: 'nano-banana-pro',
+          strength: 0.75,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Inpainting failed')
+      }
+
+      const data: ImageGenerationResult = await response.json()
+      setResult(data)
+      setStatus('completed')
+      setInpaintImageUrl(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Inpainting failed')
+      setStatus('error')
+    }
+  }
+
+  // Enter inpaint mode from a generated result
+  const enterInpaintMode = (imageUrl: string) => {
+    setInpaintImageUrl(imageUrl)
+    setMode('inpaint')
+    setError(null)
+  }
+
+  // Cancel inpainting
+  const cancelInpaint = () => {
+    setInpaintImageUrl(null)
+    setMode('generate')
+  }
+
   // Handle form submission
   const handleSubmit = () => {
     if (mode === 'generate') {
       handleGenerate()
-    } else {
+    } else if (mode === 'edit') {
       handleEdit()
     }
   }
@@ -249,7 +249,7 @@ function ImageGenerator() {
     document.body.removeChild(a)
   }
 
-  // Preset dimensions with exact ratios
+  // Preset dimensions
   const dimensionPresets = [
     { label: 'Square (1:1)', width: 1024, height: 1024 },
     { label: 'Landscape (16:9)', width: 1920, height: 1080 },
@@ -260,12 +260,71 @@ function ImageGenerator() {
     { label: 'Social (4:5)', width: 1080, height: 1350 },
   ]
 
-  // Check if ready based on selected model's provider
-  const currentProvider = getProvider(model)
-  const isReadyToGenerate = currentProvider === 'runpod'
-    ? runpodStatus?.configured && runpodStatus?.available
-    : serverStatus?.configured && serverStatus?.available
+  const isReadyToGenerate = serverStatus?.configured && serverStatus?.available
   const isGenerating = status === 'generating'
+
+  // If in inpainting mode, show the inpainting canvas
+  if (mode === 'inpaint' && inpaintImageUrl) {
+    return (
+      <section className="imagegen-section">
+        <div className="section-header">
+          <div className="section-icon">&#x1F3A8;</div>
+          <div>
+            <h2>AI Image Generator</h2>
+            <p className="section-description">
+              Inpainting mode - draw on the image to select areas to edit
+            </p>
+          </div>
+        </div>
+
+        {error && (
+          <div className="imagegen-error">
+            <span className="error-icon">&#x26A0;</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <InpaintingCanvas
+          imageUrl={inpaintImageUrl}
+          onApplyEdit={handleInpaintApply}
+          onCancel={cancelInpaint}
+          isGenerating={isGenerating}
+        />
+
+        {/* Show result after inpainting */}
+        {result && (
+          <div className="imagegen-result">
+            <div className="result-header">
+              <h3>Edited Image</h3>
+              <div className="result-meta">
+                <span>Model: {result.model}</span>
+                <span>Time: {(result.generation_time_ms / 1000).toFixed(1)}s</span>
+                <span>Cost: ~${result.cost_estimate.toFixed(4)}</span>
+              </div>
+            </div>
+            <div className="result-grid">
+              {result.images.map((image, index) => (
+                <div key={index} className="result-image">
+                  <img src={image.url} alt={`Edited ${index + 1}`} />
+                  <div className="image-overlay">
+                    <span className="image-size">{image.width}x{image.height}</span>
+                    <div className="image-actions">
+                      <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
+                        Edit
+                      </button>
+                      <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
+                        Download
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section className="imagegen-section">
@@ -274,7 +333,7 @@ function ImageGenerator() {
         <div>
           <h2>AI Image Generator</h2>
           <p className="section-description">
-            Generate images using Flux models via RunPod or fal.ai
+            Generate images using Runware, Gemini Flash, and Nano Banana Pro
           </p>
         </div>
       </div>
@@ -283,25 +342,8 @@ function ImageGenerator() {
       <div className="imagegen-status-panel">
         <h3>Status</h3>
         <div className="status-grid">
-          {/* RunPod Status */}
           <div className="status-item">
-            <span className="status-label">RunPod:</span>
-            {runpodStatus?.configured ? (
-              <span className="connection-status success">
-                <span className="status-dot connected"></span>
-                <span>Ready</span>
-              </span>
-            ) : (
-              <span className="connection-status error">
-                <span className="status-dot"></span>
-                <span>Not configured</span>
-              </span>
-            )}
-          </div>
-
-          {/* fal.ai Status */}
-          <div className="status-item">
-            <span className="status-label">fal.ai:</span>
+            <span className="status-label">Image API:</span>
             {serverStatus?.configured ? (
               <span className="connection-status success">
                 <span className="status-dot connected"></span>
@@ -310,15 +352,15 @@ function ImageGenerator() {
             ) : (
               <span className="connection-status error">
                 <span className="status-dot"></span>
-                <span>Not configured</span>
+                <span>{serverStatus?.error || 'Not configured'}</span>
               </span>
             )}
           </div>
         </div>
 
-        {!runpodStatus?.configured && !serverStatus?.configured && (
+        {!serverStatus?.configured && (
           <p className="setup-hint">
-            Set <code>RUNPOD_API_KEY</code> or <code>FAL_API_KEY</code> in your <code>.env</code> file.
+            Set <code>RUNWARE_API_KEY</code> and/or <code>GEMINI_API_KEY</code> in your <code>.env</code> file.
           </p>
         )}
       </div>
@@ -326,122 +368,41 @@ function ImageGenerator() {
       {/* Mode Selector */}
       <div className="imagegen-mode-selector">
         <h3>Mode</h3>
-        <div className="mode-options">
-          <label className={`mode-option ${mode === 'generate' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-mode"
-              value="generate"
-              checked={mode === 'generate'}
-              onChange={() => setMode('generate')}
-            />
-            <div className="mode-content">
-              <div className="mode-header">
-                <span className="mode-name">Text to Image</span>
-              </div>
-              <span className="mode-desc">Generate new images from text prompts</span>
-            </div>
-          </label>
-
-          <label className={`mode-option ${mode === 'edit' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-mode"
-              value="edit"
-              checked={mode === 'edit'}
-              onChange={() => setMode('edit')}
-            />
-            <div className="mode-content">
-              <div className="mode-header">
-                <span className="mode-name">Image Editing</span>
-              </div>
-              <span className="mode-desc">Transform existing images with prompts</span>
-            </div>
-          </label>
+        <div className="mode-tabs">
+          <button
+            className={`mode-tab ${mode === 'generate' ? 'active' : ''}`}
+            onClick={() => setMode('generate')}
+          >
+            Text to Image
+          </button>
+          <button
+            className={`mode-tab ${mode === 'edit' ? 'active' : ''}`}
+            onClick={() => setMode('edit')}
+          >
+            Image Editing
+          </button>
         </div>
       </div>
 
-      {/* Model Selector */}
+      {/* Model Selector - Cards */}
       <div className="imagegen-model-selector">
         <h3>Model</h3>
-
-        {/* RunPod Models */}
-        <h4 className="model-group-header">RunPod (Recommended)</h4>
-        <div className="model-options">
-          <label className={`model-option ${model === 'runpod-flux-schnell' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-model"
-              value="runpod-flux-schnell"
-              checked={model === 'runpod-flux-schnell'}
-              onChange={() => setModel('runpod-flux-schnell')}
-              disabled={!runpodStatus?.configured}
-            />
-            <div className="model-content">
-              <div className="model-header">
-                <span className="model-name">Flux Schnell</span>
-                <span className="model-badge">Fast</span>
+        <div className="model-cards">
+          {MODEL_INFO.map((m) => (
+            <button
+              key={m.id}
+              className={`model-card ${model === m.id ? 'selected' : ''}`}
+              onClick={() => setModel(m.id)}
+            >
+              <div className="model-card-header">
+                <span className="model-name">{m.name}</span>
+                {m.badge && (
+                  <span className={`model-badge ${m.badgeClass}`}>{m.badge}</span>
+                )}
               </div>
-              <span className="model-desc">~3 seconds, ~$0.0024/MP - Best for quick iterations</span>
-            </div>
-          </label>
-
-          <label className={`model-option ${model === 'runpod-flux-dev' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-model"
-              value="runpod-flux-dev"
-              checked={model === 'runpod-flux-dev'}
-              onChange={() => setModel('runpod-flux-dev')}
-              disabled={!runpodStatus?.configured}
-            />
-            <div className="model-content">
-              <div className="model-header">
-                <span className="model-name">Flux Dev</span>
-                <span className="model-badge quality">Quality</span>
-              </div>
-              <span className="model-desc">~6 seconds, ~$0.02/MP - Best quality results</span>
-            </div>
-          </label>
-        </div>
-
-        {/* fal.ai Models */}
-        <h4 className="model-group-header">fal.ai</h4>
-        <div className="model-options">
-          <label className={`model-option ${model === 'flux-klein' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-model"
-              value="flux-klein"
-              checked={model === 'flux-klein'}
-              onChange={() => setModel('flux-klein')}
-              disabled={!serverStatus?.configured}
-            />
-            <div className="model-content">
-              <div className="model-header">
-                <span className="model-name">Flux 2 Klein</span>
-              </div>
-              <span className="model-desc">Black Forest Labs - High quality, ~$0.012/MP</span>
-            </div>
-          </label>
-
-          <label className={`model-option ${model === 'z-image' ? 'selected' : ''}`}>
-            <input
-              type="radio"
-              name="imagegen-model"
-              value="z-image"
-              checked={model === 'z-image'}
-              onChange={() => setModel('z-image')}
-              disabled={!serverStatus?.configured}
-            />
-            <div className="model-content">
-              <div className="model-header">
-                <span className="model-name">Z-Image Turbo</span>
-                <span className="model-badge budget">Budget</span>
-              </div>
-              <span className="model-desc">Alibaba - Fast & affordable, ~$0.005/MP</span>
-            </div>
-          </label>
+              <span className="model-price">{m.price}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -670,12 +631,14 @@ function ImageGenerator() {
                 <img src={image.url} alt={`Generated ${index + 1}`} />
                 <div className="image-overlay">
                   <span className="image-size">{image.width}x{image.height}</span>
-                  <button
-                    className="btn-download-image"
-                    onClick={() => handleDownload(image, index)}
-                  >
-                    Download
-                  </button>
+                  <div className="image-actions">
+                    <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
+                      Edit
+                    </button>
+                    <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
+                      Download
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -693,21 +656,21 @@ function ImageGenerator() {
           <div className="setup-content">
             <ol>
               <li>
-                Create an account at{' '}
-                <a href="https://fal.ai" target="_blank" rel="noopener noreferrer">
-                  fal.ai
+                Get a Runware API key from{' '}
+                <a href="https://runware.ai" target="_blank" rel="noopener noreferrer">
+                  runware.ai
                 </a>
               </li>
               <li>
-                Go to{' '}
-                <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener noreferrer">
-                  API Keys
+                Get a Gemini API key from{' '}
+                <a href="https://ai.google.dev" target="_blank" rel="noopener noreferrer">
+                  ai.google.dev
                 </a>{' '}
-                and create a new key
+                (free tier: 500 images/day)
               </li>
               <li>
                 Add to your <code>.env</code>:
-                <pre className="code-block">FAL_API_KEY=your_api_key_here</pre>
+                <pre className="code-block">{`RUNWARE_API_KEY=your_runware_key\nGEMINI_API_KEY=your_gemini_key`}</pre>
               </li>
               <li>Restart the backend server</li>
             </ol>
@@ -715,11 +678,14 @@ function ImageGenerator() {
             <div className="pricing-info">
               <h5>Pricing</h5>
               <ul>
-                <li><strong>Flux 2 Klein:</strong> ~$0.009-0.014 per megapixel</li>
-                <li><strong>Z-Image Turbo:</strong> ~$0.005 per megapixel</li>
+                <li><strong>Flux Klein 4B:</strong> $0.0006/image (cheapest)</li>
+                <li><strong>Z-Image Turbo:</strong> $0.0006/image (fast)</li>
+                <li><strong>Flux Klein 9B:</strong> $0.0008/image (quality)</li>
+                <li><strong>Gemini Flash:</strong> FREE - 500 images/day</li>
+                <li><strong>Nano Banana Pro:</strong> ~$0.04/image (best quality)</li>
               </ul>
               <p className="pricing-example">
-                Example: 1024x1024 image (~1MP) costs ~$0.005-0.014
+                Most images cost less than $0.001 - Gemini Flash is completely free
               </p>
             </div>
           </div>
