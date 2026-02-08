@@ -165,11 +165,19 @@ export type ImageGenStatus = 'idle' | 'generating' | 'completed' | 'error'
 export type ImageGenMode = 'generate' | 'edit' | 'inpaint'
 export type ImageGenModel = 'runware-flux-klein-4b' | 'runware-z-image' | 'runware-flux-klein-9b' | 'gemini-flash' | 'nano-banana-pro'
 
-export interface ImageGenServerStatus {
+export interface ImageGenProviderStatus {
   configured: boolean
   available: boolean
-  default_model?: string
+  models?: string[]
+  free_quota?: string
   error?: string
+}
+
+export interface ImageGenServerStatus {
+  runware: ImageGenProviderStatus
+  gemini: ImageGenProviderStatus
+  runpod: ImageGenProviderStatus
+  default_model?: string
 }
 
 export interface GeneratedImage {

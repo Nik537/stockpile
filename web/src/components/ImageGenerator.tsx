@@ -67,7 +67,12 @@ function ImageGenerator() {
       setServerStatus(data)
     } catch (e) {
       console.error('Failed to check image generation status:', e)
-      setServerStatus({ configured: false, available: false, error: 'Failed to connect' })
+      const fallback: ImageGenServerStatus = {
+        runware: { configured: false, available: false },
+        gemini: { configured: false, available: false },
+        runpod: { configured: false, available: false },
+      }
+      setServerStatus(fallback)
     }
   }, [])
 
@@ -260,7 +265,7 @@ function ImageGenerator() {
     { label: 'Social (4:5)', width: 1080, height: 1350 },
   ]
 
-  const isReadyToGenerate = serverStatus?.configured && serverStatus?.available
+  const isReadyToGenerate = serverStatus?.runware?.configured || serverStatus?.gemini?.configured || serverStatus?.runpod?.configured
   const isGenerating = status === 'generating'
 
   // If in inpainting mode, show the inpainting canvas
@@ -339,31 +344,36 @@ function ImageGenerator() {
       </div>
 
       {/* Server Status */}
-      <div className="imagegen-status-panel">
-        <h3>Status</h3>
-        <div className="status-grid">
-          <div className="status-item">
-            <span className="status-label">Image API:</span>
-            {serverStatus?.configured ? (
-              <span className="connection-status success">
-                <span className="status-dot connected"></span>
-                <span>Ready</span>
-              </span>
-            ) : (
-              <span className="connection-status error">
-                <span className="status-dot"></span>
-                <span>{serverStatus?.error || 'Not configured'}</span>
-              </span>
+      {(() => {
+        const anyConfigured = serverStatus?.runware?.configured || serverStatus?.gemini?.configured || serverStatus?.runpod?.configured
+        return (
+          <div className="imagegen-status-panel">
+            <h3>Status</h3>
+            <div className="status-grid">
+              <div className="status-item">
+                <span className="status-label">Image API:</span>
+                {anyConfigured ? (
+                  <span className="connection-status success">
+                    <span className="status-dot connected"></span>
+                    <span>Ready</span>
+                  </span>
+                ) : (
+                  <span className="connection-status error">
+                    <span className="status-dot"></span>
+                    <span>Not configured</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {!anyConfigured && (
+              <p className="setup-hint">
+                Set <code>RUNWARE_API_KEY</code> and/or <code>GEMINI_API_KEY</code> in your <code>.env</code> file.
+              </p>
             )}
           </div>
-        </div>
-
-        {!serverStatus?.configured && (
-          <p className="setup-hint">
-            Set <code>RUNWARE_API_KEY</code> and/or <code>GEMINI_API_KEY</code> in your <code>.env</code> file.
-          </p>
-        )}
-      </div>
+        )
+      })()}
 
       {/* Mode Selector */}
       <div className="imagegen-mode-selector">

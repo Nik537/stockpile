@@ -115,15 +115,17 @@ async def generate_tts(
     if voice_id:
         # Use voice from library
         library = get_voice_library()
+        voice = library.get_voice(voice_id)
+        if not voice:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Voice {voice_id} not found",
+            )
+        # Presets without audio = no voice cloning (default voice)
         audio_path = library.get_audio_path(voice_id)
         if audio_path:
             voice_path = str(audio_path)
             is_library_voice = True
-        else:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Voice {voice_id} not found or has no audio",
-            )
     elif voice and voice.filename:
         # Save uploaded voice file temporarily
         upload_dir = Path("uploads/tts_voices")
