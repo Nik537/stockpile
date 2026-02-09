@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { TTSStatus } from '../types'
+import { useJobQueueStore } from '../stores/useJobQueueStore'
 import VoiceLibrary from './VoiceLibrary'
 import './TTSGenerator.css'
 
@@ -44,6 +44,12 @@ interface AllStatus {
   colab: any
 }
 
+interface TTSResult {
+  jobId: string
+  audioUrl: string
+  filename: string
+}
+
 function TTSGenerator() {
   // Voice selection state
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null)
@@ -56,18 +62,19 @@ function TTSGenerator() {
 
   // Generation state
   const [text, setText] = useState('')
-  const [status, setStatus] = useState<TTSStatus>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitFlash, setSubmitFlash] = useState(false)
 
   // Chatterbox params (shared between original + extended)
-  const [exaggeration, setExaggeration] = useState(0.5)
-  const [cfgWeight, setCfgWeight] = useState(0.5)
+  const [exaggeration, setExaggeration] = useState(0.4)
+  const [cfgWeight, setCfgWeight] = useState(0.3)
   const [temperature, setTemperature] = useState(0.8)
 
   // Chatterbox Extended-only params
-  const [numCandidates, setNumCandidates] = useState(1)
-  const [enableDenoising, setEnableDenoising] = useState(false)
-  const [enableWhisperValidation, setEnableWhisperValidation] = useState(false)
+  const [numCandidates, setNumCandidates] = useState(3)
+  const [enableDenoising, setEnableDenoising] = useState(true)
+  const [enableWhisperValidation, setEnableWhisperValidation] = useState(true)
 
   // Qwen3-specific params
   const [qwen3Language, setQwen3Language] = useState('auto')
@@ -76,15 +83,46 @@ function TTSGenerator() {
   const [qwen3Temperature, setQwen3Temperature] = useState(0.7)
   const [qwen3TopP, setQwen3TopP] = useState(0.9)
   const [voiceReferenceTranscript, setVoiceReferenceTranscript] = useState('')
+  const [isTranscribing, setIsTranscribing] = useState(false)
 
-  // Playback speed
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0)
-  const audioRef = useRef<HTMLAudioElement>(null)
+  // Completed results array
+  const [results, setResults] = useState<TTSResult[]>([])
 
-  // Result
-  const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
-  const [downloadFilename, setDownloadFilename] = useState<string>('tts_output.wav')
+  // Playback speed per result
+  const [playbackSpeeds, setPlaybackSpeeds] = useState<Record<string, number>>({})
+  const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
+
+  // Job queue store
+  const { jobs, addJob, connectWebSocket } = useJobQueueStore()
+
+  // Track which job IDs we've already fetched results for
+  const fetchedJobIds = useRef<Set<string>>(new Set())
+
+  // Subscribe to job completions and fetch audio
+  useEffect(() => {
+    const ttsJobs = jobs.filter(j => j.type === 'tts' && j.status === 'completed')
+    for (const job of ttsJobs) {
+      if (fetchedJobIds.current.has(job.id)) continue
+      fetchedJobIds.current.add(job.id)
+
+      // Fetch audio from the job endpoint
+      fetch(`${API_BASE}/api/tts/jobs/${job.id}/audio`)
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch audio')
+          const contentDisposition = res.headers.get('content-disposition')
+          const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/i)
+          const filename = filenameMatch?.[1] || `tts_${job.id}.wav`
+          return res.blob().then(blob => ({ blob, filename }))
+        })
+        .then(({ blob, filename }) => {
+          const url = URL.createObjectURL(blob)
+          setResults(prev => [{ jobId: job.id, audioUrl: url, filename }, ...prev])
+        })
+        .catch(err => {
+          console.error(`Failed to fetch TTS result for job ${job.id}:`, err)
+        })
+    }
+  }, [jobs])
 
   // Check all endpoint statuses
   const checkStatus = useCallback(async () => {
@@ -101,12 +139,13 @@ function TTSGenerator() {
     checkStatus()
   }, [checkStatus])
 
-  // Sync playback speed to audio element
+  // Sync playback speed to audio elements
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = playbackSpeed
+    for (const [jobId, speed] of Object.entries(playbackSpeeds)) {
+      const el = audioRefs.current[jobId]
+      if (el) el.playbackRate = speed
     }
-  }, [playbackSpeed, audioUrl])
+  }, [playbackSpeeds])
 
   // Determine which mode string to send based on selected model
   const getModeForModel = (model: TTSModel): string => {
@@ -127,7 +166,31 @@ function TTSGenerator() {
     }
   }
 
-  // Generate TTS
+  // Auto-transcribe voice reference using Gemini
+  const handleAutoTranscribe = async () => {
+    if (!selectedVoiceId) return
+    setIsTranscribing(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/tts/voices/${selectedVoiceId}/transcribe`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Transcription failed' }))
+        setError(err.detail || 'Transcription failed')
+        return
+      }
+      const data = await res.json()
+      if (data.transcript) {
+        setVoiceReferenceTranscript(data.transcript)
+      }
+    } catch (e) {
+      setError('Failed to auto-transcribe voice reference')
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
+  // Generate TTS (async job)
   const handleGenerate = async () => {
     if (!text.trim()) {
       setError('Please enter some text')
@@ -139,11 +202,8 @@ function TTSGenerator() {
       return
     }
 
-    setStatus('generating')
+    setSubmitting(true)
     setError(null)
-    setAudioUrl(null)
-    setAudioBlob(null)
-    setDownloadFilename('tts_output.wav')
 
     try {
       const formData = new FormData()
@@ -186,32 +246,46 @@ function TTSGenerator() {
         throw new Error(errorData.detail || 'Generation failed')
       }
 
-      const blob = await response.blob()
-      const contentDisposition = response.headers.get('content-disposition')
-      const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/i)
-      const filename = filenameMatch?.[1] || `tts_${Date.now()}.wav`
-      const url = URL.createObjectURL(blob)
+      const data = await response.json()
+      const jobId = data.job_id
 
-      setAudioBlob(blob)
-      setAudioUrl(url)
-      setDownloadFilename(filename)
-      setStatus('completed')
+      // Add to job queue
+      addJob({
+        id: jobId,
+        type: 'tts',
+        status: 'processing',
+        label: `TTS: ${text.trim().slice(0, 40)}...`,
+        createdAt: new Date().toISOString(),
+      })
+
+      // Connect WebSocket for real-time updates
+      connectWebSocket(jobId, 'tts')
+
+      // Brief flash feedback
+      setSubmitFlash(true)
+      setTimeout(() => setSubmitFlash(false), 1500)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')
-      setStatus('error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // Download audio
-  const handleDownload = () => {
-    if (!audioBlob || !audioUrl) return
-
+  const handleDownload = (result: TTSResult) => {
     const a = document.createElement('a')
-    a.href = audioUrl
-    a.download = downloadFilename
+    a.href = result.audioUrl
+    a.download = result.filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+  }
+
+  const getSpeed = (jobId: string) => playbackSpeeds[jobId] ?? 1.0
+  const setSpeed = (jobId: string, speed: number) => {
+    setPlaybackSpeeds(prev => ({ ...prev, [jobId]: speed }))
+    const el = audioRefs.current[jobId]
+    if (el) el.playbackRate = speed
   }
 
   // Character count with estimated duration
@@ -242,7 +316,6 @@ function TTSGenerator() {
               key={opt.value}
               className={`model-option ${selectedModel === opt.value ? 'active' : ''}`}
               onClick={() => setSelectedModel(opt.value)}
-              disabled={status === 'generating'}
             >
               <span className="model-name">{opt.label}</span>
               <span className="model-desc">{opt.description}</span>
@@ -265,7 +338,7 @@ function TTSGenerator() {
       <VoiceLibrary
         selectedVoiceId={selectedVoiceId}
         onSelectVoice={setSelectedVoiceId}
-        disabled={status === 'generating'}
+        disabled={false}
       />
 
       {/* Text Input + Parameters */}
@@ -283,7 +356,6 @@ function TTSGenerator() {
             onChange={(e) => setText(e.target.value)}
             placeholder="Enter the text you want to convert to speech. The server handles chunking automatically, so you can paste long texts."
             rows={8}
-            disabled={status === 'generating'}
           />
         </div>
 
@@ -294,20 +366,34 @@ function TTSGenerator() {
               Voice Reference Transcript (optional)
               <span className="param-hint">What is said in the reference audio — improves cloning accuracy</span>
             </label>
-            <input
-              id="voice-ref-transcript"
-              type="text"
-              value={voiceReferenceTranscript}
-              onChange={(e) => setVoiceReferenceTranscript(e.target.value)}
-              placeholder="Transcript of the voice reference audio..."
-              disabled={status === 'generating'}
-            />
+            <div className="transcript-input-row">
+              <input
+                id="voice-ref-transcript"
+                type="text"
+                value={voiceReferenceTranscript}
+                onChange={(e) => setVoiceReferenceTranscript(e.target.value)}
+                placeholder="Transcript of the voice reference audio..."
+              />
+              <button
+                type="button"
+                className="btn-auto-transcribe"
+                onClick={handleAutoTranscribe}
+                disabled={isTranscribing || !selectedVoiceId}
+                title="Auto-transcribe using Gemini (free)"
+              >
+                {isTranscribing ? (
+                  <span className="loading-spinner-sm" />
+                ) : (
+                  'Auto Generate'
+                )}
+              </button>
+            </div>
           </div>
         )}
 
         {/* Fine-tune parameters */}
-        <details className="advanced-params">
-          <summary>Fine-tune (optional)</summary>
+        <details className="advanced-params" open>
+          <summary>Fine-tune</summary>
           <div className="params-grid">
             {/* Chatterbox params */}
             {isChatterbox && (
@@ -324,7 +410,6 @@ function TTSGenerator() {
                     step="0.05"
                     value={exaggeration}
                     onChange={(e) => setExaggeration(parseFloat(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                   <span className="param-hint">Voice expressiveness (0=neutral, 1=dramatic)</span>
                 </div>
@@ -341,7 +426,6 @@ function TTSGenerator() {
                     step="0.05"
                     value={cfgWeight}
                     onChange={(e) => setCfgWeight(parseFloat(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                   <span className="param-hint">Adherence to text (higher=more accurate)</span>
                 </div>
@@ -358,7 +442,6 @@ function TTSGenerator() {
                     step="0.05"
                     value={temperature}
                     onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                   <span className="param-hint">Variation in speech (lower=more consistent)</span>
                 </div>
@@ -380,7 +463,6 @@ function TTSGenerator() {
                     step="1"
                     value={numCandidates}
                     onChange={(e) => setNumCandidates(parseInt(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                   <span className="param-hint">Generate multiple and pick the best (slower but higher quality)</span>
                 </div>
@@ -391,7 +473,6 @@ function TTSGenerator() {
                       type="checkbox"
                       checked={enableDenoising}
                       onChange={(e) => setEnableDenoising(e.target.checked)}
-                      disabled={status === 'generating'}
                     />
                     Enable Denoising
                   </label>
@@ -404,7 +485,6 @@ function TTSGenerator() {
                       type="checkbox"
                       checked={enableWhisperValidation}
                       onChange={(e) => setEnableWhisperValidation(e.target.checked)}
-                      disabled={status === 'generating'}
                     />
                     Whisper Validation
                   </label>
@@ -422,7 +502,6 @@ function TTSGenerator() {
                     id="qwen3-language"
                     value={qwen3Language}
                     onChange={(e) => setQwen3Language(e.target.value)}
-                    disabled={status === 'generating'}
                   >
                     {QWEN3_LANGUAGES.map(l => (
                       <option key={l.value} value={l.value}>{l.label}</option>
@@ -436,7 +515,6 @@ function TTSGenerator() {
                     id="qwen3-speaker"
                     value={qwen3Speaker}
                     onChange={(e) => setQwen3Speaker(e.target.value)}
-                    disabled={status === 'generating'}
                   >
                     <option value="">None (use voice reference)</option>
                     {QWEN3_SPEAKERS.filter(Boolean).map(s => (
@@ -456,7 +534,6 @@ function TTSGenerator() {
                     value={qwen3Instruction}
                     onChange={(e) => setQwen3Instruction(e.target.value)}
                     placeholder='e.g. "Speak with excitement" or "Whisper softly"'
-                    disabled={status === 'generating'}
                   />
                 </div>
 
@@ -472,7 +549,6 @@ function TTSGenerator() {
                     step="0.05"
                     value={qwen3Temperature}
                     onChange={(e) => setQwen3Temperature(parseFloat(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                 </div>
 
@@ -488,7 +564,6 @@ function TTSGenerator() {
                     step="0.05"
                     value={qwen3TopP}
                     onChange={(e) => setQwen3TopP(parseFloat(e.target.value))}
-                    disabled={status === 'generating'}
                   />
                   <span className="param-hint">Nucleus sampling threshold</span>
                 </div>
@@ -505,16 +580,21 @@ function TTSGenerator() {
           </div>
         )}
 
+        {/* Submit flash */}
+        {submitFlash && (
+          <div className="tts-submit-flash">Job submitted! Check the queue bar below.</div>
+        )}
+
         {/* Generate Button */}
         <button
           onClick={handleGenerate}
-          disabled={status === 'generating' || !isModelConfigured() || !text.trim()}
+          disabled={submitting || !isModelConfigured() || !text.trim()}
           className="btn-generate"
         >
-          {status === 'generating' ? (
+          {submitting ? (
             <>
               <span className="loading-spinner-sm"></span>
-              Generating... (this may take a while)
+              Submitting...
             </>
           ) : (
             <>
@@ -525,54 +605,47 @@ function TTSGenerator() {
         </button>
       </div>
 
-      {/* Audio Result */}
-      {audioUrl && (
-        <div className="tts-result">
-          <h3>Generated Audio</h3>
-          <audio
-            ref={audioRef}
-            controls
-            src={audioUrl}
-            className="audio-player"
-          >
-            Your browser does not support the audio element.
-          </audio>
-
-          {/* Playback Speed Control */}
-          <div className="speed-control">
-            <label className="speed-label">
-              Speed: {playbackSpeed.toFixed(2)}x
-            </label>
-            <div className="speed-slider-row">
-              <span className="speed-bound">0.5x</span>
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.05"
-                value={playbackSpeed}
-                onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
-                className="speed-slider"
-              />
-              <span className="speed-bound">2.0x</span>
-            </div>
-            <div className="speed-presets">
-              {SPEED_PRESETS.map(speed => (
-                <button
-                  key={speed}
-                  className={`speed-preset ${playbackSpeed === speed ? 'active' : ''}`}
-                  onClick={() => setPlaybackSpeed(speed)}
+      {/* Completed Results */}
+      {results.length > 0 && (
+        <div className="tts-results-list">
+          <h3>Generated Audio ({results.length})</h3>
+          <div className="tts-results-scroll">
+            {results.map((result) => (
+              <div key={result.jobId} className="tts-result">
+                <audio
+                  ref={(el) => { audioRefs.current[result.jobId] = el }}
+                  controls
+                  src={result.audioUrl}
+                  className="audio-player"
                 >
-                  {speed === 1.0 ? '1x' : `${speed}x`}
-                </button>
-              ))}
-            </div>
-          </div>
+                  Your browser does not support the audio element.
+                </audio>
 
-          <button onClick={handleDownload} className="btn-download">
-            <span className="btn-icon">&#x2B07;</span>
-            Download MP3
-          </button>
+                {/* Playback Speed Control */}
+                <div className="speed-control">
+                  <label className="speed-label">
+                    Speed: {getSpeed(result.jobId).toFixed(2)}x
+                  </label>
+                  <div className="speed-presets">
+                    {SPEED_PRESETS.map(speed => (
+                      <button
+                        key={speed}
+                        className={`speed-preset ${getSpeed(result.jobId) === speed ? 'active' : ''}`}
+                        onClick={() => setSpeed(result.jobId, speed)}
+                      >
+                        {speed === 1.0 ? '1x' : `${speed}x`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button onClick={() => handleDownload(result)} className="btn-download">
+                  <span className="btn-icon">&#x2B07;</span>
+                  Download
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
