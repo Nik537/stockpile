@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   GeneratedImage,
   ImageGenerationResult,
@@ -53,6 +53,9 @@ function ImageGenerator() {
 
   // Inpainting state
   const [inpaintImageUrl, setInpaintImageUrl] = useState<string | null>(null)
+
+  // Ref for scrolling to results
+  const resultRef = useRef<HTMLDivElement>(null)
 
   // Save model preference
   useEffect(() => {
@@ -134,6 +137,7 @@ function ImageGenerator() {
       const data: ImageGenerationResult = await response.json()
       setResult(data)
       setStatus('completed')
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')
       setStatus('error')
@@ -180,6 +184,7 @@ function ImageGenerator() {
       const data: ImageGenerationResult = await response.json()
       setResult(data)
       setStatus('completed')
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Editing failed')
       setStatus('error')
@@ -215,6 +220,7 @@ function ImageGenerator() {
       setResult(data)
       setStatus('completed')
       setInpaintImageUrl(null)
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Inpainting failed')
       setStatus('error')
@@ -626,7 +632,7 @@ function ImageGenerator() {
 
       {/* Results */}
       {result && (
-        <div className="imagegen-result">
+        <div className="imagegen-result" ref={resultRef}>
           <div className="result-header">
             <h3>Generated Images</h3>
             <div className="result-meta">

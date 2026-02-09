@@ -1,0 +1,17 @@
+# RunPod SDK
+runpod>=1.6.0
+
+# Brotli decompression (fixes "Can not decode content-encoding: br" error)
+Brotli
+
+# Denoising
+pyrnnoise>=0.3.8
+
+# Whisper validation (faster-whisper is more reliable per upstream docs)
+faster-whisper
+
+# Audio processing (some may already be installed by the repo's requirements.txt)
+soundfile
+librosa
+numpy
+nltk

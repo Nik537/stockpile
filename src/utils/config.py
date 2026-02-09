@@ -157,6 +157,8 @@ def load_config() -> dict:
         # AI Image Generation settings
         "fal_api_key": os.getenv("FAL_API_KEY", ""),
         "runpod_api_key": os.getenv("RUNPOD_API_KEY", ""),
+        "runpod_qwen3_endpoint_id": os.getenv("RUNPOD_QWEN3_ENDPOINT_ID", ""),
+        "runpod_chatterbox_ext_endpoint_id": os.getenv("RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID", ""),
         "runware_api_key": os.getenv("RUNWARE_API_KEY", ""),
         "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "runware-flux-klein-4b"),
     }

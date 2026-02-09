@@ -16,24 +16,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Text-to-Speech"])
 
 
-@router.get("/api/tts/status", summary="TTS server status", description="Check connection status for both Colab and RunPod TTS backends.")
+@router.get("/api/tts/status", summary="TTS server status", description="Check connection status for all TTS backends.")
 async def get_tts_status() -> dict:
-    """Check TTS server connection status for both modes.
+    """Check TTS server connection status for all modes.
 
     Returns:
-        Connection status including:
-        - colab: status of custom Colab server connection
-        - runpod: status of RunPod serverless endpoint
+        Connection status for each backend:
+        - colab: custom Colab server
+        - runpod: original Chatterbox RunPod endpoint
+        - qwen3: Qwen3-TTS RunPod endpoint
+        - chatterbox_ext: Chatterbox Extended RunPod endpoint
     """
     service = get_tts_service()
 
-    # Get both statuses
     colab_status = await service.check_health()
     runpod_status = await service.check_runpod_health()
+    qwen3_status = await service.check_qwen3_health()
+    chatterbox_ext_status = await service.check_chatterbox_ext_health()
 
     return {
         "colab": colab_status,
         "runpod": runpod_status,
+        "qwen3": qwen3_status,
+        "chatterbox_ext": chatterbox_ext_status,
     }
 
 
@@ -59,37 +64,55 @@ async def set_tts_endpoint(request: TTSEndpointRequest) -> dict:
         return {"message": "URL saved but server not reachable", **status}
 
 
-@router.post("/api/tts/generate", summary="Generate TTS audio", description="Generate speech audio from text using RunPod or Colab backend. Returns MP3 audio.", responses={400: {"description": "Invalid mode or missing config"}, 500: {"description": "TTS generation failed"}})
+@router.post("/api/tts/generate", summary="Generate TTS audio", description="Generate speech audio from text using RunPod, Qwen3-TTS, Chatterbox Extended, or Colab backend.", responses={400: {"description": "Invalid mode or missing config"}, 500: {"description": "TTS generation failed"}})
 async def generate_tts(
     text: str = Form(...),
-    mode: str = Form("runpod"),  # "runpod" or "colab"
+    mode: str = Form("runpod"),  # "runpod" | "qwen3" | "chatterbox-ext" | "colab"
     voice: UploadFile | None = File(None),
     voice_id: str | None = Form(None),
     exaggeration: float = Form(0.5),
     cfg_weight: float = Form(0.5),
     temperature: float = Form(0.8),
+    # Qwen3-specific params
+    language: str = Form("auto"),
+    speaker_name: str | None = Form(None),
+    instruction: str | None = Form(None),
+    top_p: float = Form(0.9),
+    voice_reference_transcript: str | None = Form(None),
+    # Chatterbox Extended-specific params
+    num_candidates: int = Form(1),
+    enable_denoising: bool = Form(False),
+    enable_whisper_validation: bool = Form(False),
 ) -> Response:
     """Generate TTS audio from text.
 
     Args:
         text: Text to convert to speech
-        mode: TTS mode - "runpod" for RunPod Serverless, "colab" for custom Colab server
-        voice: Optional voice reference audio file (5-10 seconds recommended)
+        mode: TTS backend - "runpod", "qwen3", "chatterbox-ext", or "colab"
+        voice: Optional voice reference audio file
         voice_id: Optional voice library ID (takes priority over uploaded voice file)
-        exaggeration: Voice exaggeration level (0.0-1.0)
-        cfg_weight: CFG weight for generation (0.0-1.0)
+        exaggeration: Voice exaggeration (Chatterbox modes, 0.0-1.0)
+        cfg_weight: CFG weight (Chatterbox modes, 0.0-1.0)
         temperature: Generation temperature (0.0-1.0)
+        language: Language code for Qwen3 (default "auto")
+        speaker_name: Qwen3 preset speaker name
+        instruction: Qwen3 style instruction
+        top_p: Qwen3 nucleus sampling top-p
+        voice_reference_transcript: Transcript of voice reference (Qwen3)
+        num_candidates: Chatterbox Extended candidate count
+        enable_denoising: Chatterbox Extended denoising
+        enable_whisper_validation: Chatterbox Extended Whisper validation
 
     Returns:
-        Audio file response (MP3)
+        Audio file response
     """
     service = get_tts_service()
 
-    # Validate mode
-    if mode not in ("runpod", "colab"):
+    valid_modes = ("runpod", "qwen3", "chatterbox-ext", "colab")
+    if mode not in valid_modes:
         raise HTTPException(
             status_code=400,
-            detail="Invalid mode. Use 'runpod' or 'colab'.",
+            detail=f"Invalid mode. Use one of: {', '.join(valid_modes)}",
         )
 
     # Check appropriate service is configured
@@ -98,10 +121,20 @@ async def generate_tts(
             status_code=400,
             detail="TTS server not configured. Set the server URL first.",
         )
-    elif mode == "runpod" and not service.is_runpod_configured():
+    elif mode == "runpod" and not service.is_runpod_configured() and not service.is_public_endpoint_configured():
         raise HTTPException(
             status_code=400,
             detail="RunPod not configured. Set RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID in .env",
+        )
+    elif mode == "qwen3" and not service.is_qwen3_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Qwen3-TTS not configured. Set RUNPOD_API_KEY and RUNPOD_QWEN3_ENDPOINT_ID in .env",
+        )
+    elif mode == "chatterbox-ext" and not service.is_chatterbox_ext_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Chatterbox Extended not configured. Set RUNPOD_API_KEY and RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID in .env",
         )
 
     # Validate text
@@ -113,7 +146,6 @@ async def generate_tts(
     is_library_voice = False
 
     if voice_id:
-        # Use voice from library
         library = get_voice_library()
         library_voice = library.get_voice(voice_id)
         if not library_voice:
@@ -121,13 +153,11 @@ async def generate_tts(
                 status_code=404,
                 detail=f"Voice {voice_id} not found",
             )
-        # Presets without audio = no voice cloning (default voice)
         audio_path = library.get_audio_path(voice_id)
         if audio_path:
             voice_path = str(audio_path)
             is_library_voice = True
     elif voice and voice.filename:
-        # Save uploaded voice file temporarily
         upload_dir = Path("uploads/tts_voices")
         upload_dir.mkdir(parents=True, exist_ok=True)
         voice_path = str(upload_dir / f"{uuid.uuid4()}_{voice.filename}")
@@ -139,15 +169,65 @@ async def generate_tts(
         logger.info(f"Saved voice reference: {voice_path}")
 
     try:
-        # Generate based on mode
         if mode == "runpod":
-            audio_bytes = await service.generate_runpod(
+            if service.is_runpod_configured():
+                try:
+                    audio_bytes = await service.generate_runpod(
+                        text=text.strip(),
+                        voice_ref_path=voice_path,
+                        exaggeration=exaggeration,
+                        cfg_weight=cfg_weight,
+                        temperature=temperature,
+                    )
+                except TTSServiceError as runpod_error:
+                    should_fallback = (
+                        not voice_path
+                        and service.is_public_endpoint_configured()
+                        and service._is_timeout_error(runpod_error)
+                    )
+                    if not should_fallback:
+                        raise
+                    logger.warning(
+                        "Custom RunPod TTS timed out. Falling back to public endpoint."
+                    )
+                    audio_bytes, cost = await service.generate_public_audio(text=text.strip())
+                    logger.info(f"Public TTS fallback cost: ${cost:.4f}")
+            else:
+                if voice_path:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Voice cloning requires RUNPOD_ENDPOINT_ID. "
+                            "Configure custom RunPod endpoint in .env."
+                        ),
+                    )
+                audio_bytes, cost = await service.generate_public_audio(text=text.strip())
+                logger.info(f"Public TTS cost: ${cost:.4f}")
+
+        elif mode == "qwen3":
+            audio_bytes = await service.generate_qwen3(
+                text=text.strip(),
+                voice_ref_path=voice_path,
+                voice_reference_transcript=voice_reference_transcript,
+                speaker_name=speaker_name,
+                instruction=instruction,
+                language=language,
+                temperature=temperature,
+                top_p=top_p,
+            )
+
+        elif mode == "chatterbox-ext":
+            audio_bytes = await service.generate_chatterbox_extended(
                 text=text.strip(),
                 voice_ref_path=voice_path,
                 exaggeration=exaggeration,
                 cfg_weight=cfg_weight,
                 temperature=temperature,
+                num_candidates=num_candidates,
+                enable_denoising=enable_denoising,
+                enable_whisper_validation=enable_whisper_validation,
             )
+
         else:  # colab
             audio_bytes = await service.generate(
                 text=text.strip(),
@@ -157,11 +237,16 @@ async def generate_tts(
                 temperature=temperature,
             )
 
+        audio_format = service.detect_audio_format(audio_bytes)
+        media_type = service.media_type_for_audio_format(audio_format)
+        extension = service.file_extension_for_audio_format(audio_format)
+        filename = f"tts_output.{extension}"
+
         return Response(
             content=audio_bytes,
-            media_type="audio/mpeg",
+            media_type=media_type,
             headers={
-                "Content-Disposition": "attachment; filename=tts_output.mp3",
+                "Content-Disposition": f'attachment; filename="{filename}"',
             },
         )
 
@@ -169,7 +254,6 @@ async def generate_tts(
         logger.error(f"TTS generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Clean up voice file only if it was a temp upload (not a library file)
         if voice_path and not is_library_voice and Path(voice_path).exists():
             try:
                 Path(voice_path).unlink()
@@ -217,7 +301,6 @@ async def generate_public_tts(request: PublicTTSRequest) -> dict:
     try:
         audio_url, cost = await service.generate_public(
             text=request.text.strip(),
-            voice=request.voice,
         )
 
         return {

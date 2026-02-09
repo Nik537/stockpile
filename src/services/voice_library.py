@@ -2,6 +2,7 @@
 
 import json
 import logging
+import struct
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -122,13 +123,8 @@ class VoiceLibrary:
         audio_path.write_bytes(audio_bytes)
         logger.info(f"Saved voice audio: {audio_path} ({len(audio_bytes)} bytes)")
 
-        # Calculate duration (approximate from file size)
-        # WAV: ~176KB per second at 44.1kHz 16-bit mono
-        # MP3: ~16KB per second at 128kbps
-        if ext in (".wav", ".x-wav"):
-            duration = len(audio_bytes) / 176_000
-        else:
-            duration = len(audio_bytes) / 16_000
+        # Calculate duration from audio data
+        duration = self._calculate_duration(audio_bytes, ext)
 
         voice = Voice(
             id=voice_id,
@@ -177,6 +173,31 @@ class VoiceLibrary:
                 return True
 
         return False
+
+    @staticmethod
+    def _calculate_duration(audio_bytes: bytes, ext: str) -> float:
+        """Calculate audio duration from file bytes.
+
+        For WAV files, parses the header to get exact duration.
+        For other formats, uses a rough byte-rate estimate.
+        """
+        if ext in (".wav", ".x-wav") and len(audio_bytes) >= 44:
+            try:
+                # Parse WAV header: bytes 24-27 = sample rate, 34-35 = bits per sample
+                # bytes 22-23 = num channels, bytes 40-43 = data chunk size
+                sample_rate = struct.unpack_from("<I", audio_bytes, 24)[0]
+                num_channels = struct.unpack_from("<H", audio_bytes, 22)[0]
+                bits_per_sample = struct.unpack_from("<H", audio_bytes, 34)[0]
+                if sample_rate > 0 and num_channels > 0 and bits_per_sample > 0:
+                    bytes_per_second = sample_rate * num_channels * (bits_per_sample // 8)
+                    data_size = len(audio_bytes) - 44  # Subtract header
+                    return round(data_size / bytes_per_second, 1)
+            except Exception:
+                pass
+            # Fallback: assume 24kHz 16-bit mono (48KB/s)
+            return round((len(audio_bytes) - 44) / 48_000, 1)
+        # MP3/other: ~16KB per second at 128kbps
+        return round(len(audio_bytes) / 16_000, 1)
 
     def get_audio_path(self, voice_id: str) -> Path | None:
         """Get the path to a voice's audio file."""

@@ -1,0 +1,17 @@
+# RunPod SDK
+runpod>=1.6.0
+
+# Brotli decompression (fixes "Can not decode content-encoding: br" error)
+Brotli
+
+# PyTorch (CUDA version - 2.5+ required for transformers 5.x compatibility)
+torch>=2.5.0
+torchaudio>=2.5.0
+
+# Qwen3-TTS model and dependencies
+qwen-tts
+transformers
+
+# Audio I/O
+soundfile
+numpy

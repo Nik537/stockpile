@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 
+type TTSMode = 'runpod' | 'qwen3' | 'chatterbox-ext' | 'colab'
+
 interface TTSState {
-  serverStatus: { colab: any; runpod: any } | null
-  mode: 'runpod' | 'colab'
+  serverStatus: { colab: any; runpod: any; qwen3?: any; 'chatterbox-ext'?: any } | null
+  mode: TTSMode
   generating: boolean
   error: string | null
   setServerStatus: (status: any) => void
-  setMode: (mode: 'runpod' | 'colab') => void
+  setMode: (mode: TTSMode) => void
   setGenerating: (generating: boolean) => void
   setError: (error: string | null) => void
 }
