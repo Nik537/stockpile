@@ -8,8 +8,7 @@ import {
   BulkImageWSMessage,
 } from '../types'
 import './BulkImageGenerator.css'
-
-const API_BASE = '' // Same origin
+import { API_BASE, getWsUrl } from '../config'
 
 // Step type for the workflow
 type WorkflowStep = 'input' | 'review' | 'generating' | 'complete'
@@ -125,8 +124,7 @@ function BulkImageGenerator() {
   useEffect(() => {
     if (!jobId || step !== 'generating') return
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/bulk-image/${jobId}`
+    const wsUrl = getWsUrl(`/ws/bulk-image/${jobId}`)
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {

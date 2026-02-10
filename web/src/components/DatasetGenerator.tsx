@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DatasetGenMode, ImageGenModel } from '../types'
 import { useDatasetStore } from '../stores/useDatasetStore'
 import './DatasetGenerator.css'
-
-const API_BASE = '' // Same origin
+import { API_BASE, getWsUrl } from '../config'
 
 const MODEL_INFO = [
   { id: 'runware-flux-klein-4b' as ImageGenModel, name: 'Flux Klein 4B', price: 0.0006, priceLabel: '$0.0006/img', badge: 'Cheapest', badgeClass: 'budget' },
@@ -135,8 +134,7 @@ function DatasetGenerator() {
       wsRef.current.close()
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/dataset/${jobId}`
+    const wsUrl = getWsUrl(`/ws/dataset/${jobId}`)
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {

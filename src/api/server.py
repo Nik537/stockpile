@@ -15,6 +15,7 @@ Routers:
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -43,10 +44,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS middleware for development
+# CORS middleware
+cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+extra_origin = os.environ.get("CORS_ORIGIN")
+if extra_origin:
+    cors_origins.append(extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

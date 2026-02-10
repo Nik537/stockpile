@@ -10,8 +10,7 @@ import {
 } from '../types'
 import OutlierCard from './OutlierCard'
 import './OutlierFinder.css'
-
-const API_BASE = ''  // Same origin
+import { API_BASE, getWsUrl } from '../config'
 
 function OutlierFinder() {
   // Search form state
@@ -189,8 +188,7 @@ function OutlierFinder() {
   useEffect(() => {
     if (!searchId) return
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/outliers/${searchId}`
+    const wsUrl = getWsUrl(`/ws/outliers/${searchId}`)
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {

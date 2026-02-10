@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useJobQueueStore } from '../stores/useJobQueueStore'
 import VoiceLibrary from './VoiceLibrary'
 import './TTSGenerator.css'
-
-const API_BASE = ''  // Same origin
+import { API_BASE } from '../config'
 
 type TTSModel = 'chatterbox' | 'chatterbox-ext' | 'qwen3'
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { BackgroundJob, BackgroundJobType, BackgroundJobWSMessage } from '../types'
+import { getWsUrl } from '../config'
 
 interface JobQueueState {
   jobs: BackgroundJob[]
@@ -46,8 +47,7 @@ export const useJobQueueStore = create<JobQueueState>((set, get) => ({
 
     // image-edit uses the same WS path as image
     const wsType = type === 'image-edit' ? 'image' : type
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${location.host}/ws/${wsType}/${jobId}`
+    const wsUrl = getWsUrl(`/ws/${wsType}/${jobId}`)
 
     const ws = new WebSocket(wsUrl)
     activeWebSockets.set(jobId, ws)

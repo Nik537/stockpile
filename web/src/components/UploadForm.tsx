@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import './UploadForm.css'
 import { UserPreferences } from '../types'
+import { API_BASE } from '../config'
 
 interface UploadFormProps {
   onJobCreated: () => void
@@ -38,7 +39,7 @@ function UploadForm({ onJobCreated }: UploadFormProps) {
         formData.append('preferences', JSON.stringify(prefsToSend))
       }
 
-      const response = await fetch('/api/process', {
+      const response = await fetch(`${API_BASE}/api/process`, {
         method: 'POST',
         body: formData,
       })

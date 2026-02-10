@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Job, StatusUpdate } from '../types'
 import ProgressBar from './ProgressBar'
 import './JobCard.css'
+import { API_BASE, getWsUrl } from '../config'
 
 interface JobCardProps {
   job: Job
@@ -14,8 +15,7 @@ function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
 
   useEffect(() => {
     // Connect to WebSocket for real-time updates
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/status/${job.id}`
+    const wsUrl = getWsUrl(`/ws/status/${job.id}`)
     const websocket = new WebSocket(wsUrl)
 
     websocket.onopen = () => {
@@ -54,7 +54,7 @@ function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
     }
 
     try {
-      const response = await fetch(`/api/jobs/${job.id}`, {
+      const response = await fetch(`${API_BASE}/api/jobs/${job.id}`, {
         method: 'DELETE',
       })
 
@@ -70,7 +70,7 @@ function JobCard({ job: initialJob, onDeleted }: JobCardProps) {
   }
 
   const handleDownload = () => {
-    window.location.href = `/api/jobs/${job.id}/download`
+    window.location.href = `${API_BASE}/api/jobs/${job.id}/download`
   }
 
   const getStatusBadge = () => {

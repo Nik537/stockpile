@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { Job } from '../types'
+import { API_BASE } from '../config'
 
 interface JobState {
   jobs: Job[]
@@ -18,7 +19,7 @@ export const useJobStore = create<JobState>((set) => ({
 
   fetchJobs: async () => {
     try {
-      const response = await fetch('/api/jobs')
+      const response = await fetch(`${API_BASE}/api/jobs`)
       const data = await response.json()
       set({ jobs: data.jobs, loading: false, error: null })
     } catch (error) {

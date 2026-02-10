@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useJobQueueStore } from '../stores/useJobQueueStore'
 import './MusicGenerator.css'
-
-const API_BASE = ''  // Same origin
+import { API_BASE } from '../config'
 
 const MAX_DURATION = 190
 

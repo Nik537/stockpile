@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Voice } from '../types'
 import VoiceCard from './VoiceCard'
 import './VoiceLibrary.css'
-
-const API_BASE = ''
+import { API_BASE } from '../config'
 
 interface VoiceLibraryProps {
   selectedVoiceId: string | null

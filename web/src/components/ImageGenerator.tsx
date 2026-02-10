@@ -9,8 +9,7 @@ import {
 import { useJobQueueStore } from '../stores/useJobQueueStore'
 import InpaintingCanvas from './InpaintingCanvas'
 import './ImageGenerator.css'
-
-const API_BASE = ''  // Same origin
+import { API_BASE } from '../config'
 const IMAGE_GEN_MODEL_KEY = 'stockpile_image_gen_model'
 
 const MODEL_INFO = [

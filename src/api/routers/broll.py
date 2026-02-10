@@ -10,7 +10,7 @@ from typing import Any
 
 from api.websocket_manager import WebSocketManager
 from broll_processor import BRollProcessor
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from models.user_preferences import UserPreferences
 from utils.config import load_config
@@ -173,7 +173,7 @@ async def process_job(job_id: str, video_path: str) -> None:
 )
 async def process_video(
     file: UploadFile = File(...),
-    preferences: str | None = None,
+    preferences: str | None = Form(None),
 ) -> JSONResponse:
     """Upload and process a video.
 
@@ -201,8 +201,8 @@ async def process_video(
 
     file_path = upload_dir / file.filename
     with file_path.open("wb") as f:
-        content = await file.read()
-        f.write(content)
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            f.write(chunk)
 
     # Create job
     job_id = create_job(file.filename, prefs_dict)
