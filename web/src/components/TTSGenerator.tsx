@@ -7,8 +7,8 @@ import { API_BASE } from '../config'
 type TTSModel = 'chatterbox' | 'chatterbox-ext' | 'qwen3'
 
 const MODEL_OPTIONS: { value: TTSModel; label: string; description: string }[] = [
-  { value: 'chatterbox', label: 'Chatterbox', description: 'Original — fast, reliable voice cloning' },
   { value: 'chatterbox-ext', label: 'Chatterbox Extended', description: 'Enhanced — denoising, multi-candidate, Whisper validation' },
+  { value: 'chatterbox', label: 'Chatterbox', description: 'Original — fast, reliable voice cloning' },
   { value: 'qwen3', label: 'Qwen3-TTS', description: 'Higher quality — custom voice presets, multilingual' },
 ]
 
@@ -54,7 +54,7 @@ function TTSGenerator() {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null)
 
   // Model selection
-  const [selectedModel, setSelectedModel] = useState<TTSModel>('chatterbox')
+  const [selectedModel, setSelectedModel] = useState<TTSModel>('chatterbox-ext')
 
   // Status for all endpoints
   const [allStatus, setAllStatus] = useState<AllStatus | null>(null)
