@@ -1,25 +1,29 @@
-"""Minimal Render startup to test if basic FastAPI works."""
+"""Render startup - imports the real app with error handling."""
 import os
 import sys
+import traceback
 
 port = int(os.environ.get("PORT", "10000"))
-print(f"[start.py] Python {sys.version}", flush=True)
-print(f"[start.py] CWD: {os.getcwd()}", flush=True)
-print(f"[start.py] PORT: {port}", flush=True)
 
-# Phase 1: Test minimal app
-from fastapi import FastAPI
+# Try to import the real app
+try:
+    from src.api.server import app
+    print("[start.py] Real app imported successfully", flush=True)
+except Exception as e:
+    print(f"[start.py] IMPORT FAILED: {e}", flush=True)
+    traceback.print_exc()
+    # Fallback to minimal app so we can see logs
+    from fastapi import FastAPI
+    app = FastAPI()
+
+    @app.get("/")
+    async def root():
+        return {"error": str(e)}
+
+    @app.get("/api/health")
+    async def health():
+        return {"status": "unhealthy", "error": str(e)}
+
 import uvicorn
-
-test_app = FastAPI()
-
-@test_app.get("/")
-async def root():
-    return {"message": "hello"}
-
-@test_app.get("/api/health")
-async def health():
-    return {"status": "healthy"}
-
-print(f"[start.py] Starting minimal test server on port {port}", flush=True)
-uvicorn.run(test_app, host="0.0.0.0", port=port, log_level="info")
+print(f"[start.py] Starting on port {port}", flush=True)
+uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
