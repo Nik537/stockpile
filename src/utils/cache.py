@@ -12,7 +12,12 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from diskcache import Cache
+try:
+    from diskcache import Cache
+    DISKCACHE_AVAILABLE = True
+except ImportError:
+    Cache = None  # type: ignore[assignment,misc]
+    DISKCACHE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +72,11 @@ class AIResponseCache:
         self.hits = 0
         self.misses = 0
 
-        if not enabled:
-            logger.info("AI response caching is DISABLED")
+        if not enabled or not DISKCACHE_AVAILABLE:
+            if not DISKCACHE_AVAILABLE:
+                logger.info("diskcache not installed, AI response caching disabled")
+            else:
+                logger.info("AI response caching is DISABLED")
             self.cache = None
             return
 
