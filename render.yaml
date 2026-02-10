@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: stockpile-api
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: RUNWARE_API_KEY
+        sync: false
+      - key: RUNPOD_API_KEY
+        sync: false
+      - key: RUNPOD_ENDPOINT_ID
+        sync: false
+      - key: RUNPOD_QWEN3_ENDPOINT_ID
+        sync: false
+      - key: RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: PIXABAY_API_KEY
+        sync: false
+      - key: REPLICATE_API_KEY
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: FREESOUND_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
