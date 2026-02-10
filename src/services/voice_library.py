@@ -25,6 +25,7 @@ class Voice:
     audio_path: str
     created_at: str
     duration_seconds: float
+    is_favorite: bool = False
 
 
 class VoiceLibrary:
@@ -35,7 +36,8 @@ class VoiceLibrary:
         self.metadata_file = self.storage_dir / "metadata.json"
         self.audio_dir = self.storage_dir / "audio"
         self._ensure_dirs()
-        self._ensure_presets()
+        self._remove_presets()
+        self._migrate_favorites()
 
     def _ensure_dirs(self):
         """Create storage directories if they don't exist."""
@@ -58,40 +60,31 @@ class VoiceLibrary:
         except Exception as e:
             logger.error(f"Failed to save voice metadata: {e}")
 
-    def _ensure_presets(self) -> None:
-        """Create preset voice entries if they don't exist."""
+    def _remove_presets(self) -> None:
+        """Remove legacy preset voice entries (they have no audio)."""
         voices = self._load_metadata()
-        preset_ids = {v["id"] for v in voices if v.get("is_preset")}
+        filtered = [v for v in voices if not v.get("is_preset")]
+        if len(filtered) < len(voices):
+            self._save_metadata(filtered)
+            logger.info("Removed legacy preset voices")
 
-        presets = [
-            {"name": "Default", "id": "preset-default"},
-            {"name": "Deep Male", "id": "preset-deep-male"},
-            {"name": "Warm Female", "id": "preset-warm-female"},
-            {"name": "Narrator", "id": "preset-narrator"},
-        ]
-
-        added = False
-        for preset in presets:
-            if preset["id"] not in preset_ids:
-                voice = {
-                    "id": preset["id"],
-                    "name": preset["name"],
-                    "is_preset": True,
-                    "audio_path": "",
-                    "created_at": datetime.now().isoformat(),
-                    "duration_seconds": 0.0,
-                }
-                voices.append(voice)
-                added = True
-                logger.info(f"Created preset voice: {preset['name']}")
-
-        if added:
+    def _migrate_favorites(self) -> None:
+        """Add is_favorite field to voices that don't have it."""
+        voices = self._load_metadata()
+        changed = False
+        for v in voices:
+            if "is_favorite" not in v:
+                v["is_favorite"] = False
+                changed = True
+        if changed:
             self._save_metadata(voices)
 
     def list_voices(self) -> list[Voice]:
-        """List all voices (presets + custom)."""
+        """List all voices, favorites first."""
         voices_data = self._load_metadata()
-        return [Voice(**v) for v in voices_data]
+        voices = [Voice(**v) for v in voices_data]
+        voices.sort(key=lambda v: (not v.is_favorite, v.name.lower()))
+        return voices
 
     def get_voice(self, voice_id: str) -> Voice | None:
         """Get a single voice by ID."""
@@ -143,20 +136,26 @@ class VoiceLibrary:
         logger.info(f"Saved custom voice '{name}' (id={voice_id})")
         return voice
 
+    def toggle_favorite(self, voice_id: str) -> bool | None:
+        """Toggle favorite status for a voice. Returns new is_favorite value, or None if not found."""
+        voices = self._load_metadata()
+        for v in voices:
+            if v["id"] == voice_id:
+                v["is_favorite"] = not v.get("is_favorite", False)
+                self._save_metadata(voices)
+                return v["is_favorite"]
+        return None
+
     def delete_voice(self, voice_id: str) -> bool:
-        """Delete a custom voice (presets cannot be deleted).
+        """Delete a voice.
 
         Returns:
-            True if deleted, False if not found or is preset
+            True if deleted, False if not found
         """
         voices = self._load_metadata()
 
         for i, v in enumerate(voices):
             if v["id"] == voice_id:
-                if v.get("is_preset"):
-                    logger.warning(f"Cannot delete preset voice: {voice_id}")
-                    return False
-
                 # Delete audio file
                 audio_path = Path(v.get("audio_path", ""))
                 if audio_path.exists():

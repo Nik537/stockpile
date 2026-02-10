@@ -5,8 +5,8 @@ import {
   ImageGenMode,
   ImageGenModel,
   ImageGenServerStatus,
-  ImageGenStatus,
 } from '../types'
+import { useJobQueueStore } from '../stores/useJobQueueStore'
 import InpaintingCanvas from './InpaintingCanvas'
 import './ImageGenerator.css'
 
@@ -20,6 +20,11 @@ const MODEL_INFO = [
   { id: 'gemini-flash' as ImageGenModel, name: 'Gemini Flash', price: 'FREE', badge: 'Free - 500/day', badgeClass: 'free' },
   { id: 'nano-banana-pro' as ImageGenModel, name: 'Nano Banana Pro', price: '~$0.04/img', badge: 'Best Quality', badgeClass: 'premium' },
 ]
+
+interface ImageResult {
+  jobId: string
+  result: ImageGenerationResult
+}
 
 function ImageGenerator() {
   // Mode and model state
@@ -35,9 +40,12 @@ function ImageGenerator() {
 
   // Generation state
   const [prompt, setPrompt] = useState('')
-  const [status, setStatus] = useState<ImageGenStatus>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<ImageGenerationResult | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitFlash, setSubmitFlash] = useState(false)
+
+  // Completed results (accumulating)
+  const [results, setResults] = useState<ImageResult[]>([])
 
   // Generation parameters
   const [width, setWidth] = useState(1024)
@@ -56,6 +64,38 @@ function ImageGenerator() {
 
   // Ref for scrolling to results
   const resultRef = useRef<HTMLDivElement>(null)
+
+  // Job queue store
+  const { jobs, addJob, connectWebSocket } = useJobQueueStore()
+
+  // Track which job IDs we've already fetched results for
+  const fetchedJobIds = useRef<Set<string>>(new Set())
+
+  // Subscribe to job completions and fetch results
+  useEffect(() => {
+    const imageJobs = jobs.filter(
+      j => (j.type === 'image' || j.type === 'image-edit') && j.status === 'completed'
+    )
+    for (const job of imageJobs) {
+      if (fetchedJobIds.current.has(job.id)) continue
+      fetchedJobIds.current.add(job.id)
+
+      // The result is already in the job from the WS message
+      if (job.result) {
+        setResults(prev => [{ jobId: job.id, result: job.result as ImageGenerationResult }, ...prev])
+      } else {
+        // Fallback: fetch from API
+        fetch(`${API_BASE}/api/image/jobs/${job.id}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.result) {
+              setResults(prev => [{ jobId: job.id, result: data.result }, ...prev])
+            }
+          })
+          .catch(err => console.error(`Failed to fetch image result for job ${job.id}:`, err))
+      }
+    }
+  }, [jobs])
 
   // Save model preference
   useEffect(() => {
@@ -103,16 +143,15 @@ function ImageGenerator() {
     })
   }
 
-  // Generate images
+  // Generate images (async job)
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
       return
     }
 
-    setStatus('generating')
+    setSubmitting(true)
     setError(null)
-    setResult(null)
 
     try {
       const response = await fetch(`${API_BASE}/api/image/generate`, {
@@ -134,17 +173,29 @@ function ImageGenerator() {
         throw new Error(errorData.detail || 'Generation failed')
       }
 
-      const data: ImageGenerationResult = await response.json()
-      setResult(data)
-      setStatus('completed')
-      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+      const data = await response.json()
+      const jobId = data.job_id
+
+      addJob({
+        id: jobId,
+        type: 'image',
+        status: 'processing',
+        label: `Image: ${prompt.trim().slice(0, 40)}...`,
+        createdAt: new Date().toISOString(),
+      })
+
+      connectWebSocket(jobId, 'image')
+
+      setSubmitFlash(true)
+      setTimeout(() => setSubmitFlash(false), 1500)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')
-      setStatus('error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  // Edit image (upload-based)
+  // Edit image (async job)
   const handleEdit = async () => {
     if (!prompt.trim()) {
       setError('Please enter a prompt')
@@ -156,9 +207,8 @@ function ImageGenerator() {
       return
     }
 
-    setStatus('generating')
+    setSubmitting(true)
     setError(null)
-    setResult(null)
 
     try {
       const imageDataUrl = await fileToDataUrl(inputImage)
@@ -181,21 +231,33 @@ function ImageGenerator() {
         throw new Error(errorData.detail || 'Editing failed')
       }
 
-      const data: ImageGenerationResult = await response.json()
-      setResult(data)
-      setStatus('completed')
-      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+      const data = await response.json()
+      const jobId = data.job_id
+
+      addJob({
+        id: jobId,
+        type: 'image-edit',
+        status: 'processing',
+        label: `Edit: ${prompt.trim().slice(0, 40)}...`,
+        createdAt: new Date().toISOString(),
+      })
+
+      connectWebSocket(jobId, 'image-edit')
+
+      setSubmitFlash(true)
+      setTimeout(() => setSubmitFlash(false), 1500)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Editing failed')
-      setStatus('error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  // Inpainting apply handler
+  // Inpainting apply handler (async job)
   const handleInpaintApply = async (maskDataUrl: string, editPrompt: string) => {
     if (!inpaintImageUrl) return
 
-    setStatus('generating')
+    setSubmitting(true)
     setError(null)
 
     try {
@@ -216,14 +278,28 @@ function ImageGenerator() {
         throw new Error(errorData.detail || 'Inpainting failed')
       }
 
-      const data: ImageGenerationResult = await response.json()
-      setResult(data)
-      setStatus('completed')
+      const data = await response.json()
+      const jobId = data.job_id
+
+      addJob({
+        id: jobId,
+        type: 'image-edit',
+        status: 'processing',
+        label: `Inpaint: ${editPrompt.slice(0, 40)}...`,
+        createdAt: new Date().toISOString(),
+      })
+
+      connectWebSocket(jobId, 'image-edit')
+
       setInpaintImageUrl(null)
-      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+      setMode('generate')
+
+      setSubmitFlash(true)
+      setTimeout(() => setSubmitFlash(false), 1500)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Inpainting failed')
-      setStatus('error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -272,7 +348,6 @@ function ImageGenerator() {
   ]
 
   const isReadyToGenerate = serverStatus?.runware?.configured || serverStatus?.gemini?.configured || serverStatus?.runpod?.configured
-  const isGenerating = status === 'generating'
 
   // If in inpainting mode, show the inpainting canvas
   if (mode === 'inpaint' && inpaintImageUrl) {
@@ -295,42 +370,50 @@ function ImageGenerator() {
           </div>
         )}
 
+        {submitFlash && (
+          <div className="imagegen-submit-flash">Job submitted! Check the queue bar below.</div>
+        )}
+
         <InpaintingCanvas
           imageUrl={inpaintImageUrl}
           onApplyEdit={handleInpaintApply}
           onCancel={cancelInpaint}
-          isGenerating={isGenerating}
+          isGenerating={submitting}
         />
 
-        {/* Show result after inpainting */}
-        {result && (
-          <div className="imagegen-result">
-            <div className="result-header">
-              <h3>Edited Image</h3>
-              <div className="result-meta">
-                <span>Model: {result.model}</span>
-                <span>Time: {(result.generation_time_ms / 1000).toFixed(1)}s</span>
-                <span>Cost: ~${result.cost_estimate.toFixed(4)}</span>
-              </div>
-            </div>
-            <div className="result-grid">
-              {result.images.map((image, index) => (
-                <div key={index} className="result-image">
-                  <img src={image.url} alt={`Edited ${index + 1}`} />
-                  <div className="image-overlay">
-                    <span className="image-size">{image.width}x{image.height}</span>
-                    <div className="image-actions">
-                      <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
-                        Edit
-                      </button>
-                      <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
-                        Download
-                      </button>
-                    </div>
+        {/* Accumulated results gallery */}
+        {results.length > 0 && (
+          <div className="imagegen-results-gallery" ref={resultRef}>
+            <h3>Generated Images ({results.length})</h3>
+            {results.map(({ jobId, result }) => (
+              <div key={jobId} className="imagegen-result">
+                <div className="result-header">
+                  <div className="result-meta">
+                    <span>Model: {result.model}</span>
+                    <span>Time: {(result.generation_time_ms / 1000).toFixed(1)}s</span>
+                    <span>Cost: ~${result.cost_estimate.toFixed(4)}</span>
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="result-grid">
+                  {result.images.map((image, index) => (
+                    <div key={index} className="result-image">
+                      <img src={image.url} alt={`Generated ${index + 1}`} />
+                      <div className="image-overlay">
+                        <span className="image-size">{image.width}x{image.height}</span>
+                        <div className="image-actions">
+                          <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
+                            Edit
+                          </button>
+                          <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -439,7 +522,6 @@ function ImageGenerator() {
                 : 'Describe how you want to transform the image...\nExample: Make it look like a watercolor painting'
             }
             rows={4}
-            disabled={isGenerating}
           />
         </div>
 
@@ -468,7 +550,6 @@ function ImageGenerator() {
                     type="file"
                     accept="image/*"
                     onChange={handleImageSelect}
-                    disabled={isGenerating}
                   />
                   <span className="upload-icon">&#x1F4F7;</span>
                   <span>Click or drag to upload an image</span>
@@ -492,7 +573,6 @@ function ImageGenerator() {
                     setWidth(preset.width)
                     setHeight(preset.height)
                   }}
-                  disabled={isGenerating}
                 >
                   {preset.label}
                 </button>
@@ -509,7 +589,6 @@ function ImageGenerator() {
                   min={256}
                   max={2048}
                   step={64}
-                  disabled={isGenerating}
                 />
               </div>
               <span className="dimension-x">x</span>
@@ -523,7 +602,6 @@ function ImageGenerator() {
                   min={256}
                   max={2048}
                   step={64}
-                  disabled={isGenerating}
                 />
               </div>
             </div>
@@ -542,7 +620,6 @@ function ImageGenerator() {
               min={1}
               max={4}
               step={1}
-              disabled={isGenerating}
             />
           </div>
         )}
@@ -563,7 +640,6 @@ function ImageGenerator() {
                 step="0.5"
                 value={guidanceScale}
                 onChange={(e) => setGuidanceScale(parseFloat(e.target.value))}
-                disabled={isGenerating}
               />
               <span className="param-hint">How closely to follow the prompt (higher = more literal)</span>
             </div>
@@ -581,7 +657,6 @@ function ImageGenerator() {
                   step="0.05"
                   value={strength}
                   onChange={(e) => setStrength(parseFloat(e.target.value))}
-                  disabled={isGenerating}
                 />
                 <span className="param-hint">How much to transform (0=none, 1=complete)</span>
               </div>
@@ -595,7 +670,6 @@ function ImageGenerator() {
                 value={seed}
                 onChange={(e) => setSeed(e.target.value.replace(/\D/g, ''))}
                 placeholder="Random"
-                disabled={isGenerating}
               />
               <span className="param-hint">For reproducible results</span>
             </div>
@@ -610,16 +684,21 @@ function ImageGenerator() {
           </div>
         )}
 
+        {/* Submit flash */}
+        {submitFlash && (
+          <div className="imagegen-submit-flash">Job submitted! Check the queue bar below.</div>
+        )}
+
         {/* Generate Button */}
         <button
           onClick={handleSubmit}
-          disabled={isGenerating || !isReadyToGenerate || !prompt.trim() || (mode === 'edit' && !inputImage)}
+          disabled={submitting || !isReadyToGenerate || !prompt.trim() || (mode === 'edit' && !inputImage)}
           className="btn-generate"
         >
-          {isGenerating ? (
+          {submitting ? (
             <>
               <span className="loading-spinner-sm"></span>
-              {mode === 'generate' ? 'Generating...' : 'Editing...'}
+              Submitting...
             </>
           ) : (
             <>
@@ -630,35 +709,39 @@ function ImageGenerator() {
         </button>
       </div>
 
-      {/* Results */}
-      {result && (
-        <div className="imagegen-result" ref={resultRef}>
-          <div className="result-header">
-            <h3>Generated Images</h3>
-            <div className="result-meta">
-              <span>Model: {result.model}</span>
-              <span>Time: {(result.generation_time_ms / 1000).toFixed(1)}s</span>
-              <span>Cost: ~${result.cost_estimate.toFixed(4)}</span>
-            </div>
-          </div>
-          <div className="result-grid">
-            {result.images.map((image, index) => (
-              <div key={index} className="result-image">
-                <img src={image.url} alt={`Generated ${index + 1}`} />
-                <div className="image-overlay">
-                  <span className="image-size">{image.width}x{image.height}</span>
-                  <div className="image-actions">
-                    <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
-                      Edit
-                    </button>
-                    <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
-                      Download
-                    </button>
-                  </div>
+      {/* Accumulated Results Gallery */}
+      {results.length > 0 && (
+        <div className="imagegen-results-gallery" ref={resultRef}>
+          <h3>Generated Images ({results.length})</h3>
+          {results.map(({ jobId, result }) => (
+            <div key={jobId} className="imagegen-result">
+              <div className="result-header">
+                <div className="result-meta">
+                  <span>Model: {result.model}</span>
+                  <span>Time: {(result.generation_time_ms / 1000).toFixed(1)}s</span>
+                  <span>Cost: ~${result.cost_estimate.toFixed(4)}</span>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="result-grid">
+                {result.images.map((image, index) => (
+                  <div key={index} className="result-image">
+                    <img src={image.url} alt={`Generated ${index + 1}`} />
+                    <div className="image-overlay">
+                      <span className="image-size">{image.width}x{image.height}</span>
+                      <div className="image-actions">
+                        <button className="btn-edit-image" onClick={() => enterInpaintMode(image.url)}>
+                          Edit
+                        </button>
+                        <button className="btn-download-image" onClick={() => handleDownload(image, index)}>
+                          Download
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

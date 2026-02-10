@@ -64,6 +64,28 @@ function VoiceLibrary({ selectedVoiceId, onSelectVoice, disabled }: VoiceLibrary
     }
   }
 
+  // Toggle favorite
+  const handleToggleFavorite = async (voiceId: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/tts/voices/${voiceId}/favorite`, { method: 'PATCH' })
+      if (response.ok) {
+        const data = await response.json()
+        setVoices(prev => {
+          const updated = prev.map(v =>
+            v.id === voiceId ? { ...v, is_favorite: data.is_favorite } : v
+          )
+          // Re-sort: favorites first, then alphabetical
+          return updated.sort((a, b) => {
+            if (a.is_favorite !== b.is_favorite) return a.is_favorite ? -1 : 1
+            return a.name.localeCompare(b.name)
+          })
+        })
+      }
+    } catch (e) {
+      console.error('Failed to toggle favorite:', e)
+    }
+  }
+
   // Upload new voice
   const handleUpload = async () => {
     if (!uploadFile || !uploadName.trim()) return
@@ -129,6 +151,7 @@ function VoiceLibrary({ selectedVoiceId, onSelectVoice, disabled }: VoiceLibrary
             onSelect={() => onSelectVoice(voice.id)}
             onDelete={() => handleDelete(voice.id)}
             onPreview={() => handlePreview(voice.id)}
+            onToggleFavorite={() => handleToggleFavorite(voice.id)}
             disabled={disabled}
           />
         ))}

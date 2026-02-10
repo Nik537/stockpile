@@ -50,6 +50,8 @@ def create_outlier_search(params: OutlierSearchParams) -> str:
         "include_shorts": params.include_shorts,
         "min_subs": params.min_subs,
         "max_subs": params.max_subs,
+        "min_views": params.min_views,
+        "exclude_indian": params.exclude_indian,
         "status": "searching",
         "created_at": datetime.now().isoformat(),
         "channels_analyzed": 0,
@@ -152,6 +154,8 @@ async def run_outlier_search(search_id: str) -> None:
             exclude_shorts=not search["include_shorts"],
             min_subs=search.get("min_subs"),
             max_subs=search.get("max_subs"),
+            min_views=search.get("min_views", 5000),
+            exclude_indian=search.get("exclude_indian", True),
         )
 
         # Capture the event loop BEFORE entering the executor

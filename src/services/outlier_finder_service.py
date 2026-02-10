@@ -17,6 +17,7 @@ Optimizations implemented:
 
 import logging
 import random
+import re
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +26,20 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import yt_dlp
+
+# Regex to detect Indian language scripts in text
+# Covers: Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam
+_INDIAN_SCRIPT_RE = re.compile(
+    r'[\u0900-\u097F'   # Devanagari (Hindi, Marathi, Sanskrit)
+    r'\u0980-\u09FF'    # Bengali
+    r'\u0A00-\u0A7F'    # Gurmukhi (Punjabi)
+    r'\u0A80-\u0AFF'    # Gujarati
+    r'\u0B00-\u0B7F'    # Oriya
+    r'\u0B80-\u0BFF'    # Tamil
+    r'\u0C00-\u0C7F'    # Telugu
+    r'\u0C80-\u0CFF'    # Kannada
+    r'\u0D00-\u0D7F]'   # Malayalam
+)
 
 from models.outlier import ChannelStats, OutlierSearchResult, OutlierVideo
 from services.video_cache import VideoCache, get_video_cache
@@ -93,6 +108,8 @@ class OutlierFinderService:
         min_subs: Optional[int] = None,
         max_subs: Optional[int] = None,
         exclude_shorts: bool = True,
+        min_views: int = 0,
+        exclude_indian: bool = False,
         parallel_workers: int = 3,  # Parallel channel analysis
         use_cache: bool = True,
         cache: Optional[VideoCache] = None,
@@ -109,6 +126,8 @@ class OutlierFinderService:
             min_subs: Minimum subscriber count filter (None = no minimum)
             max_subs: Maximum subscriber count filter (None = no maximum)
             exclude_shorts: Exclude YouTube Shorts (default True)
+            min_views: Minimum view count to include (default 0 = no minimum)
+            exclude_indian: Exclude videos with Indian language scripts in title (default False)
             parallel_workers: Number of parallel workers for channel analysis
             use_cache: Whether to use caching (default True)
             cache: Optional VideoCache instance (uses global if None)
@@ -122,6 +141,8 @@ class OutlierFinderService:
         self.min_subs = min_subs
         self.max_subs = max_subs
         self.exclude_shorts = exclude_shorts
+        self.min_views = min_views
+        self.exclude_indian = exclude_indian
         self.parallel_workers = parallel_workers
         self.use_cache = use_cache
         self.cache = cache or (get_video_cache() if use_cache else None)
@@ -566,6 +587,13 @@ class OutlierFinderService:
         if not videos:
             return [], 0
 
+        # Filter out Indian language videos if requested
+        if self.exclude_indian:
+            videos = [v for v in videos if not self._is_indian_video(v)]
+
+        if not videos:
+            return [], 0
+
         # Get channel name
         channel_name = videos[0].get("channel", videos[0].get("uploader", "Unknown"))
 
@@ -597,6 +625,10 @@ class OutlierFinderService:
         for video in videos:
             view_count = video.get("view_count", 0)
             if not view_count:
+                continue
+
+            # Skip videos below minimum view threshold
+            if self.min_views and view_count < self.min_views:
                 continue
 
             # Legacy ratio score
@@ -1224,6 +1256,23 @@ class OutlierFinderService:
         url = video.get("url", "")
         if "/shorts/" in url:
             return True
+
+        return False
+
+    def _is_indian_video(self, video: dict) -> bool:
+        """Check if a video is likely Indian based on title script or language metadata."""
+        title = video.get("title", "")
+        if _INDIAN_SCRIPT_RE.search(title):
+            return True
+
+        language = video.get("language", "")
+        if language:
+            indian_langs = {
+                "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa", "or",
+                "as", "ur", "sd", "ne", "sa", "kok", "mai", "doi", "bho",
+            }
+            if language.lower().split("-")[0] in indian_langs:
+                return True
 
         return False
 

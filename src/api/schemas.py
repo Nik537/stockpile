@@ -191,6 +191,8 @@ class OutlierSearchParams(BaseModel):
     include_shorts: bool = False
     min_subs: int | None = None
     max_subs: int | None = None
+    min_views: int = 5000
+    exclude_indian: bool = True
 
 
 class TTSEndpointRequest(BaseModel):
@@ -203,8 +205,8 @@ class TTSGenerateRequest(BaseModel):
     """Request body for TTS generation."""
 
     text: str
-    exaggeration: float = 0.5
-    cfg_weight: float = 0.5
+    exaggeration: float = 0.4
+    cfg_weight: float = 0.3
     temperature: float = 0.8
 
 
@@ -286,3 +288,47 @@ class BulkImageGenerateRequest(BaseModel):
     model: str = "runware-flux-klein-4b"
     width: int = 1024
     height: int = 1024
+
+
+class MusicGenerateRequest(BaseModel):
+    """Request body for music generation via Stable Audio 2.5."""
+
+    genres: str = Field(..., description="Genre/style description (e.g. 'funk, pop, soul, energetic')")
+    output_seconds: int = Field(default=60, ge=10, le=190, description="Duration in seconds (max 190)")
+    seed: int | None = Field(default=None, description="Seed for reproducibility")
+    steps: int = Field(default=8, ge=4, le=8, description="Inference steps (4-8)")
+    cfg: float = Field(default=1.0, ge=1.0, le=25.0, description="CFG scale")
+
+
+class DatasetGenerateRequest(BaseModel):
+    """Request body for starting dataset generation."""
+
+    mode: str = "single"  # pair, single, reference, layered
+    theme: str
+    model: str = "runware-flux-klein-4b"
+    llm_model: str = "gemini-flash"
+    num_items: int = 10
+    max_concurrent: int = 3
+    aspect_ratio: str = "1:1"
+    trigger_word: str = ""
+    use_vision_caption: bool = True
+    custom_system_prompt: str = ""
+    # Pair mode
+    transformation: str = ""
+    action_name: str = ""
+    # Reference mode
+    reference_image_base64: str = ""
+    # Layered mode
+    layered_use_case: str = "character"
+    elements_description: str = ""
+    final_image_description: str = ""
+    width: int = 1024
+    height: int = 1024
+
+
+class MusicGenerationResponse(BaseModel):
+    """Music generation result response."""
+
+    duration_seconds: int
+    model: str = "stable-audio-2.5"
+    cost_estimate: float

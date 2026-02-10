@@ -2,7 +2,9 @@
 
 from services.ai_service import AIService
 from services.bulk_image_service import BulkImageService
+from services.dataset_generator_service import DatasetGeneratorService
 from services.image_generation_service import ImageGenerationService
+from services.music_service import MusicService
 from services.tts_service import TTSService
 from services.voice_library import VoiceLibrary
 from utils.config import load_config
@@ -13,6 +15,8 @@ _image_gen_service: ImageGenerationService | None = None
 _bulk_image_service: BulkImageService | None = None
 _ai_service: AIService | None = None
 _voice_library: VoiceLibrary | None = None
+_music_service: MusicService | None = None
+_dataset_gen_service: DatasetGeneratorService | None = None
 
 
 def get_image_gen_service() -> ImageGenerationService:
@@ -66,3 +70,22 @@ def get_voice_library() -> VoiceLibrary:
     if _voice_library is None:
         _voice_library = VoiceLibrary()
     return _voice_library
+
+
+def get_music_service() -> MusicService:
+    """Get or create the music service instance."""
+    global _music_service
+    if _music_service is None:
+        _music_service = MusicService()
+    return _music_service
+
+
+def get_dataset_gen_service() -> DatasetGeneratorService:
+    """Get or create the dataset generator service instance."""
+    global _dataset_gen_service
+    if _dataset_gen_service is None:
+        _dataset_gen_service = DatasetGeneratorService(
+            ai_service=get_ai_service(),
+            image_gen_service=get_image_gen_service(),
+        )
+    return _dataset_gen_service

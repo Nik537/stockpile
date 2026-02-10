@@ -24,7 +24,7 @@ src_dir = Path(__file__).parent.parent
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from api.routers import broll, bulk_images, core, images, outliers, tts
+from api.routers import broll, bulk_images, core, dataset_generator, images, music, outliers, tts
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from utils.config import load_config, validate_config
@@ -38,8 +38,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Stockpile API",
-    description="AI-Powered B-roll Automation Pipeline",
+    title="Social Media Multi Tool API",
+    description="AI-Powered Content Creation Suite",
     version="1.0.0",
 )
 
@@ -59,6 +59,8 @@ app.include_router(outliers.router)
 app.include_router(tts.router)
 app.include_router(images.router)
 app.include_router(bulk_images.router)
+app.include_router(music.router)
+app.include_router(dataset_generator.router)
 
 
 @app.on_event("startup")

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import './VoiceCard.css'
 
 interface VoiceCardProps {
@@ -5,21 +6,54 @@ interface VoiceCardProps {
     id: string
     name: string
     is_preset: boolean
+    is_favorite: boolean
     duration_seconds: number
   }
   isSelected: boolean
   onSelect: () => void
   onDelete?: () => void
   onPreview?: () => void
+  onToggleFavorite?: () => void
   disabled?: boolean
 }
 
-function VoiceCard({ voice, isSelected, onSelect, onDelete, onPreview, disabled }: VoiceCardProps) {
+function VoiceCard({ voice, isSelected, onSelect, onDelete, onPreview, onToggleFavorite, disabled }: VoiceCardProps) {
+  const [showConfirm, setShowConfirm] = useState(false)
+
   return (
     <div
       className={`voice-card ${isSelected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
-      onClick={() => !disabled && onSelect()}
+      onClick={() => !disabled && !showConfirm && onSelect()}
     >
+      {showConfirm && (
+        <div className="voice-card-confirm-overlay" onClick={(e) => e.stopPropagation()}>
+          <span className="voice-card-confirm-text">Delete "{voice.name}"?</span>
+          <div className="voice-card-confirm-actions">
+            <button
+              className="voice-card-confirm-btn confirm"
+              onClick={() => { setShowConfirm(false); onDelete?.() }}
+            >
+              Delete
+            </button>
+            <button
+              className="voice-card-confirm-btn cancel"
+              onClick={() => setShowConfirm(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {onToggleFavorite && (
+        <button
+          className={`voice-card-star ${voice.is_favorite ? 'active' : ''}`}
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+          disabled={disabled}
+          title={voice.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {voice.is_favorite ? '\u2605' : '\u2606'}
+        </button>
+      )}
       <div className="voice-card-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
@@ -28,9 +62,6 @@ function VoiceCard({ voice, isSelected, onSelect, onDelete, onPreview, disabled 
         </svg>
       </div>
       <span className="voice-card-name">{voice.name}</span>
-      <span className={`voice-card-badge ${voice.is_preset ? 'preset' : 'custom'}`}>
-        {voice.is_preset ? 'Preset' : 'Custom'}
-      </span>
       {voice.duration_seconds > 0 && (
         <span className="voice-card-duration">{voice.duration_seconds.toFixed(1)}s</span>
       )}
@@ -45,10 +76,10 @@ function VoiceCard({ voice, isSelected, onSelect, onDelete, onPreview, disabled 
             &#x25B6;
           </button>
         )}
-        {onDelete && !voice.is_preset && (
+        {onDelete && (
           <button
             className="voice-card-btn delete"
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}
             disabled={disabled}
             title="Delete voice"
           >

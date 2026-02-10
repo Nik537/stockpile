@@ -254,6 +254,26 @@ Examples:
     )
 
     parser.add_argument(
+        "--min-views",
+        type=int,
+        default=5000,
+        help="Minimum view count to include (default: 5000)",
+    )
+
+    parser.add_argument(
+        "--exclude-indian",
+        action="store_true",
+        default=True,
+        help="Exclude videos with Indian language scripts (default: enabled)",
+    )
+
+    parser.add_argument(
+        "--include-indian",
+        action="store_true",
+        help="Include Indian language videos (overrides --exclude-indian)",
+    )
+
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -275,6 +295,7 @@ Examples:
     console.print(f"Analyzing up to {args.max_channels} channels...\n")
 
     # Initialize service
+    exclude_indian = args.exclude_indian and not args.include_indian
     service = OutlierFinderService(
         min_score=args.min_score,
         max_videos_per_channel=args.max_videos,
@@ -282,6 +303,8 @@ Examples:
         min_subs=args.min_subs,
         max_subs=args.max_subs,
         exclude_shorts=not args.include_shorts,
+        min_views=args.min_views,
+        exclude_indian=exclude_indian,
     )
 
     try:

@@ -6,13 +6,21 @@ import OutlierFinder from './components/OutlierFinder'
 import TTSGenerator from './components/TTSGenerator'
 import ImageGenerator from './components/ImageGenerator'
 import BulkImageGenerator from './components/BulkImageGenerator'
-import { useJobStore } from './stores'
+import MusicGenerator from './components/MusicGenerator'
+import DatasetGenerator from './components/DatasetGenerator'
+import JobQueueBar from './components/JobQueueBar'
+import { useJobStore, useJobQueueStore } from './stores'
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset'
 
 function App() {
   const { loading, fetchJobs } = useJobStore()
+  const bgJobs = useJobQueueStore((s) => s.jobs)
   const [activeTab, setActiveTab] = useState<ActiveTab>('broll')
+
+  const ttsJobCount = bgJobs.filter((j) => j.type === 'tts' && j.status === 'processing').length
+  const imageJobCount = bgJobs.filter((j) => (j.type === 'image' || j.type === 'image-edit') && j.status === 'processing').length
+  const musicJobCount = bgJobs.filter((j) => j.type === 'music' && j.status === 'processing').length
 
   useEffect(() => {
     fetchJobs()
@@ -27,9 +35,9 @@ function App() {
         <div className="app-header-content">
           <div className="logo">
             <span className="logo-icon">&#x1F3AC;</span>
-            <h1>Stockpile</h1>
+            <h1>Social Media Multi Tool</h1>
           </div>
-          <p className="tagline">AI-Powered B-roll Automation</p>
+          <p className="tagline">AI-Powered Content Creation Suite</p>
 
           {/* Tab Navigation */}
           <nav className="tab-nav">
@@ -53,6 +61,7 @@ function App() {
             >
               <span className="tab-icon">&#x1F3A4;</span>
               TTS Generator
+              {ttsJobCount > 0 && <span className="tab-job-badge">{ttsJobCount}</span>}
             </button>
             <button
               className={`tab-btn ${activeTab === 'imagegen' ? 'active' : ''}`}
@@ -60,6 +69,7 @@ function App() {
             >
               <span className="tab-icon">&#x1F3A8;</span>
               Image Generator
+              {imageJobCount > 0 && <span className="tab-job-badge">{imageJobCount}</span>}
             </button>
             <button
               className={`tab-btn ${activeTab === 'bulkimage' ? 'active' : ''}`}
@@ -67,6 +77,21 @@ function App() {
             >
               <span className="tab-icon">&#x1F5BC;</span>
               Bulk Images
+            </button>
+            <button
+              className={`tab-btn ${activeTab === 'music' ? 'active' : ''}`}
+              onClick={() => setActiveTab('music')}
+            >
+              <span className="tab-icon">&#x1F3B5;</span>
+              Music Generator
+              {musicJobCount > 0 && <span className="tab-job-badge">{musicJobCount}</span>}
+            </button>
+            <button
+              className={`tab-btn ${activeTab === 'dataset' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dataset')}
+            >
+              <span className="tab-icon">&#x1F34C;</span>
+              Dataset Gen
             </button>
           </nav>
         </div>
@@ -120,12 +145,22 @@ function App() {
         <div style={{ display: activeTab === 'bulkimage' ? 'block' : 'none' }}>
           <BulkImageGenerator />
         </div>
+
+        <div style={{ display: activeTab === 'music' ? 'block' : 'none' }}>
+          <MusicGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'dataset' ? 'block' : 'none' }}>
+          <DatasetGenerator />
+        </div>
       </main>
+
+      <JobQueueBar />
 
       <footer className="app-footer">
         <div className="footer-content">
           <span className="version-badge">v1.0.0</span>
-          <p>Transform your videos with AI-curated B-roll footage</p>
+          <p>AI-Powered Content Creation Suite</p>
         </div>
       </footer>
     </div>

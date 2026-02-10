@@ -20,6 +20,8 @@ function OutlierFinder() {
   const [minScore, setMinScore] = useState(3.0)
   const [days, setDays] = useState<number | null>(null)
   const [includeShorts, setIncludeShorts] = useState(false)
+  const [minViews, setMinViews] = useState(5000)
+  const [excludeIndian, setExcludeIndian] = useState(true)
   const [channelSize, setChannelSize] = useState<string>('any')
 
   // Channel size presets (subscriber counts)
@@ -246,6 +248,8 @@ function OutlierFinder() {
       include_shorts: includeShorts,
       min_subs: sizePreset?.min ?? null,
       max_subs: sizePreset?.max ?? null,
+      min_views: minViews,
+      exclude_indian: excludeIndian,
     }
 
     try {
@@ -406,6 +410,25 @@ function OutlierFinder() {
           </div>
         </div>
 
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="minViews">Min Views</label>
+            <select
+              id="minViews"
+              value={minViews}
+              onChange={(e) => setMinViews(Number(e.target.value))}
+              disabled={isSearching}
+            >
+              <option value={0}>No minimum</option>
+              <option value={1000}>1K+</option>
+              <option value={5000}>5K+</option>
+              <option value={10000}>10K+</option>
+              <option value={50000}>50K+</option>
+              <option value={100000}>100K+</option>
+            </select>
+          </div>
+        </div>
+
         <div className="form-row form-row-options">
           <label className="checkbox-label">
             <input
@@ -415,6 +438,16 @@ function OutlierFinder() {
               disabled={isSearching}
             />
             <span>Include YouTube Shorts</span>
+          </label>
+
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={excludeIndian}
+              onChange={(e) => setExcludeIndian(e.target.checked)}
+              disabled={isSearching}
+            />
+            <span>Exclude Indian videos</span>
           </label>
 
           <button

@@ -488,7 +488,7 @@ class TTSService:
 
         return self._merge_audio_chunks(audio_chunks)
 
-    async def _poll_runpod_job(self, endpoint_id: str, payload: dict, max_wait: int = 300) -> dict:
+    async def _poll_runpod_job(self, endpoint_id: str, payload: dict, max_wait: int = 600) -> dict:
         """Submit a RunPod job and poll until completion.
 
         Args:
@@ -522,10 +522,11 @@ class TTSService:
             logger.info(f"RunPod job submitted: {job_id} (endpoint: {endpoint_id})")
 
             poll_url = f"{base_url}/status/{job_id}"
-            poll_interval = 2
             elapsed = 0
 
             while elapsed < max_wait:
+                # Progressive backoff: 2s for first 60s, 5s after that
+                poll_interval = 2 if elapsed < 60 else 5
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
 
@@ -588,6 +589,10 @@ class TTSService:
         temperature: float = 0.8,
     ) -> bytes:
         """Generate one TTS chunk using RunPod serverless."""
+        logger.info(
+            f"RunPod single chunk: exaggeration={exaggeration}, "
+            f"cfg_weight={cfg_weight}, temperature={temperature}"
+        )
         payload: dict = {
             "input": {
                 "text": text,

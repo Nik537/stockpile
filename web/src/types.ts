@@ -107,6 +107,8 @@ export interface OutlierSearchParams {
   include_shorts: boolean
   min_subs?: number | null
   max_subs?: number | null
+  min_views: number
+  exclude_indian: boolean
 }
 
 export type OutlierSearchStatus = 'searching' | 'completed' | 'failed'
@@ -318,7 +320,52 @@ export interface Voice {
   id: string
   name: string
   is_preset: boolean
+  is_favorite: boolean
   audio_path: string
   created_at: string
   duration_seconds: number
 }
+
+// Music Generation Types
+export type MusicGenStatus = 'idle' | 'generating' | 'completed' | 'error'
+
+export interface MusicServiceStatus {
+  configured: boolean
+  available: boolean
+  error?: string
+}
+
+export interface MusicGenerationParams {
+  genres: string
+  output_seconds: number
+  seed: number | null
+  steps: number
+  cfg: number
+}
+
+// Background Job Queue Types
+export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music'
+export type BackgroundJobStatus = 'processing' | 'completed' | 'failed'
+
+export interface BackgroundJob {
+  id: string
+  type: BackgroundJobType
+  status: BackgroundJobStatus
+  label: string
+  createdAt: string
+  completedAt?: string
+  error?: string
+  result?: any
+}
+
+export type BackgroundJobWSMessage = {
+  type: 'status' | 'complete' | 'error'
+  status?: BackgroundJobStatus
+  error?: string
+  message?: string
+  result?: any
+}
+
+// Dataset Generator Types
+export type DatasetGenMode = 'pair' | 'single' | 'reference' | 'layered'
+export type DatasetGenStatus = 'pending' | 'generating_prompts' | 'generating_images' | 'captioning' | 'packaging' | 'completed' | 'failed' | 'cancelled'

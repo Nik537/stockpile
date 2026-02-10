@@ -1,0 +1,514 @@
+/* ==========================================================================
+   Music Generator Component
+   ========================================================================== */
+
+.music-section {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8);
+  animation: slideUp 0.4s ease-out;
+}
+
+/* ==========================================================================
+   Status Indicator
+   ========================================================================== */
+
+.music-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.music-status-bar .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.music-status-bar .status-dot.connected {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+.music-status-bar .status-dot.disconnected {
+  background: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Genre Presets
+   ========================================================================== */
+
+.music-presets {
+  margin-bottom: var(--space-5);
+}
+
+.music-presets > label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.preset-chips {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.preset-chips::-webkit-scrollbar {
+  height: 4px;
+}
+
+.preset-chips::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.preset-chips::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.preset-chip {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.preset-chip:hover:not(:disabled) {
+  border-color: var(--color-primary-500);
+  color: var(--color-primary-400);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.preset-chip.active {
+  background: var(--color-primary-600);
+  border-color: var(--color-primary-500);
+  color: white;
+}
+
+.preset-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Main Form
+   ========================================================================== */
+
+.music-form {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.music-form .form-group {
+  margin-bottom: var(--space-5);
+}
+
+.music-form label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.music-form textarea {
+  width: 100%;
+  padding: var(--space-4);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.music-form textarea:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.music-form textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.music-form textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Duration Slider
+   ========================================================================== */
+
+.music-duration-control {
+  margin-bottom: var(--space-5);
+}
+
+.music-duration-control label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.duration-value {
+  font-weight: var(--font-normal);
+  color: var(--color-primary-400);
+  font-size: var(--text-sm);
+}
+
+.music-duration-control input[type="range"] {
+  width: 100%;
+  height: 6px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.music-duration-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary-500);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.music-duration-control input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--color-primary-400);
+  transform: scale(1.1);
+}
+
+.duration-bounds {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+/* ==========================================================================
+   Advanced Parameters
+   ========================================================================== */
+
+.music-advanced-params {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.music-advanced-params summary {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.music-advanced-params summary:hover {
+  color: var(--color-text-primary);
+}
+
+.music-advanced-params[open] summary {
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.music-params-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.music-params-grid .param-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.music-params-grid .param-group label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+}
+
+.music-params-grid .param-group input[type="range"] {
+  width: 100%;
+  height: 6px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.music-params-grid .param-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary-500);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.music-params-grid .param-group input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--color-primary-400);
+  transform: scale(1.1);
+}
+
+.music-params-grid .param-group input[type="number"] {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+
+.music-params-grid .param-group input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+.music-params-grid .param-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Error Message
+   ========================================================================== */
+
+.music-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+.music-error .error-icon {
+  font-size: 1.2rem;
+}
+
+/* ==========================================================================
+   Result Section
+   ========================================================================== */
+
+.music-result {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+  animation: fadeIn 0.3s ease-out;
+}
+
+.music-result h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.music-result .audio-player {
+  width: 100%;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-lg);
+}
+
+.music-result .btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.music-result .btn-download:hover {
+  background: var(--color-primary-600);
+  border-color: var(--color-primary-600);
+  color: white;
+}
+
+.music-result .btn-download .btn-icon {
+  font-size: 1.1rem;
+}
+
+/* ==========================================================================
+   Setup Help Section
+   ========================================================================== */
+
+.music-help {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+}
+
+.music-help .setup-instructions {
+  border: none;
+}
+
+.music-help .setup-instructions summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.music-help .setup-instructions summary::-webkit-details-marker {
+  display: none;
+}
+
+.music-help .setup-instructions summary h4 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.music-help .setup-instructions summary h4::before {
+  content: '\25B6';
+  font-size: var(--text-xs);
+  transition: transform 0.2s ease;
+}
+
+.music-help .setup-instructions[open] summary h4::before {
+  transform: rotate(90deg);
+}
+
+.music-help .setup-content {
+  margin-top: var(--space-4);
+}
+
+.music-help .setup-content p {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-3) 0;
+  line-height: 1.6;
+}
+
+.music-help .setup-content code {
+  background: var(--color-bg-secondary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.music-help .setup-tips {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: rgba(79, 70, 229, 0.05);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  border-radius: var(--radius-lg);
+}
+
+.music-help .setup-tips h5 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary-400);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.music-help .setup-tips ul {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  line-height: 1.7;
+}
+
+.music-help .setup-tips ul li {
+  margin-bottom: var(--space-1);
+}
+
+/* ==========================================================================
+   Loading Spinner
+   ========================================================================== */
+
+.music-section .loading-spinner-sm {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .music-section {
+    padding: var(--space-6);
+  }
+
+  .music-form,
+  .music-result {
+    padding: var(--space-4);
+  }
+
+  .music-params-grid {
+    grid-template-columns: 1fr;
+  }
+}

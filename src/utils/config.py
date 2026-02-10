@@ -161,6 +161,8 @@ def load_config() -> dict:
         "runpod_chatterbox_ext_endpoint_id": os.getenv("RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID", ""),
         "runware_api_key": os.getenv("RUNWARE_API_KEY", ""),
         "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "runware-flux-klein-4b"),
+        # Music generation (Segmind ACE-Step)
+        "segmind_api_key": os.getenv("SEGMIND_API_KEY", ""),
     }
 
     return config

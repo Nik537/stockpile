@@ -44,3 +44,5 @@ src.backup.*/
 
 # Artifacts
 =*
+.vercel
+.env*.local
