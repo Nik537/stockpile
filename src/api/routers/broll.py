@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from api.websocket_manager import WebSocketManager
-from broll_processor import BRollProcessor
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from models.user_preferences import UserPreferences
@@ -118,6 +117,9 @@ async def process_job(job_id: str, video_path: str) -> None:
 
         # Load configuration
         config = load_config()
+
+        # Lazy import - BRollProcessor pulls in heavy CLI deps (diskcache, faster-whisper, etc.)
+        from broll_processor import BRollProcessor
 
         # Create processor
         processor = BRollProcessor(config)
