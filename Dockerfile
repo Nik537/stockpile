@@ -2,9 +2,6 @@
 # Stockpile - Multi-stage Docker Build
 # =============================================================================
 
-# Build argument for optional CLIP/ML dependencies
-ARG INSTALL_CLIP=false
-
 # -----------------------------------------------------------------------------
 # Stage 1: Builder - install dependencies
 # -----------------------------------------------------------------------------
@@ -21,15 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (slim deploy set - no CLI/dev/ML deps)
+COPY requirements-deploy.txt .
+RUN pip install --no-cache-dir -r requirements-deploy.txt
 
-# Optionally install CLIP/ML dependencies
-ARG INSTALL_CLIP
-RUN if [ "$INSTALL_CLIP" = "true" ]; then \
-    pip install --no-cache-dir torch torchvision transformers opencv-python; \
-    fi
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime - slim production image

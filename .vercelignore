@@ -1,0 +1,16 @@
+.venv
+.venv_test
+.git
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.cache
+/output
+/uploads
+/input
+/webapp
+/tests
+/src
+*.mp4
+*.zip
+__pycache__

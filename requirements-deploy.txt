@@ -1,0 +1,15 @@
+# Web API runtime dependencies only (no CLI/dev/ML deps)
+fastapi>=0.115.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+pyyaml==6.0.1
+python-dotenv==1.2.1
+httpx==0.28.1
+google-genai==1.60.0
+rich==14.0.0
+numpy==2.4.1
+yt-dlp==2025.11.12
+pillow==11.0.0
+praw==7.8.1
+boto3==1.42.39
