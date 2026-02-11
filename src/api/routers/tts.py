@@ -11,7 +11,7 @@ from api.dependencies import get_ai_service, get_tts_service, get_voice_library
 from api.schemas import PublicTTSRequest, TTSEndpointRequest
 from api.websocket_manager import WebSocketManager
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from services.tts_service import TTSServiceError
 
 logger = logging.getLogger(__name__)
@@ -695,19 +695,18 @@ async def toggle_voice_favorite(voice_id: str) -> dict:
 async def get_voice_audio(voice_id: str):
     """Stream voice preview audio."""
     library = get_voice_library()
-    audio_path = library.get_audio_path(voice_id)
-    if not audio_path:
-        raise HTTPException(status_code=404, detail="Voice audio not found")
 
-    # Determine content type from extension
-    ext = audio_path.suffix.lower()
-    content_type = {
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".ogg": "audio/ogg",
-    }.get(ext, "audio/wav")
+    # Try to get raw bytes first (works for both DB and filesystem backends)
+    audio_bytes, audio_format = library.get_audio_bytes(voice_id)
+    if audio_bytes:
+        content_type = {
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".ogg": "audio/ogg",
+        }.get(audio_format or ".wav", "audio/wav")
+        return Response(content=audio_bytes, media_type=content_type)
 
-    return FileResponse(audio_path, media_type=content_type)
+    raise HTTPException(status_code=404, detail="Voice audio not found")
 
 
 @router.post("/api/tts/voices/{voice_id}/transcribe", summary="Transcribe voice audio", description="Transcribe a voice reference audio using Gemini (free). Returns the text spoken in the audio.")
