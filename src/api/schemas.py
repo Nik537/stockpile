@@ -341,6 +341,7 @@ class VideoProduceRequest(BaseModel):
     use_processor_broll: bool = Field(default=True, description="Use enhanced B-roll processor pipeline")
     semantic_verification_enabled: bool = Field(default=True, description="Verify clips match scene context")
     style_detection_enabled: bool = Field(default=True, description="Detect content style for visual coherence")
+    video_only: bool = Field(default=False, description="Use only video clips for B-roll, skip image generation and director decisions")
 
 
 class MusicGenerationResponse(BaseModel):

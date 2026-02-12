@@ -131,6 +131,7 @@ async def _run_video_production(
     use_processor_broll: bool = True,
     semantic_verification_enabled: bool = True,
     style_detection_enabled: bool = True,
+    video_only: bool = False,
 ) -> None:
     """Run video production pipeline in the background.
 
@@ -167,6 +168,7 @@ async def _run_video_production(
         config["use_processor_broll"] = use_processor_broll
         config["semantic_verification_enabled"] = semantic_verification_enabled
         config["style_detection_enabled"] = style_detection_enabled
+        config["video_only"] = video_only
         agent = VideoProductionAgent(config)
 
         # Set up project directory
@@ -511,6 +513,7 @@ async def produce_video(request: VideoProduceRequest):
         "use_processor_broll": request.use_processor_broll,
         "semantic_verification_enabled": request.semantic_verification_enabled,
         "style_detection_enabled": request.style_detection_enabled,
+        "video_only": request.video_only,
     }
     video_jobs[job_id] = job
 
@@ -532,6 +535,7 @@ async def produce_video(request: VideoProduceRequest):
             use_processor_broll=request.use_processor_broll,
             semantic_verification_enabled=request.semantic_verification_enabled,
             style_detection_enabled=request.style_detection_enabled,
+            video_only=request.video_only,
         )
     )
     _background_tasks.add(task)

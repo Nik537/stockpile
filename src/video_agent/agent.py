@@ -212,6 +212,7 @@ class VideoProductionAgent:
 
         # Feature flag: use B-roll processor pipeline (new) vs inline methods (old)
         self.use_processor_broll = config.get("use_processor_broll", True)
+        self.video_only = config.get("video_only", False)
 
         # B-Roll processor services (used when use_processor_broll=True)
         if self.use_processor_broll:
@@ -619,17 +620,27 @@ class VideoProductionAgent:
 
         # -- Phase 1: Run ALL fetches in parallel --
 
-        all_results = await asyncio.gather(
-            *[fetch_and_report_video(sid, kw, style, vo, scene=sc)
-              for sid, kw, style, vo, sc in all_scenes],
-            *[fetch_and_report_image(sid, kw, style)
-              for sid, kw, style, _vo, _sc in all_scenes],
-            return_exceptions=True,
-        )
-
-        n = len(all_scenes)
-        video_results = all_results[:n]
-        image_results = all_results[n:]
+        if self.video_only:
+            # Video-only mode: skip image generation entirely
+            total_count = len(all_scenes)
+            all_results = await asyncio.gather(
+                *[fetch_and_report_video(sid, kw, style, vo, scene=sc)
+                  for sid, kw, style, vo, sc in all_scenes],
+                return_exceptions=True,
+            )
+            video_results = all_results
+            image_results = []
+        else:
+            all_results = await asyncio.gather(
+                *[fetch_and_report_video(sid, kw, style, vo, scene=sc)
+                  for sid, kw, style, vo, sc in all_scenes],
+                *[fetch_and_report_image(sid, kw, style)
+                  for sid, kw, style, _vo, _sc in all_scenes],
+                return_exceptions=True,
+            )
+            n = len(all_scenes)
+            video_results = all_results[:n]
+            image_results = all_results[n:]
 
         video_candidates: dict[int, Path | None] = {}
         image_candidates: dict[int, Path | None] = {}
@@ -652,6 +663,7 @@ class VideoProductionAgent:
         images_found = sum(1 for v in image_candidates.values() if v)
         logger.info(
             f"Dual candidates fetched: {videos_found} videos, {images_found} images"
+            + (" (video-only mode)" if self.video_only else "")
         )
 
         # -- Phase 2: Director decides which type to use per scene --
@@ -679,7 +691,10 @@ class VideoProductionAgent:
         ]
 
         decision_map: dict[int, VisualTypeDecision] = {}
-        if scenes_with_both and self.director:
+        if self.video_only:
+            # Video-only mode: force all scenes to use video, skip director
+            logger.info("Video-only mode: skipping director visual type decisions")
+        elif scenes_with_both and self.director:
             if progress_callback:
                 await progress_callback(
                     63,
