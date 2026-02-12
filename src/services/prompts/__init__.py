@@ -10,7 +10,12 @@ Re-exports all prompt constants and utilities for easy importing:
 
 from services.prompts._base import strip_markdown_code_blocks
 from services.prompts.broll import BROLL_EXTRACTOR_V6, BROLL_PLANNER_V3
-from services.prompts.evaluation import EVALUATOR_V4, BASIC_EVALUATOR
+from services.prompts.evaluation import (
+    EVALUATOR_V4,
+    BASIC_EVALUATOR,
+    VIDEO_AGENT_BROLL_EVALUATOR,
+    VIDEO_AGENT_IMAGE_EVALUATOR,
+)
 from services.prompts.images import (
     IMAGE_QUERY_GENERATOR,
     IMAGE_QUERY_CONTEXT_AWARE,
@@ -33,6 +38,8 @@ PROMPT_VERSIONS = {
     "generate_image_queries_with_context": "v1",  # Feature 2: Image queries with +-10s context window
     "generate_bulk_image_prompts": "v2",  # Bulk image prompt generation with diverse rendering styles
     "generate_script": "v1",  # Script generation from topic for video agent pipeline
+    "video_agent_broll_eval": "v1",  # Video agent B-roll candidate evaluation
+    "video_agent_image_eval": "v1",  # Video agent stock image candidate evaluation
 }
 
 __all__ = [
@@ -46,6 +53,8 @@ __all__ = [
     # Evaluation prompts
     "EVALUATOR_V4",
     "BASIC_EVALUATOR",
+    "VIDEO_AGENT_BROLL_EVALUATOR",
+    "VIDEO_AGENT_IMAGE_EVALUATOR",
     # Image prompts
     "IMAGE_QUERY_GENERATOR",
     "IMAGE_QUERY_CONTEXT_AWARE",

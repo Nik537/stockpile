@@ -95,3 +95,65 @@ Return a JSON array of objects with video_id and score for videos scoring 6 or h
 Order by score (highest first).
 Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
 Return ONLY the JSON array, nothing else."""
+
+
+# Video Agent B-Roll Evaluator - lightweight prompt for fast scoring of search results
+# Used by VideoProductionAgent._evaluate_broll_candidates()
+# Template placeholders: {search_query}, {visual_keywords}, {visual_style}, {voiceover_context}, {results_text}
+VIDEO_AGENT_BROLL_EVALUATOR = """You are a B-Roll Video Evaluator for a video production pipeline.
+
+Score each video result on how suitable it is as B-roll footage for the scene described below.
+
+SCENE CONTEXT:
+- Search query: "{search_query}"
+- Visual keywords: {visual_keywords}
+- Visual style: {visual_style}
+- Voiceover context: "{voiceover_context}"
+
+VIDEO RESULTS:
+---
+{results_text}
+---
+
+SCORING CRITERIA (total 100%):
+1. **Semantic match to visual_keywords and voiceover context (50%)** - Does the video visually match what the scene needs?
+2. **Technical quality signals from title/metadata (20%)** - Stock footage, cinematic, 4K, high quality indicators
+3. **Absence of unwanted elements (15%)** - No watermarks, logos, compilations, reaction videos, vlogs
+4. **Visual style match (15%)** - Does it match the requested style ({visual_style})?
+
+RATING SCALE:
+- 9-10: Perfect match - relevant stock footage with high production value
+- 7-8: Good match - relevant content, decent quality
+- 6: Acceptable - usable but not ideal
+- <6: Not suitable (do NOT include in output)
+
+OUTPUT FORMAT:
+Return ONLY a JSON array of objects with video_id and score for videos scoring >= 6.
+Order by score (highest first).
+Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
+Return ONLY the JSON array, nothing else."""
+
+
+# Video Agent Image Evaluator - lightweight prompt for ranking stock image candidates
+# Used by VideoProductionAgent._evaluate_image_candidates()
+# Template placeholders: {search_query}, {visual_keywords}, {visual_style}, {candidates_text}
+VIDEO_AGENT_IMAGE_EVALUATOR = """You are a Stock Image Evaluator for a video production pipeline.
+
+Pick the best image from these candidates for the scene described below.
+
+SCENE CONTEXT:
+- Search query: "{search_query}"
+- Visual keywords: {visual_keywords}
+- Visual style: {visual_style}
+
+IMAGE CANDIDATES:
+{candidates_text}
+
+Pick the single best image based on:
+1. Relevance to visual keywords (50%)
+2. Image quality / resolution (25%)
+3. Style match to requested visual style (25%)
+
+OUTPUT FORMAT:
+Return ONLY a JSON object: {{"best_index": 0, "reason": "brief reason"}}
+Return ONLY the JSON object, nothing else."""

@@ -83,6 +83,8 @@ WRITING RULES
    - "broll_video": Real footage — STRONGLY PREFERRED for concrete, real-world scenes:
      action shots, scenery, people, events, nature, cities, technology in use.
      Use this for 70-80% of scenes.
+     IMPORTANT: visual_keywords must be simple, specific search terms that will find
+     CLEAN, WATERMARK-FREE stock footage (e.g. "ocean waves aerial" not "shutterstock ocean").
    - "generated_image": AI-generated art — use for abstract concepts, historical scenes
      without footage, futuristic scenarios, diagrams, or conceptual illustrations.
      Use for 15-25% of scenes.

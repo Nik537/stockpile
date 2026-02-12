@@ -172,11 +172,11 @@ class YouTubeVideoSource(VideoSource):
         """
         base_query = " ".join(keywords[:3])
 
-        # Enhance query with style and stock footage terms
+        # Enhance query with style and stock footage terms (watermark-free)
         query_parts = [base_query]
         if visual_style:
             query_parts.append(visual_style)
-        query_parts.append("stock footage b-roll")
+        query_parts.append("stock footage b-roll no watermark free")
 
         enhanced_query = " ".join(query_parts)
 

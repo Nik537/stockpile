@@ -75,10 +75,13 @@ class GoogleImageSource(ImageSource):
 
         logger.debug(f"[Google Images] Searching for: '{phrase}'")
 
+        # Exclude watermarked images by appending negative terms
+        clean_query = f"{phrase} -watermark -shutterstock -gettyimages -adobe stock"
+
         params = {
             "api_key": self.api_key,
             "engine": "google_images",
-            "q": phrase,
+            "q": clean_query,
             "num": min(per_page, self.max_results),
             # Filter for images that can be reused
             "tbs": "itp:photo,isz:l",  # Large photos only
@@ -128,8 +131,17 @@ class GoogleImageSource(ImageSource):
             logger.error(f"[Google Images] Network error: {e}")
             raise NetworkError(f"Google Images network error: {e}") from e
 
+    # Domains known to serve watermarked images
+    _WATERMARK_DOMAINS = {
+        "shutterstock.com", "gettyimages.com", "istockphoto.com",
+        "dreamstime.com", "depositphotos.com", "123rf.com", "alamy.com",
+        "bigstockphoto.com", "stock.adobe.com", "adobestock.com",
+    }
+
     def _parse_image(self, image: dict, idx: int) -> Optional[ImageResult]:
         """Parse SerpAPI Google Images response into ImageResult.
+
+        Skips images from known watermark-heavy stock sites.
 
         Args:
             image: Image dict from SerpAPI response
@@ -143,6 +155,14 @@ class GoogleImageSource(ImageSource):
             original_url = image.get("original", "")
             if not original_url:
                 return None
+
+            # Skip watermarked stock site images
+            source_domain = (image.get("source", "") or "").lower()
+            url_lower = original_url.lower()
+            for wm_domain in self._WATERMARK_DOMAINS:
+                if wm_domain in source_domain or wm_domain in url_lower:
+                    logger.debug(f"[Google Images] Skipping watermarked source: {wm_domain}")
+                    return None
 
             # Get thumbnail for AI evaluation
             thumbnail = image.get("thumbnail", "")
