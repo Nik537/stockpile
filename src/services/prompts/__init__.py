@@ -18,6 +18,7 @@ from services.prompts.images import (
 )
 from services.prompts.content_analysis import STYLE_ANALYZER, CONTEXT_QUESTION_GENERATOR
 from services.prompts.bulk import BULK_IMAGE_PROMPT_GENERATOR
+from services.prompts.script_generation import SCRIPT_GENERATOR_V1
 
 # S2 IMPROVEMENT: Prompt version identifiers for cache invalidation
 # IMPORTANT: Increment these when prompts change to invalidate stale cached responses
@@ -31,6 +32,7 @@ PROMPT_VERSIONS = {
     "detect_content_style": "v1",  # Feature 1: Content style/mood detection
     "generate_image_queries_with_context": "v1",  # Feature 2: Image queries with +-10s context window
     "generate_bulk_image_prompts": "v2",  # Bulk image prompt generation with diverse rendering styles
+    "generate_script": "v1",  # Script generation from topic for video agent pipeline
 }
 
 __all__ = [
@@ -53,4 +55,6 @@ __all__ = [
     "CONTEXT_QUESTION_GENERATOR",
     # Bulk generation prompts
     "BULK_IMAGE_PROMPT_GENERATOR",
+    # Script generation prompts
+    "SCRIPT_GENERATOR_V1",
 ]

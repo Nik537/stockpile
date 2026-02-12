@@ -25,7 +25,7 @@ src_dir = Path(__file__).parent.parent
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from api.routers import broll, bulk_images, core, dataset_generator, images, music, outliers, tts
+from api.routers import broll, bulk_images, core, dataset_generator, images, music, outliers, tts, video_agent
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from utils.config import load_config, validate_config
@@ -67,6 +67,7 @@ app.include_router(images.router)
 app.include_router(bulk_images.router)
 app.include_router(music.router)
 app.include_router(dataset_generator.router)
+app.include_router(video_agent.router)
 
 
 @app.on_event("startup")

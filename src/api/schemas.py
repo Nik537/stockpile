@@ -326,6 +326,16 @@ class DatasetGenerateRequest(BaseModel):
     height: int = 1024
 
 
+class VideoProduceRequest(BaseModel):
+    """Request body for video production."""
+
+    topic: str = Field(..., min_length=1, max_length=500)
+    style: str = Field(default="documentary")
+    target_duration: int = Field(default=8, ge=1, le=30)
+    subtitle_style: str = Field(default="hormozi")
+    voice_id: str | None = Field(default=None)
+
+
 class MusicGenerationResponse(BaseModel):
     """Music generation result response."""
 

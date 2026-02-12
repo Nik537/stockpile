@@ -344,7 +344,7 @@ export interface MusicGenerationParams {
 }
 
 // Background Job Queue Types
-export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music'
+export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music' | 'video'
 export type BackgroundJobStatus = 'processing' | 'completed' | 'failed'
 
 export interface BackgroundJob {
@@ -369,3 +369,82 @@ export type BackgroundJobWSMessage = {
 // Dataset Generator Types
 export type DatasetGenMode = 'pair' | 'single' | 'reference' | 'layered'
 export type DatasetGenStatus = 'pending' | 'generating_prompts' | 'generating_images' | 'captioning' | 'packaging' | 'completed' | 'failed' | 'cancelled'
+
+// Video Agent Types
+export type VideoProductionStage =
+  | 'queued'
+  | 'script_generation'
+  | 'narration'
+  | 'word_timestamps'
+  | 'asset_acquisition'
+  | 'subtitle_generation'
+  | 'video_composition'
+  | 'director_review'
+
+export interface VideoJobProgress {
+  stage: VideoProductionStage
+  percent: number
+  message: string
+}
+
+export interface VideoScriptScene {
+  id: number
+  voiceover: string
+  visual_type: string
+  visual_keywords: string[]
+  duration_est: number
+}
+
+export interface VideoScript {
+  title: string
+  hook_voiceover: string
+  scenes: VideoScriptScene[]
+}
+
+export type VideoJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
+
+export interface VideoJobCost {
+  tts: number
+  images: number
+  music: number
+  broll: number
+  director: number
+  total: number
+}
+
+export interface VideoJob {
+  id: string
+  topic: string
+  style: string
+  status: VideoJobStatus
+  created_at: string
+  progress: VideoJobProgress
+  script?: VideoScript
+  cost?: VideoJobCost
+  error?: string
+  output_path?: string
+}
+
+export interface VideoProduceParams {
+  topic: string
+  style: string
+  target_duration: number
+  subtitle_style: string
+  voice_id?: string | null
+}
+
+export type VideoWSMessageType = 'status' | 'progress' | 'script' | 'complete' | 'error' | 'cost_update'
+
+export interface VideoWSMessage {
+  type: VideoWSMessageType
+  status?: VideoJobStatus
+  stage?: VideoProductionStage
+  percent?: number
+  message?: string
+  title?: string
+  hook_voiceover?: string
+  scenes?: VideoScriptScene[]
+  error?: string
+  job_id?: string
+  cost?: VideoJobCost
+}

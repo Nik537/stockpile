@@ -8,10 +8,11 @@ import ImageGenerator from './components/ImageGenerator'
 import BulkImageGenerator from './components/BulkImageGenerator'
 import MusicGenerator from './components/MusicGenerator'
 import DatasetGenerator from './components/DatasetGenerator'
+import VideoAgent from './components/VideoAgent'
 import JobQueueBar from './components/JobQueueBar'
 import { useJobStore, useJobQueueStore } from './stores'
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'video'
 
 function App() {
   const { loading, fetchJobs } = useJobStore()
@@ -21,6 +22,7 @@ function App() {
   const ttsJobCount = bgJobs.filter((j) => j.type === 'tts' && j.status === 'processing').length
   const imageJobCount = bgJobs.filter((j) => (j.type === 'image' || j.type === 'image-edit') && j.status === 'processing').length
   const musicJobCount = bgJobs.filter((j) => j.type === 'music' && j.status === 'processing').length
+  const videoJobCount = bgJobs.filter((j) => j.type === 'video' && j.status === 'processing').length
 
   useEffect(() => {
     fetchJobs()
@@ -93,6 +95,14 @@ function App() {
               <span className="tab-icon">&#x1F34C;</span>
               Dataset Gen
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+              onClick={() => setActiveTab('video')}
+            >
+              <span className="tab-icon">&#x1F3AC;</span>
+              Video Agent
+              {videoJobCount > 0 && <span className="tab-job-badge">{videoJobCount}</span>}
+            </button>
           </nav>
         </div>
       </header>
@@ -152,6 +162,10 @@ function App() {
 
         <div style={{ display: activeTab === 'dataset' ? 'block' : 'none' }}>
           <DatasetGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'video' ? 'block' : 'none' }}>
+          <VideoAgent />
         </div>
       </main>
 

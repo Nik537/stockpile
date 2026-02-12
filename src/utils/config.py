@@ -54,7 +54,7 @@ def load_config() -> dict:
         "google_drive_output_folder_id": os.getenv("GOOGLE_DRIVE_OUTPUT_FOLDER_ID"),
         # Model configurations
         "whisper_model": os.getenv("WHISPER_MODEL", "base"),
-        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3-pro-preview"),
         # Google Drive OAuth
         "google_client_id": os.getenv("GOOGLE_CLIENT_ID"),
         "google_client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
@@ -163,6 +163,19 @@ def load_config() -> dict:
         "default_image_gen_model": os.getenv("DEFAULT_IMAGE_GEN_MODEL", "runware-flux-klein-4b"),
         # Music generation (Segmind ACE-Step)
         "segmind_api_key": os.getenv("SEGMIND_API_KEY", ""),
+        # YouTube B-roll settings (for video agent)
+        "youtube_broll_enabled": os.getenv("YOUTUBE_BROLL_ENABLED", "true").lower() == "true",
+        "youtube_broll_max_duration": int(os.getenv("YOUTUBE_BROLL_MAX_DURATION", "120")),
+        "youtube_broll_max_results": int(os.getenv("YOUTUBE_BROLL_MAX_RESULTS", "15")),
+        "broll_source_priority": [s.strip() for s in os.getenv("BROLL_SOURCE_PRIORITY", "youtube,pexels,pixabay").split(",") if s.strip()],
+        # Director review loop settings (for video agent)
+        "director_review_enabled": os.getenv("DIRECTOR_REVIEW_ENABLED", "true").lower() == "true",
+        "director_max_iterations": int(os.getenv("DIRECTOR_MAX_ITERATIONS", "2")),
+        "director_approval_threshold": int(os.getenv("DIRECTOR_APPROVAL_THRESHOLD", "7")),
+        "director_model": os.getenv("DIRECTOR_MODEL", "gemini-3-pro-preview"),
+        # Image style enhancement via Nano Banana Pro
+        # "auto" = enabled if RUNPOD_API_KEY is set, "true"/"false" for explicit control
+        "image_style_enhancement": os.getenv("IMAGE_STYLE_ENHANCEMENT", "auto"),
     }
 
     return config
