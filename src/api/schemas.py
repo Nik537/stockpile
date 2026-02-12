@@ -334,6 +334,13 @@ class VideoProduceRequest(BaseModel):
     target_duration: int = Field(default=8, ge=1, le=30)
     subtitle_style: str = Field(default="hormozi")
     voice_id: str | None = Field(default=None)
+    # B-roll pipeline configuration
+    competitive_analysis_enabled: bool = Field(default=True, description="Enable multi-candidate B-roll comparison")
+    previews_per_need: int = Field(default=2, ge=1, le=5, description="Preview videos to compare per scene")
+    clips_per_need_target: int = Field(default=1, ge=1, le=3, description="Final clips per scene")
+    use_processor_broll: bool = Field(default=True, description="Use enhanced B-roll processor pipeline")
+    semantic_verification_enabled: bool = Field(default=True, description="Verify clips match scene context")
+    style_detection_enabled: bool = Field(default=True, description="Detect content style for visual coherence")
 
 
 class MusicGenerationResponse(BaseModel):

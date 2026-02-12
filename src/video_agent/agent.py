@@ -6,15 +6,15 @@ topic -> script -> narration -> assets -> subtitles -> composition -> output
 
 import asyncio
 import base64
-import io
 import json
 import logging
 import os
+import re
 import subprocess
-import time
 import wave
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 
 from video_agent.models import (
     DraftReview,
@@ -25,11 +25,13 @@ from video_agent.models import (
     Timeline,
     TimelineScene,
     VisualType,
+    VisualTypeDecision,
     WordTiming,
 )
 from video_agent.script_generator import ScriptGenerator
 from video_agent.director import DirectorAgent
 from video_agent.video_composer import VideoComposer
+from video_agent.broll_adapter import BRollAdapter
 
 from services.tts_service import TTSService
 from services.music_service import MusicService
@@ -41,11 +43,17 @@ from services.video_sources.youtube import YouTubeVideoSource
 from services.image_sources.google import GoogleImageSource
 from services.image_sources.pexels import PexelsImageSource
 from services.image_sources.pixabay import PixabayImageSource
+from services.video_acquisition_service import VideoAcquisitionService
+from services.video_search_service import VideoSearchService
+from services.clip_extractor import ClipExtractor
+from services.video_filter import VideoPreFilter
+from services.semantic_verifier import SemanticVerifier
+from services.video_downloader import VideoDownloader
+from services.file_organizer import FileOrganizer
 from models.image_generation import ImageEditRequest, ImageGenerationModel, ImageGenerationRequest
-from models.video import ScoredVideo, VideoResult
 from models.image import ImageResult
 from services.prompts._base import strip_markdown_code_blocks
-from services.prompts.evaluation import VIDEO_AGENT_BROLL_EVALUATOR, VIDEO_AGENT_IMAGE_EVALUATOR
+from services.prompts.evaluation import VIDEO_AGENT_IMAGE_EVALUATOR
 from utils.config import load_config
 
 logger = logging.getLogger(__name__)
@@ -57,9 +65,6 @@ MAX_BROLL_CLIP_SECONDS = 4
 MIN_BROLL_CLIP_SECONDS = 3
 TARGET_BROLL_CLIP_SECONDS = 4
 
-# Minimum score threshold for AI-evaluated B-roll candidates (metadata evaluation)
-MIN_BROLL_SCORE = 6
-
 # Minimum score for Gemini video analysis segment acceptance
 MIN_GEMINI_SEGMENT_SCORE = 7
 
@@ -67,17 +72,73 @@ MIN_GEMINI_SEGMENT_SCORE = 7
 GEMINI_FILE_POLL_TIMEOUT = 120
 GEMINI_FILE_POLL_INTERVAL = 3
 
-# Blocked title keywords for metadata pre-filtering
-# Videos with these words in the title are unlikely to be clean B-roll
-BLOCKED_TITLE_KEYWORDS = {
-    "compilation", "top 10", "top 5", "top 20", "reaction", "review",
-    "unboxing", "haul", "vlog", "podcast", "interview", "behind the scenes",
-    "gameplay", "let's play", "tutorial", "how to", "explained", "tier list",
-    "ranking", "worst", "cringe", "funny moments", "try not to laugh",
-}
+# TTS preprocessing: number-to-words helper (no external deps)
+_ONES = ["", "one", "two", "three", "four", "five", "six", "seven",
+         "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+         "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+_TENS = ["", "", "twenty", "thirty", "forty", "fifty",
+         "sixty", "seventy", "eighty", "ninety"]
 
-# Minimum view count to filter out very low quality/spam videos
-MIN_VIEW_COUNT = 1000
+
+def _number_to_words(n: int) -> str:
+    """Convert an integer to English words. Handles 0 to 999_999_999_999."""
+    if n == 0:
+        return "zero"
+    if n < 0:
+        return "negative " + _number_to_words(-n)
+
+    parts: list[str] = []
+    if n >= 1_000_000_000:
+        parts.append(_number_to_words(n // 1_000_000_000) + " billion")
+        n %= 1_000_000_000
+    if n >= 1_000_000:
+        parts.append(_number_to_words(n // 1_000_000) + " million")
+        n %= 1_000_000
+    if n >= 1_000:
+        parts.append(_number_to_words(n // 1_000) + " thousand")
+        n %= 1_000
+    if n >= 100:
+        parts.append(_ONES[n // 100] + " hundred")
+        n %= 100
+    if n >= 20:
+        tail = _ONES[n % 10]
+        parts.append(_TENS[n // 10] + ("-" + tail if tail else ""))
+    elif n > 0:
+        parts.append(_ONES[n])
+
+    return " ".join(parts)
+
+
+def _year_to_words(y: int) -> str:
+    """Convert a year (1000-2099) to spoken English."""
+    if 2000 <= y <= 2009:
+        return "two thousand" + (" " + _ONES[y - 2000] if y > 2000 else "")
+    if 2010 <= y <= 2099:
+        return "twenty " + _number_to_words(y - 2000)
+    hi, lo = divmod(y, 100)
+    if lo == 0:
+        return _number_to_words(hi) + " hundred"
+    return _number_to_words(hi) + " " + (
+        _number_to_words(lo) if lo >= 10 else "oh " + _ONES[lo]
+    )
+
+
+# Abbreviations that should be spelled letter-by-letter with periods
+# Excludes word-acronyms (NASA, OPEC, SCUBA) which are pronounced as words
+_ABBREVIATION_MAP: dict[str, str] = {
+    "AI": "A.I.",
+    "CEO": "C.E.O.",
+    "CFO": "C.F.O.",
+    "CTO": "C.T.O.",
+    "FBI": "F.B.I.",
+    "CIA": "C.I.A.",
+    "USA": "U.S.A.",
+    "UK": "U.K.",
+    "US": "U.S.",
+    "GDP": "G.D.P.",
+    "IPO": "I.P.O.",
+    "DIY": "D.I.Y.",
+}
 
 
 class VideoProductionAgent:
@@ -86,6 +147,8 @@ class VideoProductionAgent:
     Orchestrates all existing stockpile services + new video agent modules
     to produce a complete video from a topic prompt.
     """
+
+    _PARALINGUISTIC_TAG_RE = re.compile(r"\[(?:laugh|sigh|gasp|chuckle|cough|sniff|groan)\]")
 
     def __init__(self, config: dict | None = None):
         """Initialize with all services.
@@ -146,6 +209,44 @@ class VideoProductionAgent:
         # Output directory
         self.output_dir = Path(config.get("local_output_folder", "output"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Feature flag: use B-roll processor pipeline (new) vs inline methods (old)
+        self.use_processor_broll = config.get("use_processor_broll", True)
+
+        # B-Roll processor services (used when use_processor_broll=True)
+        if self.use_processor_broll:
+            gemini_key = config.get("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
+            self.clip_extractor = ClipExtractor(
+                api_key=gemini_key,
+                min_clip_duration=float(MIN_BROLL_CLIP_SECONDS),
+                max_clip_duration=float(MAX_BROLL_CLIP_SECONDS),
+                max_clips_per_video=1,
+            )
+            self.video_pre_filter = VideoPreFilter()
+            self.semantic_verifier = SemanticVerifier() if gemini_key else None
+            self.video_search_service = VideoSearchService(
+                video_sources=self.video_sources,
+                video_prefilter=self.video_pre_filter,
+                ai_service=self.ai,
+            )
+            self.video_downloader = VideoDownloader(
+                output_dir=str(self.output_dir / "downloads"),
+            )
+            self.file_organizer = FileOrganizer(
+                base_output_dir=str(self.output_dir),
+            )
+            self.video_acquisition = VideoAcquisitionService(
+                video_downloader=self.video_downloader,
+                clip_extractor=self.clip_extractor,
+                semantic_verifier=self.semantic_verifier,
+                file_organizer=self.file_organizer,
+                video_search_service=self.video_search_service,
+                ai_service=self.ai,
+                clips_per_need_target=1,
+                min_clip_duration=float(MIN_BROLL_CLIP_SECONDS),
+                max_clip_duration=float(MAX_BROLL_CLIP_SECONDS),
+            )
+            self.broll_adapter = BRollAdapter()
 
     async def produce(
         self,
@@ -276,6 +377,9 @@ class VideoProductionAgent:
             label = "hook" if i == 0 else f"scene_{i:03d}"
             audio_path = audio_dir / f"{label}.wav"
 
+            # Preprocess text for TTS (number-to-words, abbreviation expansion, etc.)
+            text = self._preprocess_for_tts(text)
+
             logger.info(f"TTS [{label}]: {len(text)} chars")
 
             try:
@@ -303,8 +407,10 @@ class VideoProductionAgent:
         3. Public Chatterbox Turbo endpoint
         """
         if self.tts.is_chatterbox_ext_configured():
+            # Base model — strip paralinguistic tags (not supported)
+            clean_text = self._PARALINGUISTIC_TAG_RE.sub("", text).strip()
             return await self.tts.generate_chatterbox_extended(
-                text=text,
+                text=clean_text,
                 voice_ref_path=voice_ref,
                 exaggeration=0.4,
                 cfg_weight=0.5,
@@ -312,12 +418,15 @@ class VideoProductionAgent:
             )
 
         if self.tts.is_runpod_configured():
+            # Base model — strip paralinguistic tags (not supported)
+            clean_text = self._PARALINGUISTIC_TAG_RE.sub("", text).strip()
             return await self.tts.generate_runpod(
-                text=text,
+                text=clean_text,
                 voice_ref_path=voice_ref,
             )
 
         if self.tts.is_public_endpoint_configured():
+            # Public Chatterbox Turbo supports paralinguistic tags natively
             audio_bytes, _cost = await self.tts.generate_public_audio(text)
             return audio_bytes
 
@@ -405,91 +514,262 @@ class VideoProductionAgent:
         self,
         script: Script,
         project_dir: Path,
+        progress_callback: Callable[[int, str], Awaitable[None]] | None = None,
     ) -> dict[int, Path]:
-        """Acquire visual assets for each scene.
+        """Acquire visual assets for each scene using director-guided type selection.
 
-        Returns dict mapping scene_id -> visual_path.
+        For each scene, fetches BOTH a video candidate AND an image candidate
+        in parallel. Then the AI director (Gemini 3 Pro) evaluates all candidates
+        in context of the full video narrative and decides which type works best
+        per scene.
 
-        For BROLL_VIDEO scenes: Search YouTube -> Pexels -> Pixabay (priority order), download best match
-        For GENERATED_IMAGE scenes: Generate with Gemini/Runware, fallback to stock photo
-        For TEXT_GRAPHIC scenes: Try generating an image first, fallback to styled text
+        Args:
+            script: The video script.
+            project_dir: Project output directory.
+            progress_callback: Optional async callback(percent, message) for progress updates.
+
+        Returns:
+            Dict mapping scene_id -> visual_path.
         """
         visuals_dir = project_dir / "visuals"
         visuals_dir.mkdir(exist_ok=True)
         visual_paths: dict[int, Path] = {}
 
-        sem = asyncio.Semaphore(3)  # Limit concurrent downloads
+        sem = asyncio.Semaphore(6)
 
-        async def acquire_one(scene: SceneScript) -> tuple[int, Path | None]:
+        # -- Build scene list (hook = scene 0) --
+        # Tuple: (scene_id, keywords, style, voiceover, SceneScript|None)
+
+        all_scenes: list[tuple[int, list[str], str, str, SceneScript | None]] = [
+            (0, script.hook.visual_keywords,
+             getattr(script.hook, "visual_style", "cinematic"),
+             script.hook.voiceover, None),
+        ]
+        all_scenes += [
+            (s.id, s.visual_keywords, s.visual_style, s.voiceover, s)
+            for s in script.scenes
+        ]
+
+        total_count = 2 * len(all_scenes)
+        completed_count = 0
+
+        # -- Fetch helpers with timeout + progress reporting --
+
+        async def fetch_and_report_video(
+            sid: int, kw: list[str], style: str, vo: str,
+            scene: SceneScript | None = None,
+        ) -> tuple[int, Path | None]:
+            nonlocal completed_count
+            path: Path | None = None
             async with sem:
                 try:
-                    if scene.visual_type == VisualType.BROLL_VIDEO:
-                        return scene.id, await self._search_and_download_broll(
-                            scene.visual_keywords,
-                            visuals_dir / f"scene_{scene.id:03d}.mp4",
-                            visual_style=getattr(scene, "visual_style", ""),
-                            voiceover_context=scene.voiceover,
-                        )
-                    elif scene.visual_type == VisualType.GENERATED_IMAGE:
-                        path = await self._generate_image(
-                            scene.visual_keywords,
-                            scene.visual_style,
-                            visuals_dir / f"scene_{scene.id:03d}.png",
-                        )
-                        return scene.id, path
-                    else:  # TEXT_GRAPHIC
-                        # Try generating an image first for text_graphic scenes
-                        img_path = await self._generate_image(
-                            scene.visual_keywords,
-                            scene.visual_style or "minimalist",
-                            visuals_dir / f"scene_{scene.id:03d}.png",
-                        )
-                        if img_path:
-                            return scene.id, img_path
-                        # Fallback: write clean display text (not raw keywords)
-                        text_path = visuals_dir / f"scene_{scene.id:03d}.txt"
-                        text_content = self._make_display_text(
-                            scene.visual_keywords, scene.voiceover
-                        )
-                        text_path.write_text(text_content)
-                        return scene.id, text_path
-                except Exception as e:
-                    logger.error(f"Asset acquisition failed for scene {scene.id}: {e}")
-                    return scene.id, None
-
-        # Also handle hook visual - respect visual_type if available
-        async def acquire_hook() -> tuple[int, Path | None]:
-            async with sem:
-                try:
-                    hook_visual_type = getattr(script.hook, "visual_type", None)
-                    if hook_visual_type == VisualType.GENERATED_IMAGE:
-                        path = await self._generate_image(
-                            script.hook.visual_keywords,
-                            getattr(script.hook, "visual_style", "cinematic"),
-                            visuals_dir / "scene_000_hook.png",
-                        )
-                        if path:
-                            return 0, path
-                    # Default / fallback: search for B-roll video
-                    return 0, await self._search_and_download_broll(
-                        script.hook.visual_keywords,
-                        visuals_dir / "scene_000_hook.mp4",
-                        voiceover_context=script.hook.voiceover,
+                    path = await asyncio.wait_for(
+                        self._search_and_download_broll(
+                            kw,
+                            visuals_dir / f"scene_{sid:03d}_video.mp4",
+                            visual_style=style,
+                            voiceover_context=vo,
+                            scene=scene,
+                            script=script,
+                        ),
+                        timeout=90.0,
                     )
+                except (TimeoutError, asyncio.TimeoutError):
+                    logger.warning(f"Video candidate TIMED OUT for scene {sid} (90s)")
                 except Exception as e:
-                    logger.error(f"Hook visual acquisition failed: {e}")
-                    return 0, None
+                    logger.error(f"Video candidate failed for scene {sid}: {e}")
+            completed_count += 1
+            if progress_callback:
+                pct = 40 + int((completed_count / total_count) * 22)
+                status = "acquired" if path else "skipped"
+                await progress_callback(
+                    pct,
+                    f"Scene {sid} video: {status} ({completed_count}/{total_count})",
+                )
+            return sid, path
 
-        tasks = [acquire_hook()] + [acquire_one(scene) for scene in script.scenes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def fetch_and_report_image(
+            sid: int, kw: list[str], style: str,
+        ) -> tuple[int, Path | None]:
+            nonlocal completed_count
+            path: Path | None = None
+            async with sem:
+                try:
+                    path = await asyncio.wait_for(
+                        self._generate_image(
+                            kw,
+                            style,
+                            visuals_dir / f"scene_{sid:03d}_image.png",
+                        ),
+                        timeout=60.0,
+                    )
+                except (TimeoutError, asyncio.TimeoutError):
+                    logger.warning(f"Image candidate TIMED OUT for scene {sid} (60s)")
+                except Exception as e:
+                    logger.error(f"Image candidate failed for scene {sid}: {e}")
+            completed_count += 1
+            if progress_callback:
+                pct = 40 + int((completed_count / total_count) * 22)
+                status = "acquired" if path else "skipped"
+                await progress_callback(
+                    pct,
+                    f"Scene {sid} image: {status} ({completed_count}/{total_count})",
+                )
+            return sid, path
 
-        for result in results:
+        # -- Phase 1: Run ALL fetches in parallel --
+
+        all_results = await asyncio.gather(
+            *[fetch_and_report_video(sid, kw, style, vo, scene=sc)
+              for sid, kw, style, vo, sc in all_scenes],
+            *[fetch_and_report_image(sid, kw, style)
+              for sid, kw, style, _vo, _sc in all_scenes],
+            return_exceptions=True,
+        )
+
+        n = len(all_scenes)
+        video_results = all_results[:n]
+        image_results = all_results[n:]
+
+        video_candidates: dict[int, Path | None] = {}
+        image_candidates: dict[int, Path | None] = {}
+
+        for result in video_results:
             if isinstance(result, Exception):
-                logger.error(f"Asset acquisition task failed: {result}")
+                logger.error(f"Video candidate task exception: {result}")
                 continue
-            scene_id, path = result
-            if path:
-                visual_paths[scene_id] = path
+            sid, path = result
+            video_candidates[sid] = path
+
+        for result in image_results:
+            if isinstance(result, Exception):
+                logger.error(f"Image candidate task exception: {result}")
+                continue
+            sid, path = result
+            image_candidates[sid] = path
+
+        videos_found = sum(1 for v in video_candidates.values() if v)
+        images_found = sum(1 for v in image_candidates.values() if v)
+        logger.info(
+            f"Dual candidates fetched: {videos_found} videos, {images_found} images"
+        )
+
+        # -- Phase 2: Director decides which type to use per scene --
+
+        candidates_info: dict[int, dict] = {}
+        for scene_id, kw, _style, _vo, _sc in all_scenes:
+            v_path = video_candidates.get(scene_id)
+            i_path = image_candidates.get(scene_id)
+            candidates_info[scene_id] = {
+                "has_video": v_path is not None,
+                "has_image": i_path is not None,
+                "video_desc": (
+                    f"Video clip from search: {' '.join(kw[:3])}"
+                    if v_path else "No video found"
+                ),
+                "image_desc": (
+                    f"Stock/AI image for: {' '.join(kw[:3])}"
+                    if i_path else "No image found"
+                ),
+            }
+
+        scenes_with_both = [
+            sid for sid, info in candidates_info.items()
+            if info["has_video"] and info["has_image"]
+        ]
+
+        decision_map: dict[int, VisualTypeDecision] = {}
+        if scenes_with_both and self.director:
+            if progress_callback:
+                await progress_callback(
+                    63,
+                    f"Director choosing visual types for {len(scenes_with_both)} scenes...",
+                )
+            try:
+                decisions = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.director.decide_visual_types, script, candidates_info
+                    ),
+                    timeout=30.0,
+                )
+                decision_map = {d.scene_id: d for d in decisions}
+                if progress_callback:
+                    vid_n = sum(1 for d in decisions if d.chosen_type == VisualType.BROLL_VIDEO)
+                    img_n = sum(1 for d in decisions if d.chosen_type == VisualType.GENERATED_IMAGE)
+                    await progress_callback(
+                        65, f"Director decided: {vid_n} videos, {img_n} images"
+                    )
+            except (TimeoutError, asyncio.TimeoutError):
+                logger.warning(
+                    "Director visual type decision timed out (30s). Using fallback."
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Director visual type decision failed: {e}. Using fallback."
+                )
+
+        # -- Phase 3: Apply decisions and clean up unchosen --
+
+        for scene_id, _kw, _style, _vo, _sc in all_scenes:
+            v_path = video_candidates.get(scene_id)
+            i_path = image_candidates.get(scene_id)
+            decision = decision_map.get(scene_id)
+
+            if decision and v_path and i_path:
+                # Director made a choice
+                if decision.chosen_type == VisualType.BROLL_VIDEO:
+                    final_path = visuals_dir / f"scene_{scene_id:03d}.mp4"
+                    if v_path != final_path:
+                        v_path.rename(final_path)
+                    if i_path and i_path.exists():
+                        i_path.unlink(missing_ok=True)
+                    visual_paths[scene_id] = final_path
+                    logger.info(
+                        f"Scene {scene_id}: Director chose VIDEO "
+                        f"({decision.rationale[:60]})"
+                    )
+                else:
+                    suffix = i_path.suffix if i_path else ".png"
+                    final_path = visuals_dir / f"scene_{scene_id:03d}{suffix}"
+                    if i_path != final_path:
+                        i_path.rename(final_path)
+                    if v_path and v_path.exists():
+                        v_path.unlink(missing_ok=True)
+                    visual_paths[scene_id] = final_path
+                    logger.info(
+                        f"Scene {scene_id}: Director chose IMAGE "
+                        f"({decision.rationale[:60]})"
+                    )
+            elif v_path:
+                # Only video available
+                final_path = visuals_dir / f"scene_{scene_id:03d}.mp4"
+                if v_path != final_path:
+                    v_path.rename(final_path)
+                visual_paths[scene_id] = final_path
+            elif i_path:
+                # Only image available
+                suffix = i_path.suffix if i_path else ".png"
+                final_path = visuals_dir / f"scene_{scene_id:03d}{suffix}"
+                if i_path != final_path:
+                    i_path.rename(final_path)
+                visual_paths[scene_id] = final_path
+            else:
+                logger.warning(f"Scene {scene_id}: No visual candidates found")
+
+        # -- Phase 4: Fallback for TEXT_GRAPHIC scenes with no candidates --
+        for scene in script.scenes:
+            if scene.id not in visual_paths and scene.visual_type == VisualType.TEXT_GRAPHIC:
+                text_path = visuals_dir / f"scene_{scene.id:03d}.txt"
+                text_content = self._make_display_text(
+                    scene.visual_keywords, scene.voiceover
+                )
+                text_path.write_text(text_content)
+                visual_paths[scene.id] = text_path
+
+        if progress_callback:
+            await progress_callback(
+                68, f"Visuals finalized: {len(visual_paths)} assets ready"
+            )
 
         return visual_paths
 
@@ -521,369 +801,252 @@ class VideoProductionAgent:
 
         return "..."
 
+    @staticmethod
+    def _preprocess_for_tts(text: str) -> str:
+        """Preprocess script text for TTS synthesis.
+
+        Safety net that catches what the LLM prompt misses:
+        - Normalizes whitespace
+        - Replaces problematic characters (em dashes, semicolons, etc.)
+        - Expands abbreviations (AI → A.I.)
+        - Converts numbers to words ($500 → five hundred dollars)
+        - Ensures terminal punctuation on every sentence
+        - Preserves paralinguistic tags ([laugh], [sigh], etc.)
+        """
+        import re as _re
+
+        if not text or not text.strip():
+            return text
+
+        # Protect paralinguistic tags with placeholders
+        tag_pattern = _re.compile(r"\[(?:laugh|sigh|gasp|chuckle|cough|sniff|groan)\]")
+        tags_found: list[str] = []
+
+        def _save_tag(m: _re.Match) -> str:
+            tags_found.append(m.group(0))
+            return f"__TAG{len(tags_found) - 1}__"
+
+        text = tag_pattern.sub(_save_tag, text)
+
+        # --- Character replacements ---
+        text = text.replace("\u2014", ", ")   # em dash
+        text = text.replace("\u2013", ", ")   # en dash
+        text = text.replace("\u2026", ".")    # ellipsis character
+        text = text.replace("...", ".")       # triple dot
+        text = text.replace(";", ".")
+        text = text.replace("&", " and ")
+        text = text.replace("(", ", ").replace(")", ", ")
+        text = text.replace("#", " number ")
+
+        # Slashes between words → "or" (but not in URLs or paths)
+        text = _re.sub(r"(?<=[a-zA-Z])/(?=[a-zA-Z])", " or ", text)
+
+        # --- Currency ---
+        def _currency_replace(m: _re.Match) -> str:
+            num_str = m.group(1).replace(",", "")
+            suffix = m.group(2).strip() if m.group(2) else ""
+            try:
+                num = int(num_str)
+                word = _number_to_words(num)
+            except ValueError:
+                word = num_str
+            if suffix:
+                return f"{word} {suffix} dollars"
+            return f"{word} dollars"
+
+        text = _re.sub(
+            r"\$(\d[\d,]*)\s*(billion|million|thousand|hundred)?",
+            _currency_replace,
+            text,
+            flags=_re.IGNORECASE,
+        )
+
+        # --- Percentages ---
+        def _percent_replace(m: _re.Match) -> str:
+            try:
+                num = int(m.group(1))
+                return f"{_number_to_words(num)} percent"
+            except ValueError:
+                return m.group(0)
+
+        text = _re.sub(r"(\d+)%", _percent_replace, text)
+
+        # --- Number ranges (e.g., 15-20) ---
+        def _range_replace(m: _re.Match) -> str:
+            try:
+                a, b = int(m.group(1)), int(m.group(2))
+                return f"{_number_to_words(a)} to {_number_to_words(b)}"
+            except ValueError:
+                return m.group(0)
+
+        text = _re.sub(r"\b(\d{1,4})-(\d{1,4})\b", _range_replace, text)
+
+        # --- Years (standalone 4-digit numbers 1000-2099) ---
+        def _year_replace(m: _re.Match) -> str:
+            y = int(m.group(0))
+            if 1000 <= y <= 2099:
+                return _year_to_words(y)
+            return m.group(0)
+
+        text = _re.sub(r"\b([12]\d{3})\b", _year_replace, text)
+
+        # --- Remaining standalone numbers ---
+        def _num_replace(m: _re.Match) -> str:
+            try:
+                n = int(m.group(0).replace(",", ""))
+                return _number_to_words(n)
+            except ValueError:
+                return m.group(0)
+
+        text = _re.sub(r"\b\d[\d,]*\b", _num_replace, text)
+
+        # --- Abbreviation expansion (word-boundary, case-sensitive) ---
+        for abbr, expanded in _ABBREVIATION_MAP.items():
+            text = _re.sub(rf"\b{abbr}\b", expanded, text)
+
+        # --- Whitespace normalization ---
+        text = _re.sub(r"[ \t]+", " ", text)
+        text = _re.sub(r" ,", ",", text)   # fix space before comma
+        text = _re.sub(r",{2,}", ",", text)  # fix double commas
+        text = _re.sub(r"\.{2,}", ".", text)  # fix double periods
+        text = text.strip()
+
+        # --- Terminal punctuation enforcement ---
+        sentences = _re.split(r"(?<=[.!?])\s+", text)
+        fixed_sentences: list[str] = []
+        for s in sentences:
+            s = s.strip()
+            if not s:
+                continue
+            # Don't add punctuation to tag placeholders standing alone
+            if _re.match(r"^__TAG\d+__$", s):
+                fixed_sentences.append(s)
+                continue
+            if s and s[-1] not in ".!?":
+                s += "."
+            fixed_sentences.append(s)
+        text = " ".join(fixed_sentences)
+
+        # --- Restore paralinguistic tags ---
+        for i, tag in enumerate(tags_found):
+            text = text.replace(f"__TAG{i}__", tag)
+
+        return text.strip()
+
     async def _search_and_download_broll(
         self,
         keywords: list[str],
         output_path: Path,
         visual_style: str = "",
         voiceover_context: str = "",
+        scene: SceneScript | None = None,
+        script: Script | None = None,
     ) -> Path | None:
         """Search video sources and download best B-roll clip.
 
-        For YouTube, tries multiple query variations before falling through:
-          1. Enhanced: keywords + style + "stock footage b-roll"
-          2. Simpler: keywords + "cinematic footage"
-          3. Bare: keywords only
+        Uses the B-roll processor pipeline (VideoAcquisitionService) when
+        use_processor_broll=True, with fallback to the legacy inline pipeline.
 
-        All sources go through metadata pre-filtering and AI evaluation
-        before downloading. Only videos scoring >= MIN_BROLL_SCORE are tried.
-
-        Only falls through to Pexels/Pixabay if ALL YouTube attempts fail.
-        Non-YouTube sources use a single standard search.
+        When a SceneScript is provided, uses BRollAdapter for richer metadata.
+        Otherwise builds a synthetic BRollNeed from keywords.
 
         Args:
             keywords: Visual keywords to search for
             output_path: Where to save the downloaded clip
             visual_style: Optional style hint for search enhancement
             voiceover_context: Optional voiceover text for AI evaluation context
+            scene: Optional SceneScript for BRollAdapter conversion
+            script: Optional full Script for timestamp calculation
 
         Returns:
             Path to downloaded clip, or None if all sources failed
         """
-        import httpx
+        if not self.use_processor_broll:
+            logger.warning("[B-roll] Processor pipeline disabled, skipping B-roll search")
+            return None
+        return await self._search_broll_via_processor(
+            keywords, output_path, visual_style, voiceover_context,
+            scene=scene, script=script,
+        )
 
-        search_query = " ".join(keywords[:3])
-
-        for source in self.video_sources:
-            source_name = source.get_source_name()
-            if not source.is_configured():
-                logger.debug(f"[B-roll] Skipping {source_name} (not configured)")
-                continue
-
-            try:
-                # YouTube: try multiple query variations with max_results=10 each
-                if source_name == "youtube" and isinstance(source, YouTubeVideoSource):
-                    yt_result = await self._youtube_multi_query_search(
-                        source, keywords, visual_style, output_path, search_query,
-                        voiceover_context=voiceover_context,
-                    )
-                    if yt_result:
-                        return yt_result
-                    # All YouTube attempts exhausted, fall through to next source
-                    continue
-
-                # Non-YouTube sources: single standard search
-                results = await source.search_videos_async(search_query)
-
-                if not results:
-                    logger.debug(f"[B-roll] No results from {source_name} for '{search_query}'")
-                    continue
-
-                # Pre-filter and AI-evaluate non-YouTube results
-                filtered = self._prefilter_video_results(results)
-                if filtered:
-                    scored = await self._evaluate_broll_candidates(
-                        filtered, keywords, visual_style, voiceover_context
-                    )
-                    download_order = (
-                        [sv.video_result for sv in scored] if scored
-                        else filtered[:3]
-                    )
-                else:
-                    download_order = results[:3]
-
-                # Try downloads in evaluated order
-                for video_result in download_order:
-                    try:
-                        download_url = video_result.download_url
-                        if not download_url:
-                            continue
-
-                        async with httpx.AsyncClient(timeout=60.0) as client:
-                            resp = await client.get(download_url)
-                            if resp.status_code == 200 and len(resp.content) > 1024:
-                                output_path.write_bytes(resp.content)
-                                logger.info(
-                                    f"[B-roll] Downloaded from {source_name}: '{search_query}' -> "
-                                    f"{output_path.name} ({len(resp.content) / 1024:.0f} KB)"
-                                )
-                                # Trim non-YouTube clips that are too long
-                                trimmed = await self._trim_if_too_long(
-                                    output_path, keywords, voiceover_context
-                                )
-                                return trimmed or output_path
-
-                    except Exception as dl_err:
-                        logger.warning(
-                            f"[B-roll] Download failed ({source_name}, {video_result.video_id}): {dl_err}"
-                        )
-                        continue
-
-            except Exception as e:
-                logger.warning(
-                    f"[B-roll] Search failed ({source_name}): {e}"
-                )
-                continue
-
-        logger.warning(f"[B-roll] No B-roll found from any source for: {search_query}")
-        return None
-
-    async def _youtube_multi_query_search(
+    async def _search_broll_via_processor(
         self,
-        source: "YouTubeVideoSource",
         keywords: list[str],
-        visual_style: str,
         output_path: Path,
-        search_query: str,
-        voiceover_context: str = "",
-    ) -> Path | None:
-        """Try multiple YouTube query variations with AI evaluation before downloading.
-
-        Attempts three progressively simpler queries:
-          1. Enhanced: keywords + visual_style + "stock footage b-roll"
-          2. Simpler: keywords + "cinematic footage"
-          3. Bare: keywords only
-
-        Each attempt: search -> pre-filter -> AI evaluate -> download best scoring.
-
-        Args:
-            source: The YouTubeVideoSource instance
-            keywords: Visual keywords list
-            visual_style: Style hint for first query
-            output_path: Where to save the clip
-            search_query: Pre-joined keywords string for logging
-            voiceover_context: Voiceover text for AI evaluation context
-
-        Returns:
-            Path to downloaded clip, or None if all attempts failed
-        """
-        base_keywords = " ".join(keywords[:3])
-        query_descriptions = [
-            f"{base_keywords} {visual_style} stock footage b-roll no watermark".strip(),
-            f"{base_keywords} cinematic footage free",
-            f"{base_keywords} no watermark",
-        ]
-
-        for attempt, desc in enumerate(query_descriptions, 1):
-            logger.info(f"[B-roll] YouTube attempt {attempt}/3: '{desc}'")
-
-            try:
-                if attempt == 1:
-                    results = await source.search_broll_async(
-                        keywords, visual_style=visual_style, max_results=10
-                    )
-                elif attempt == 2:
-                    results = await source.search_broll_async(
-                        keywords, visual_style="cinematic footage", max_results=10
-                    )
-                else:
-                    results = await source.search_videos_async(base_keywords)
-
-                if not results:
-                    logger.debug(
-                        f"[B-roll] YouTube attempt {attempt}/3 returned no results"
-                    )
-                    continue
-
-                # Step 1: Metadata pre-filtering
-                filtered = self._prefilter_video_results(results)
-                if not filtered:
-                    logger.debug(
-                        f"[B-roll] All results filtered out (attempt {attempt}/3)"
-                    )
-                    continue
-
-                # Step 2: AI evaluation - score candidates
-                scored = await self._evaluate_broll_candidates(
-                    filtered, keywords, visual_style, voiceover_context
-                )
-
-                # Step 3: Try downloads in score-descending order
-                download_candidates = (
-                    [sv.video_result for sv in scored] if scored
-                    else filtered[:3]  # Fallback if evaluation fails
-                )
-
-                for video_result in download_candidates:
-                    try:
-                        downloaded = await self._download_youtube_broll(
-                            video_result.url, output_path,
-                            visual_keywords=keywords,
-                            voiceover_context=voiceover_context,
-                        )
-                        if downloaded:
-                            logger.info(
-                                f"[B-roll] Downloaded from YouTube (attempt {attempt}/3): "
-                                f"'{desc}' -> {output_path.name}"
-                            )
-                            return output_path
-                    except Exception as dl_err:
-                        logger.warning(
-                            f"[B-roll] YouTube download failed "
-                            f"(attempt {attempt}/3, {video_result.video_id}): {dl_err}"
-                        )
-                        continue
-
-            except Exception as e:
-                logger.warning(
-                    f"[B-roll] YouTube search failed (attempt {attempt}/3): {e}"
-                )
-                continue
-
-        logger.debug(f"[B-roll] All 3 YouTube attempts exhausted for: {search_query}")
-        return None
-
-    def _prefilter_video_results(
-        self,
-        results: list[VideoResult],
-    ) -> list[VideoResult]:
-        """Pre-filter video search results using metadata heuristics.
-
-        Removes videos that are unlikely to be good B-roll based on:
-        - Blocked title keywords (compilations, reactions, vlogs, etc.)
-        - Very low view count (< MIN_VIEW_COUNT, if available)
-        - Prefers Creative Commons licensed content (sorts CC first)
-
-        Args:
-            results: Raw search results to filter
-
-        Returns:
-            Filtered and re-ordered list of VideoResult objects
-        """
-        filtered = []
-        for video in results:
-            title_lower = video.title.lower()
-
-            # Check blocked title keywords
-            if any(kw in title_lower for kw in BLOCKED_TITLE_KEYWORDS):
-                logger.debug(
-                    f"[Pre-filter] Blocked keyword in title: '{video.title[:60]}'"
-                )
-                continue
-
-            # Filter out very low view count videos (if view_count is available)
-            if video.view_count is not None and video.view_count < MIN_VIEW_COUNT:
-                logger.debug(
-                    f"[Pre-filter] Low views ({video.view_count}): '{video.title[:60]}'"
-                )
-                continue
-
-            filtered.append(video)
-
-        # Sort: Creative Commons first, then by view_count descending
-        def sort_key(v: VideoResult) -> tuple[int, int]:
-            is_cc = 1 if v.license and "creative commons" in v.license.lower() else 0
-            views = v.view_count or 0
-            return (-is_cc, -views)
-
-        filtered.sort(key=sort_key)
-
-        if len(filtered) < len(results):
-            logger.info(
-                f"[Pre-filter] {len(results)} -> {len(filtered)} results "
-                f"(removed {len(results) - len(filtered)})"
-            )
-
-        return filtered
-
-    async def _evaluate_broll_candidates(
-        self,
-        results: list[VideoResult],
-        keywords: list[str],
         visual_style: str = "",
         voiceover_context: str = "",
-    ) -> list[ScoredVideo]:
-        """Score video search results using Gemini Flash before downloading.
+        scene: SceneScript | None = None,
+        script: Script | None = None,
+    ) -> Path | None:
+        """Search and download B-roll using the B-roll processor pipeline.
 
-        Sends title/description metadata to AI for relevance scoring.
-        Only videos scoring >= MIN_BROLL_SCORE are returned.
+        When a SceneScript + Script are provided, uses BRollAdapter for
+        rich metadata (alternate searches, required elements, timestamps).
+        Otherwise builds a synthetic BRollNeed from the keywords.
 
         Args:
-            results: Pre-filtered video search results
-            keywords: Visual keywords for the scene
-            visual_style: Requested visual style
-            voiceover_context: Voiceover text for context
+            keywords: Visual keywords to search for
+            output_path: Where to save the downloaded clip
+            visual_style: Optional style hint
+            voiceover_context: Optional voiceover text for context
+            scene: Optional SceneScript for adapter conversion
+            script: Optional full Script for timestamp calculation
 
         Returns:
-            List of ScoredVideo objects sorted by score descending
+            Path to downloaded clip, or None if failed
         """
-        if not results:
-            return []
+        from models.broll_need import BRollNeed
 
-        search_query = " ".join(keywords[:3])
+        # Use BRollAdapter when we have a full scene + script
+        if scene is not None and script is not None:
+            need = self.broll_adapter.scene_to_broll_need(scene, script)
+        else:
+            # Build a synthetic BRollNeed for hook or fix-up calls
+            search_phrase = " ".join(keywords[:3])
+            need = BRollNeed(
+                timestamp=0.0,
+                search_phrase=search_phrase,
+                description=voiceover_context[:200] if voiceover_context else search_phrase,
+                context=voiceover_context,
+                suggested_duration=float(TARGET_BROLL_CLIP_SECONDS),
+                original_context=voiceover_context,
+                alternate_searches=[
+                    f"{keywords[0]} footage" if keywords else "",
+                    f"cinematic {search_phrase}",
+                ],
+                negative_keywords=["compilation", "reaction", "vlog", "meme", "review"],
+                visual_style=visual_style if visual_style else None,
+            )
 
-        # Format results for the prompt
-        results_text = "\n".join(
-            f"ID: {v.video_id}\n"
-            f"Title: {v.title}\n"
-            f"Description: {(v.description or 'N/A')[:200]}\n"
-            f"Duration: {v.duration}s\n"
-            f"Views: {v.view_count or 'N/A'}\n"
-            "---"
-            for v in results
-        )
-
-        prompt = VIDEO_AGENT_BROLL_EVALUATOR.format(
-            search_query=search_query,
-            visual_keywords=", ".join(keywords),
-            visual_style=visual_style or "cinematic",
-            voiceover_context=voiceover_context[:300] if voiceover_context else "N/A",
-            results_text=results_text,
-        )
+        project_dir = str(output_path.parent)
 
         try:
-            # Use Gemini Flash for fast, cheap evaluation
-            from google.genai import types
-
-            response = await asyncio.to_thread(
-                self.ai.client.models.generate_content,
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.1),
+            result = await self.video_acquisition.process_single_need(
+                need=need,
+                need_index=1,
+                total_needs=1,
+                project_dir=project_dir,
+                video_prefilter=self.video_pre_filter,
             )
 
-            if not response.text:
-                logger.warning("[B-roll eval] Empty AI response, skipping evaluation")
-                return []
-
-            text = strip_markdown_code_blocks(response.text)
-            scored_data = json.loads(text)
-
-            if not isinstance(scored_data, list):
-                logger.warning("[B-roll eval] AI response is not a list")
-                return []
-
-            # Build scored video objects
-            video_lookup = {v.video_id: v for v in results}
-            scored_videos = []
-            for item in scored_data:
-                if not isinstance(item, dict):
-                    continue
-                vid_id = item.get("video_id", "")
-                score = item.get("score", 0)
-                if vid_id in video_lookup and isinstance(score, (int, float)) and score >= MIN_BROLL_SCORE:
-                    scored_videos.append(
-                        ScoredVideo(
-                            video_id=vid_id,
-                            score=int(score),
-                            video_result=video_lookup[vid_id],
+            if result:
+                _folder_name, clip_files = result
+                if clip_files:
+                    first_clip = Path(clip_files[0])
+                    if first_clip.exists():
+                        import shutil
+                        shutil.move(str(first_clip), str(output_path))
+                        logger.info(
+                            f"[B-roll] Processor pipeline: '{need.search_phrase}' "
+                            f"-> {output_path.name}"
                         )
-                    )
+                        return output_path
 
-            scored_videos.sort(key=lambda x: x.score, reverse=True)
-
-            logger.info(
-                f"[B-roll eval] '{search_query}': "
-                f"{len(scored_videos)}/{len(results)} scored >= {MIN_BROLL_SCORE}"
-            )
-            return scored_videos
-
-        except json.JSONDecodeError as e:
-            logger.warning(f"[B-roll eval] JSON parse failed: {e}")
-            return []
         except Exception as e:
-            logger.warning(f"[B-roll eval] Evaluation failed: {e}")
-            return []
+            logger.warning(f"[B-roll] Processor pipeline failed: {e}")
+
+        logger.warning(f"[B-roll] No B-roll found via processor for: {need.search_phrase}")
+        return None
 
     async def _evaluate_image_candidates(
         self,
@@ -949,499 +1112,6 @@ class VideoProductionAgent:
             logger.warning(f"[Image eval] Evaluation failed: {e}")
 
         return 0
-
-    async def _download_youtube_broll(
-        self,
-        url: str,
-        output_path: Path,
-        visual_keywords: list[str] | None = None,
-        voiceover_context: str = "",
-    ) -> bool:
-        """Download YouTube B-roll using two-pass: 360p preview -> Gemini analysis -> FFmpeg extract.
-
-        Pass 1: Download 360p preview (fast, small file)
-        Pass 2: Upload to Gemini, identify best 3-5s segment
-        Pass 3: Extract segment with FFmpeg at higher quality from preview
-
-        If Gemini analysis fails or no good segment found, falls back to
-        downloading the first MAX_BROLL_CLIP_SECONDS of the video.
-
-        Args:
-            url: YouTube video URL
-            output_path: Where to save the final extracted clip
-            visual_keywords: Keywords describing desired visuals for Gemini context
-            voiceover_context: Scene voiceover text for Gemini context
-
-        Returns:
-            True if download and extraction succeeded, False otherwise
-        """
-        import yt_dlp
-
-        max_duration = self.config.get("youtube_broll_max_duration", 120)
-        preview_path = output_path.parent / f"_preview_{output_path.stem}.mp4"
-
-        try:
-            # -- Pass 1: Download 360p preview --
-            logger.info(f"[Two-pass] Pass 1: Downloading 360p preview for {url}")
-            preview_ok = await asyncio.to_thread(
-                self._ytdlp_download_preview, url, preview_path, max_duration
-            )
-            if not preview_ok or not preview_path.exists():
-                logger.warning("[Two-pass] Preview download failed, skipping")
-                return False
-
-            preview_size_kb = preview_path.stat().st_size / 1024
-            logger.info(f"[Two-pass] Preview downloaded: {preview_size_kb:.0f} KB")
-
-            # -- Pass 2: Gemini analysis to find best segment --
-            keyword_str = ", ".join(visual_keywords[:5]) if visual_keywords else ""
-            segment = await self._analyze_video_for_best_segment(
-                preview_path, keyword_str, voiceover_context
-            )
-
-            if segment:
-                start_time, end_time, score = segment
-                logger.info(
-                    f"[Two-pass] Gemini found segment: {start_time:.1f}s-{end_time:.1f}s "
-                    f"(score: {score}/10)"
-                )
-
-                # -- Pass 3: Extract clip with FFmpeg --
-                extracted = await asyncio.to_thread(
-                    self._extract_clip_ffmpeg,
-                    preview_path, output_path, start_time, end_time,
-                )
-                if extracted:
-                    logger.info(
-                        f"[Two-pass] Extracted clip: {output_path.name} "
-                        f"({end_time - start_time:.1f}s)"
-                    )
-                    return True
-
-                logger.warning("[Two-pass] FFmpeg extraction failed, using fallback trim")
-
-            else:
-                logger.info("[Two-pass] No good segment found, using first few seconds")
-
-            # -- Fallback: trim first MAX_BROLL_CLIP_SECONDS from preview --
-            duration = self._get_video_duration_ffprobe(preview_path)
-            trim_end = min(float(MAX_BROLL_CLIP_SECONDS), duration)
-            extracted = await asyncio.to_thread(
-                self._extract_clip_ffmpeg,
-                preview_path, output_path, 0.0, trim_end,
-            )
-            return extracted
-
-        except Exception as e:
-            logger.warning(f"[Two-pass] Failed for {url}: {e}")
-            return False
-
-        finally:
-            # Always clean up preview file
-            if preview_path.exists():
-                preview_path.unlink(missing_ok=True)
-                logger.debug(f"[Two-pass] Cleaned up preview: {preview_path.name}")
-
-    @staticmethod
-    def _ytdlp_download_preview(
-        url: str, preview_path: Path, max_duration: int = 120
-    ) -> bool:
-        """Download a 360p preview video with yt-dlp (synchronous, for thread pool).
-
-        Args:
-            url: YouTube video URL
-            preview_path: Where to save the preview
-            max_duration: Skip videos longer than this (seconds)
-
-        Returns:
-            True if download succeeded
-        """
-        import yt_dlp
-
-        ydl_opts = {
-            "format": "worst[height<=360]/worst",
-            "outtmpl": str(preview_path.with_suffix(".%(ext)s")),
-            "postprocessors": [
-                {
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",
-                }
-            ],
-            "match_filter": lambda info, *_: (
-                f"Duration {info.get('duration', 0)}s exceeds max {max_duration}s"
-                if info.get("duration", 0) > max_duration
-                else None
-            ),
-            "quiet": True,
-            "no_progress": True,
-            "no_warnings": True,
-            "retries": 3,
-            "ignoreerrors": True,
-            "socket_timeout": 30,
-            "postprocessor_args": {
-                "FFmpeg": ["-v", "quiet", "-nostats", "-loglevel", "error"],
-                "Merger+ffmpeg": ["-v", "quiet", "-nostats", "-loglevel", "error"],
-                "VideoConvertor+ffmpeg": ["-v", "quiet", "-nostats", "-loglevel", "error"],
-            },
-        }
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-            # yt-dlp may produce a file with different extension, find and rename
-            stem = preview_path.stem
-            parent = preview_path.parent
-            candidates = list(parent.glob(f"{stem}.*"))
-            if not candidates:
-                return False
-
-            actual_file = candidates[0]
-            if actual_file != preview_path:
-                actual_file.rename(preview_path)
-
-            return preview_path.exists() and preview_path.stat().st_size > 1024
-
-        except Exception as e:
-            logger.warning(f"[Two-pass] yt-dlp preview error: {e}")
-            return False
-
-    async def _analyze_video_for_best_segment(
-        self,
-        video_path: Path,
-        visual_keywords: str,
-        voiceover_context: str = "",
-    ) -> tuple[float, float, int] | None:
-        """Upload video to Gemini File API and find the best 3-5s segment.
-
-        Args:
-            video_path: Path to the preview video file
-            visual_keywords: Comma-separated keywords for what to look for
-            voiceover_context: The scene's voiceover text for context
-
-        Returns:
-            Tuple of (start_time, end_time, score) or None if no good segment found
-        """
-        try:
-            import google.genai as genai
-
-            api_key = self.config.get("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
-            if not api_key:
-                logger.warning("[Gemini clip] No GEMINI_API_KEY configured")
-                return None
-
-            client = genai.Client(api_key=api_key)
-
-            # Get video duration for the prompt
-            duration = self._get_video_duration_ffprobe(video_path)
-
-            # Upload video to Gemini File API
-            logger.info(f"[Gemini clip] Uploading video ({video_path.stat().st_size / 1024:.0f} KB)...")
-            uploaded_file = await asyncio.to_thread(
-                client.files.upload, file=str(video_path)
-            )
-
-            # Wait for file processing
-            file_ready = await asyncio.to_thread(
-                self._wait_for_gemini_file, client, uploaded_file.name
-            )
-            if not file_ready:
-                logger.warning("[Gemini clip] File processing timed out")
-                return None
-
-            # Build analysis prompt
-            context_section = ""
-            if voiceover_context:
-                context_section = f'\nVOICEOVER CONTEXT: "{voiceover_context[:300]}"\n'
-
-            prompt = f"""Watch this video and identify the single best continuous segment of {MIN_BROLL_CLIP_SECONDS}-{MAX_BROLL_CLIP_SECONDS + 1} seconds that best matches these visuals: "{visual_keywords}".
-{context_section}
-VIDEO DURATION: {duration:.1f} seconds
-
-REQUIREMENTS:
-- The segment MUST have clean visuals: no watermarks, no text overlays, no logos, no talking heads
-- Prefer cinematic shots: establishing shots, smooth camera movement, good lighting
-- The segment should be visually compelling and work as background B-roll footage
-- Duration must be between {MIN_BROLL_CLIP_SECONDS} and {MAX_BROLL_CLIP_SECONDS + 1} seconds
-
-Return ONLY a single JSON object (no markdown, no extra text):
-{{"start_time": 12.5, "end_time": 16.0, "score": 8, "rationale": "Clean aerial shot of city skyline"}}
-
-SCORING:
-- 10: Perfect match, stunning visuals, no distractions
-- 8: Strong match, good quality, minor imperfections
-- 7: Decent match, usable as B-roll
-- 6 or below: Not good enough (DO NOT RETURN segments below 7)
-
-If no segment scores 7 or higher, return: {{"score": 0}}"""
-
-            # Call Gemini for analysis
-            from google.genai import types
-
-            response = await asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.0-flash",
-                contents=[uploaded_file, prompt],
-                config=types.GenerateContentConfig(temperature=0.2),
-            )
-
-            # Clean up uploaded file
-            try:
-                await asyncio.to_thread(client.files.delete, name=uploaded_file.name)
-            except Exception:
-                pass
-
-            if not response.text:
-                logger.warning("[Gemini clip] Empty response")
-                return None
-
-            # Parse JSON response
-            text = response.text.strip()
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-            result = json.loads(text)
-
-            score = int(result.get("score", 0))
-            if score < MIN_GEMINI_SEGMENT_SCORE:
-                logger.info(
-                    f"[Gemini clip] Best segment scored {score}/10 "
-                    f"(below threshold {MIN_GEMINI_SEGMENT_SCORE})"
-                )
-                return None
-
-            start_time = float(result.get("start_time", 0))
-            end_time = float(result.get("end_time", 0))
-
-            # Validate timestamps
-            if end_time <= start_time or start_time < 0:
-                logger.warning(f"[Gemini clip] Invalid timestamps: {start_time}-{end_time}")
-                return None
-
-            seg_duration = end_time - start_time
-            if seg_duration < MIN_BROLL_CLIP_SECONDS - 0.5:
-                logger.warning(f"[Gemini clip] Segment too short: {seg_duration:.1f}s")
-                return None
-            if seg_duration > MAX_BROLL_CLIP_SECONDS + 2:
-                # Trim to target duration
-                end_time = start_time + TARGET_BROLL_CLIP_SECONDS
-
-            # Clamp to video duration
-            if end_time > duration:
-                end_time = duration
-
-            rationale = result.get("rationale", "")
-            logger.info(f"[Gemini clip] Selected: {start_time:.1f}s-{end_time:.1f}s, score={score}, {rationale}")
-
-            return (start_time, end_time, score)
-
-        except json.JSONDecodeError as e:
-            logger.warning(f"[Gemini clip] JSON parse error: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"[Gemini clip] Analysis failed: {e}")
-            return None
-
-    @staticmethod
-    def _wait_for_gemini_file(client, file_name: str) -> bool:
-        """Wait for Gemini File API to finish processing an uploaded file.
-
-        Args:
-            client: google.genai Client
-            file_name: Name of the uploaded file
-
-        Returns:
-            True if file is ready, False if timed out or failed
-        """
-        start = time.time()
-        while time.time() - start < GEMINI_FILE_POLL_TIMEOUT:
-            file_info = client.files.get(name=file_name)
-            if file_info.state.name == "ACTIVE":
-                return True
-            if file_info.state.name == "FAILED":
-                logger.error(f"[Gemini clip] File processing failed: {file_name}")
-                return False
-            time.sleep(GEMINI_FILE_POLL_INTERVAL)
-
-        logger.error(f"[Gemini clip] File processing timed out after {GEMINI_FILE_POLL_TIMEOUT}s")
-        return False
-
-    @staticmethod
-    def _extract_clip_ffmpeg(
-        input_path: Path,
-        output_path: Path,
-        start_time: float,
-        end_time: float,
-    ) -> bool:
-        """Extract a video segment using FFmpeg with re-encoding for precise cuts.
-
-        Args:
-            input_path: Source video file
-            output_path: Where to save the extracted clip
-            start_time: Start time in seconds
-            end_time: End time in seconds
-
-        Returns:
-            True if extraction succeeded and output is valid
-        """
-        duration = end_time - start_time
-        if duration <= 0:
-            return False
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss", str(start_time),
-            "-i", str(input_path),
-            "-t", str(duration),
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "23",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-force_key_frames", f"expr:gte(t,{start_time})",
-            "-movflags", "+faststart",
-            "-v", "quiet",
-            str(output_path),
-        ]
-
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60
-            )
-
-            if result.returncode != 0:
-                logger.warning(f"[FFmpeg] Extraction failed: {result.stderr[:200]}")
-                return False
-
-            # Validate output
-            if output_path.exists() and output_path.stat().st_size > 10 * 1024:
-                return True
-
-            logger.warning(
-                f"[FFmpeg] Output too small or missing: "
-                f"{output_path.stat().st_size if output_path.exists() else 0} bytes"
-            )
-            output_path.unlink(missing_ok=True)
-            return False
-
-        except subprocess.TimeoutExpired:
-            logger.warning("[FFmpeg] Extraction timed out (60s)")
-            output_path.unlink(missing_ok=True)
-            return False
-        except Exception as e:
-            logger.warning(f"[FFmpeg] Extraction error: {e}")
-            output_path.unlink(missing_ok=True)
-            return False
-
-    @staticmethod
-    def _get_video_duration_ffprobe(video_path: Path) -> float:
-        """Get video duration in seconds using ffprobe.
-
-        Args:
-            video_path: Path to video file
-
-        Returns:
-            Duration in seconds, defaults to 30.0 on error
-        """
-        try:
-            cmd = [
-                "ffprobe",
-                "-v", "quiet",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(video_path),
-            ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=15
-            )
-            return float(result.stdout.strip())
-        except Exception as e:
-            logger.warning(f"[ffprobe] Could not get duration: {e}")
-            return 30.0
-
-    @staticmethod
-    def _ytdlp_download(url: str, ydl_opts: dict) -> bool:
-        """Run yt-dlp download synchronously (called from thread pool).
-
-        Args:
-            url: Video URL to download
-            ydl_opts: yt-dlp options dict
-
-        Returns:
-            True if download succeeded
-        """
-        import yt_dlp
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            return True
-        except Exception as e:
-            logger.warning(f"[YouTube B-roll] yt-dlp error: {e}")
-            return False
-
-    async def _trim_if_too_long(
-        self,
-        clip_path: Path,
-        keywords: list[str] | None = None,
-        voiceover_context: str = "",
-    ) -> Path | None:
-        """Trim a non-YouTube clip to MAX_BROLL_CLIP_SECONDS if it's too long.
-
-        For clips > MAX_BROLL_CLIP_SECONDS + 1: uses Gemini analysis to find
-        the best segment, falling back to trimming from the start.
-
-        Args:
-            clip_path: Path to the downloaded clip
-            keywords: Visual keywords for Gemini context
-            voiceover_context: Voiceover text for Gemini context
-
-        Returns:
-            Path to the trimmed clip, or None if no trimming needed/failed
-        """
-        duration = self._get_video_duration_ffprobe(clip_path)
-        max_dur = float(MAX_BROLL_CLIP_SECONDS) + 1.0
-
-        if duration <= max_dur:
-            return None  # No trimming needed
-
-        logger.info(f"[Trim] Clip is {duration:.1f}s (max {max_dur:.0f}s), trimming...")
-
-        # Try Gemini analysis first for longer clips
-        start_time = 0.0
-        end_time = float(TARGET_BROLL_CLIP_SECONDS)
-
-        if duration > 10.0 and keywords:
-            keyword_str = ", ".join(keywords[:5])
-            segment = await self._analyze_video_for_best_segment(
-                clip_path, keyword_str, voiceover_context
-            )
-            if segment:
-                start_time, end_time, _score = segment
-                logger.info(f"[Trim] Gemini selected {start_time:.1f}s-{end_time:.1f}s")
-            else:
-                logger.info("[Trim] Gemini found no good segment, trimming from start")
-
-        # Extract the trimmed clip
-        trimmed_path = clip_path.with_stem(clip_path.stem + "_trimmed")
-        extracted = await asyncio.to_thread(
-            self._extract_clip_ffmpeg, clip_path, trimmed_path, start_time, end_time
-        )
-
-        if extracted and trimmed_path.exists():
-            # Replace original with trimmed version
-            clip_path.unlink(missing_ok=True)
-            trimmed_path.rename(clip_path)
-            logger.info(f"[Trim] Trimmed to {end_time - start_time:.1f}s: {clip_path.name}")
-            return clip_path
-
-        # Trimming failed, keep original
-        trimmed_path.unlink(missing_ok=True)
-        return None
 
     def _is_style_enhancement_enabled(self) -> bool:
         """Check if Nano Banana Pro style enhancement is enabled.

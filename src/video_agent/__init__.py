@@ -17,6 +17,7 @@ from .subtitle_engine import SubtitleEngine
 from .video_composer import VideoComposer, VideoComposerError
 from .agent import VideoProductionAgent
 from .director import DirectorAgent
+from .broll_adapter import BRollAdapter
 
 __all__ = [
     "VisualType",
@@ -35,4 +36,5 @@ __all__ = [
     "VideoComposerError",
     "VideoProductionAgent",
     "DirectorAgent",
+    "BRollAdapter",
 ]

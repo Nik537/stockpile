@@ -13,7 +13,6 @@ from services.prompts.broll import BROLL_EXTRACTOR_V6, BROLL_PLANNER_V3
 from services.prompts.evaluation import (
     EVALUATOR_V4,
     BASIC_EVALUATOR,
-    VIDEO_AGENT_BROLL_EVALUATOR,
     VIDEO_AGENT_IMAGE_EVALUATOR,
 )
 from services.prompts.images import (
@@ -37,8 +36,8 @@ PROMPT_VERSIONS = {
     "detect_content_style": "v1",  # Feature 1: Content style/mood detection
     "generate_image_queries_with_context": "v1",  # Feature 2: Image queries with +-10s context window
     "generate_bulk_image_prompts": "v2",  # Bulk image prompt generation with diverse rendering styles
-    "generate_script": "v1",  # Script generation from topic for video agent pipeline
-    "video_agent_broll_eval": "v1",  # Video agent B-roll candidate evaluation
+    "generate_script": "v2",  # Script generation from topic for video agent pipeline
+    # video_agent_broll_eval removed - now uses EVALUATOR_V4 via VideoSearchService
     "video_agent_image_eval": "v1",  # Video agent stock image candidate evaluation
 }
 
@@ -53,7 +52,6 @@ __all__ = [
     # Evaluation prompts
     "EVALUATOR_V4",
     "BASIC_EVALUATOR",
-    "VIDEO_AGENT_BROLL_EVALUATOR",
     "VIDEO_AGENT_IMAGE_EVALUATOR",
     # Image prompts
     "IMAGE_QUERY_GENERATOR",

@@ -15,12 +15,15 @@ from typing import Optional
 from google.genai import Client, types
 
 from services.prompts import strip_markdown_code_blocks
+from services.prompts.evaluation import DIRECTOR_VISUAL_TYPE_PROMPT
 from utils.retry import APIRateLimitError, NetworkError, retry_api_call
 from video_agent.models import (
     DraftReview,
     FixRequest,
     Script,
     Timeline,
+    VisualType,
+    VisualTypeDecision,
 )
 
 logger = logging.getLogger(__name__)
@@ -218,6 +221,177 @@ class DirectorAgent:
             return self._passthrough_review(
                 iteration, notes=f"Review failed ({type(e).__name__}), auto-approved"
             )
+
+    @retry_api_call(max_retries=2, base_delay=2.0)
+    def decide_visual_types(
+        self,
+        script: Script,
+        candidates: dict[int, dict],
+    ) -> list[VisualTypeDecision]:
+        """Decide photo vs video for each scene using the full video context.
+
+        Analyzes both candidate types against the complete script narrative
+        to determine which visual type best serves each scene.
+
+        Args:
+            script: The complete video Script.
+            candidates: Map of scene_id -> {
+                "has_video": bool, "has_image": bool,
+                "video_desc": str, "image_desc": str
+            }
+
+        Returns:
+            List of VisualTypeDecision objects, one per scene.
+        """
+        if self.client is None:
+            logger.warning("No API key for visual type decisions, using fallback")
+            return self._fallback_visual_decisions(script, candidates)
+
+        # Build script summary
+        summary_parts = [f"Hook: {script.hook.voiceover[:80]}"]
+        for scene in script.scenes:
+            summary_parts.append(
+                f"Scene {scene.id}: [{scene.visual_style}] {scene.voiceover[:80]}"
+            )
+        script_summary = "\n".join(summary_parts)
+
+        # Build candidates info
+        info_parts = []
+        for scene in script.scenes:
+            c = candidates.get(scene.id, {})
+            info_parts.append(
+                f"Scene {scene.id}: has_video={c.get('has_video', False)}, "
+                f"has_image={c.get('has_image', False)}, "
+                f"keywords={scene.visual_keywords}, "
+                f"voiceover=\"{scene.voiceover[:60]}...\""
+            )
+        # Also include hook as scene 0
+        hook_c = candidates.get(0, {})
+        hook_info = (
+            f"Scene 0 (Hook): has_video={hook_c.get('has_video', False)}, "
+            f"has_image={hook_c.get('has_image', False)}, "
+            f"keywords={script.hook.visual_keywords}, "
+            f"voiceover=\"{script.hook.voiceover[:60]}...\""
+        )
+        candidates_info = hook_info + "\n" + "\n".join(info_parts)
+
+        prompt = DIRECTOR_VISUAL_TYPE_PROMPT.format(
+            script_title=script.title,
+            script_summary=script_summary,
+            candidates_info=candidates_info,
+            total_scenes=len(script.scenes) + 1,  # +1 for hook
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.3),
+            )
+
+            if not response.text:
+                logger.warning("Empty response for visual type decisions")
+                return self._fallback_visual_decisions(script, candidates)
+
+            cleaned = strip_markdown_code_blocks(response.text)
+            data = json.loads(cleaned)
+
+            if not isinstance(data, list):
+                logger.warning("Visual type decisions response is not a list")
+                return self._fallback_visual_decisions(script, candidates)
+
+            decisions = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                scene_id = int(item.get("scene_id", -1))
+                chosen_str = str(item.get("chosen_type", "broll_video")).strip()
+                try:
+                    chosen_type = VisualType(chosen_str)
+                except ValueError:
+                    chosen_type = VisualType.BROLL_VIDEO
+
+                # Only assign types for scenes that actually have the chosen candidate
+                c = candidates.get(scene_id, {})
+                if chosen_type == VisualType.BROLL_VIDEO and not c.get("has_video"):
+                    if c.get("has_image"):
+                        chosen_type = VisualType.GENERATED_IMAGE
+                elif chosen_type == VisualType.GENERATED_IMAGE and not c.get("has_image"):
+                    if c.get("has_video"):
+                        chosen_type = VisualType.BROLL_VIDEO
+
+                decisions.append(VisualTypeDecision(
+                    scene_id=scene_id,
+                    chosen_type=chosen_type,
+                    confidence=float(item.get("confidence", 0.7)),
+                    rationale=str(item.get("rationale", "")).strip(),
+                ))
+
+            logger.info(
+                f"Director visual decisions: {len(decisions)} scenes — "
+                f"{sum(1 for d in decisions if d.chosen_type == VisualType.BROLL_VIDEO)} video, "
+                f"{sum(1 for d in decisions if d.chosen_type == VisualType.GENERATED_IMAGE)} image"
+            )
+            return decisions
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse visual type decisions JSON: {e}")
+            return self._fallback_visual_decisions(script, candidates)
+        except (APIRateLimitError, NetworkError):
+            raise  # Let retry decorator handle
+        except Exception as e:
+            logger.error(f"Visual type decision failed: {e}")
+            return self._fallback_visual_decisions(script, candidates)
+
+    def _fallback_visual_decisions(
+        self,
+        script: Script,
+        candidates: dict[int, dict],
+    ) -> list[VisualTypeDecision]:
+        """Generate fallback decisions based on candidate availability.
+
+        Prefers video when available, falls back to image.
+
+        Args:
+            script: The video Script.
+            candidates: Per-scene candidate availability.
+
+        Returns:
+            List of VisualTypeDecision with default choices.
+        """
+        decisions = []
+        # Hook (scene 0)
+        hook_c = candidates.get(0, {})
+        if hook_c.get("has_video"):
+            chosen = VisualType.BROLL_VIDEO
+        elif hook_c.get("has_image"):
+            chosen = VisualType.GENERATED_IMAGE
+        else:
+            chosen = VisualType.BROLL_VIDEO
+        decisions.append(VisualTypeDecision(
+            scene_id=0, chosen_type=chosen,
+            confidence=0.5, rationale="Fallback: preferred type or available"
+        ))
+
+        for scene in script.scenes:
+            c = candidates.get(scene.id, {})
+            original = scene.visual_type
+            if original == VisualType.BROLL_VIDEO and c.get("has_video"):
+                chosen = VisualType.BROLL_VIDEO
+            elif original == VisualType.GENERATED_IMAGE and c.get("has_image"):
+                chosen = VisualType.GENERATED_IMAGE
+            elif c.get("has_video"):
+                chosen = VisualType.BROLL_VIDEO
+            elif c.get("has_image"):
+                chosen = VisualType.GENERATED_IMAGE
+            else:
+                chosen = original
+            decisions.append(VisualTypeDecision(
+                scene_id=scene.id, chosen_type=chosen,
+                confidence=0.5, rationale="Fallback: original type or available"
+            ))
+
+        return decisions
 
     def _build_review_prompt(self, script: Script, timeline: Timeline) -> str:
         """Build the review prompt from script and timeline data.

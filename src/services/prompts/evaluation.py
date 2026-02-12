@@ -3,6 +3,8 @@
 Contains prompts for:
 - EVALUATOR_V4: Context-aware video evaluation with semantic scoring
 - BASIC_EVALUATOR: Simple video evaluation fallback
+- VIDEO_AGENT_IMAGE_EVALUATOR: Stock image candidate ranking
+- DIRECTOR_VISUAL_TYPE_PROMPT: Scene visual type decision
 """
 
 # Basic Evaluator prompt (fallback for non-enhanced needs)
@@ -97,43 +99,6 @@ Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 
 Return ONLY the JSON array, nothing else."""
 
 
-# Video Agent B-Roll Evaluator - lightweight prompt for fast scoring of search results
-# Used by VideoProductionAgent._evaluate_broll_candidates()
-# Template placeholders: {search_query}, {visual_keywords}, {visual_style}, {voiceover_context}, {results_text}
-VIDEO_AGENT_BROLL_EVALUATOR = """You are a B-Roll Video Evaluator for a video production pipeline.
-
-Score each video result on how suitable it is as B-roll footage for the scene described below.
-
-SCENE CONTEXT:
-- Search query: "{search_query}"
-- Visual keywords: {visual_keywords}
-- Visual style: {visual_style}
-- Voiceover context: "{voiceover_context}"
-
-VIDEO RESULTS:
----
-{results_text}
----
-
-SCORING CRITERIA (total 100%):
-1. **Semantic match to visual_keywords and voiceover context (50%)** - Does the video visually match what the scene needs?
-2. **Technical quality signals from title/metadata (20%)** - Stock footage, cinematic, 4K, high quality indicators
-3. **Absence of unwanted elements (15%)** - No watermarks, logos, compilations, reaction videos, vlogs
-4. **Visual style match (15%)** - Does it match the requested style ({visual_style})?
-
-RATING SCALE:
-- 9-10: Perfect match - relevant stock footage with high production value
-- 7-8: Good match - relevant content, decent quality
-- 6: Acceptable - usable but not ideal
-- <6: Not suitable (do NOT include in output)
-
-OUTPUT FORMAT:
-Return ONLY a JSON array of objects with video_id and score for videos scoring >= 6.
-Order by score (highest first).
-Format: [{{"video_id": "abc123", "score": 9}}, {{"video_id": "def456", "score": 7}}]
-Return ONLY the JSON array, nothing else."""
-
-
 # Video Agent Image Evaluator - lightweight prompt for ranking stock image candidates
 # Used by VideoProductionAgent._evaluate_image_candidates()
 # Template placeholders: {search_query}, {visual_keywords}, {visual_style}, {candidates_text}
@@ -157,3 +122,32 @@ Pick the single best image based on:
 OUTPUT FORMAT:
 Return ONLY a JSON object: {{"best_index": 0, "reason": "brief reason"}}
 Return ONLY the JSON object, nothing else."""
+
+
+# Director Visual Type Decision prompt
+# Used by DirectorAgent.decide_visual_types()
+# Template placeholders: {script_title}, {script_summary}, {candidates_info}, {total_scenes}
+DIRECTOR_VISUAL_TYPE_PROMPT = """You are a Video Director deciding whether each scene should use B-roll video or a generated photo/image.
+
+VIDEO: "{script_title}"
+SUMMARY: {script_summary}
+TOTAL SCENES: {total_scenes}
+
+SCENE CANDIDATES:
+{candidates_info}
+
+For EACH scene, decide the best visual type based on:
+
+1. **Videos work better for:** action, movement, real-world events, establishing shots, dynamic energy, processes
+2. **Photos/images work better for:** static concepts, portraits, dramatic pauses, emphasis moments, abstract ideas, metaphors
+3. **Visual variety:** Mix types for rhythm. Avoid 3+ consecutive scenes with the same type.
+4. **Context:** Consider surrounding scenes. A still image between two video scenes creates a natural beat.
+
+Weigh narrative flow and pacing. Motion-heavy voiceover pairs with video; reflective or conceptual narration pairs with images.
+
+OUTPUT FORMAT:
+Return ONLY a JSON array, one entry per scene:
+[{{"scene_id": 1, "chosen_type": "broll_video", "confidence": 0.9, "rationale": "Action needs movement"}}, {{"scene_id": 2, "chosen_type": "generated_image", "confidence": 0.8, "rationale": "Abstract concept suits a still"}}]
+
+Valid chosen_type values: "broll_video", "generated_image"
+Return ONLY the JSON array, nothing else."""

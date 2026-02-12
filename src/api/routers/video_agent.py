@@ -26,7 +26,12 @@ video_jobs: dict[str, dict] = {}
 ws_manager = WebSocketManager()
 
 
-def estimate_cost(target_duration: int) -> dict:
+def estimate_cost(
+    target_duration: int,
+    competitive_analysis_enabled: bool = True,
+    previews_per_need: int = 2,
+    use_processor_broll: bool = True,
+) -> dict:
     """Estimate production cost breakdown for a given duration in minutes.
 
     Stock images are FREE (Pexels/Pixabay). Nano Banana Pro style enhancement
@@ -34,6 +39,9 @@ def estimate_cost(target_duration: int) -> dict:
 
     Args:
         target_duration: Target video duration in minutes.
+        competitive_analysis_enabled: Whether competitive analysis is on.
+        previews_per_need: Number of preview videos compared per scene.
+        use_processor_broll: Whether enhanced B-roll processor pipeline is used.
 
     Returns:
         Cost breakdown dict with tts, images, music, broll, director, total.
@@ -57,7 +65,21 @@ def estimate_cost(target_duration: int) -> dict:
     images = round(search_cost + style_cost, 4)
 
     music = 0.03
-    broll = 0.0
+
+    # B-roll cost: evaluation + download + clip extraction per scene
+    # Base: ~$0.01/scene for AI evaluation + extraction
+    # Competitive analysis multiplies evaluation cost by previews_per_need
+    if use_processor_broll:
+        broll_scenes = scenes // 2  # roughly half scenes get B-roll video
+        base_broll_cost = round(broll_scenes * 0.01, 4)
+        if competitive_analysis_enabled:
+            # Competitive analysis downloads previews_per_need candidates per scene
+            broll = round(base_broll_cost * previews_per_need, 4)
+        else:
+            broll = base_broll_cost
+    else:
+        broll = 0.0
+
     director = round(0.01 * 2, 4)  # ~2 review loops
     total = round(tts + images + music + broll + director, 4)
 
@@ -70,7 +92,7 @@ def estimate_cost(target_duration: int) -> dict:
     else:
         img_note = "stock photos (Pexels/Pixabay, free)"
 
-    return {
+    result = {
         "tts": tts,
         "images": images,
         "images_note": img_note,
@@ -79,6 +101,14 @@ def estimate_cost(target_duration: int) -> dict:
         "director": director,
         "total": total,
     }
+
+    if use_processor_broll:
+        result["broll_note"] = (
+            f"Enhanced pipeline, competitive={'on' if competitive_analysis_enabled else 'off'}, "
+            f"{previews_per_need} previews/scene"
+        )
+
+    return result
 
 # Keep references to background tasks to prevent garbage collection
 _background_tasks: set = set()
@@ -94,6 +124,13 @@ async def _run_video_production(
     target_duration: int,
     subtitle_style: str,
     voice_ref: str | None,
+    *,
+    competitive_analysis_enabled: bool = True,
+    previews_per_need: int = 2,
+    clips_per_need_target: int = 1,
+    use_processor_broll: bool = True,
+    semantic_verification_enabled: bool = True,
+    style_detection_enabled: bool = True,
 ) -> None:
     """Run video production pipeline in the background.
 
@@ -104,6 +141,12 @@ async def _run_video_production(
         target_duration: Target duration in minutes
         subtitle_style: Subtitle style preset
         voice_ref: Optional path to voice reference file
+        competitive_analysis_enabled: Enable multi-candidate B-roll comparison
+        previews_per_need: Number of preview videos to compare per scene
+        clips_per_need_target: Final clips per scene
+        use_processor_broll: Use enhanced B-roll processor pipeline
+        semantic_verification_enabled: Verify clips match scene context
+        style_detection_enabled: Detect content style for visual coherence
     """
     if job_id not in video_jobs:
         logger.error(f"Video job {job_id} not found")
@@ -116,8 +159,15 @@ async def _run_video_production(
         from video_agent.agent import VideoProductionAgent
         from video_agent.video_composer import VideoComposer
 
-        # Create fresh agent per job
-        agent = VideoProductionAgent(load_config())
+        # Create fresh agent per job with B-roll pipeline config overrides
+        config = load_config()
+        config["competitive_analysis_enabled"] = competitive_analysis_enabled
+        config["previews_per_need"] = previews_per_need
+        config["clips_per_need_target"] = clips_per_need_target
+        config["use_processor_broll"] = use_processor_broll
+        config["semantic_verification_enabled"] = semantic_verification_enabled
+        config["style_detection_enabled"] = style_detection_enabled
+        agent = VideoProductionAgent(config)
 
         # Set up project directory
         project_dir = VIDEO_JOBS_DIR / job_id
@@ -244,8 +294,20 @@ async def _run_video_production(
             job["stage"] = "asset_acquisition"
             job["percent"] = 40
 
+            async def asset_progress(percent: int, message: str) -> None:
+                """Broadcast scene-level asset acquisition progress via WebSocket."""
+                job["percent"] = percent
+                await ws_manager.broadcast(job_id, {
+                    "type": "progress",
+                    "stage": "asset_acquisition",
+                    "percent": percent,
+                    "message": message,
+                })
+
             visual_paths, music_path = await asyncio.gather(
-                agent._acquire_visuals(script, project_dir),
+                agent._acquire_visuals(
+                    script, project_dir, progress_callback=asset_progress
+                ),
                 agent._generate_music(script, project_dir),
             )
 
@@ -382,15 +444,20 @@ async def _run_video_production(
     description="Return an approximate cost breakdown for a given target duration.",
 )
 async def estimate_video_cost(request: VideoProduceRequest) -> dict:
-    """Return estimated cost breakdown based on target duration.
+    """Return estimated cost breakdown based on target duration and B-roll config.
 
     Args:
-        request: Video production parameters (only target_duration is used).
+        request: Video production parameters.
 
     Returns:
         Cost breakdown dict.
     """
-    return estimate_cost(request.target_duration)
+    return estimate_cost(
+        request.target_duration,
+        competitive_analysis_enabled=request.competitive_analysis_enabled,
+        previews_per_need=request.previews_per_need,
+        use_processor_broll=request.use_processor_broll,
+    )
 
 
 @router.post("/api/video/produce", summary="Start video production", description="Start an autonomous video production pipeline. Returns job ID immediately.", responses={202: {"description": "Job accepted"}, 404: {"description": "Voice not found"}})
@@ -415,7 +482,12 @@ async def produce_video(request: VideoProduceRequest):
 
     # Create job
     job_id = uuid.uuid4().hex[:12]
-    cost_estimate = estimate_cost(request.target_duration)
+    cost_estimate = estimate_cost(
+        request.target_duration,
+        competitive_analysis_enabled=request.competitive_analysis_enabled,
+        previews_per_need=request.previews_per_need,
+        use_processor_broll=request.use_processor_broll,
+    )
     job = {
         "id": job_id,
         "status": "processing",
@@ -432,6 +504,13 @@ async def produce_video(request: VideoProduceRequest):
         "video_path": None,
         "error": None,
         "cost": cost_estimate,
+        # B-roll pipeline config
+        "competitive_analysis_enabled": request.competitive_analysis_enabled,
+        "previews_per_need": request.previews_per_need,
+        "clips_per_need_target": request.clips_per_need_target,
+        "use_processor_broll": request.use_processor_broll,
+        "semantic_verification_enabled": request.semantic_verification_enabled,
+        "style_detection_enabled": request.style_detection_enabled,
     }
     video_jobs[job_id] = job
 
@@ -447,6 +526,12 @@ async def produce_video(request: VideoProduceRequest):
             target_duration=request.target_duration,
             subtitle_style=request.subtitle_style,
             voice_ref=voice_ref,
+            competitive_analysis_enabled=request.competitive_analysis_enabled,
+            previews_per_need=request.previews_per_need,
+            clips_per_need_target=request.clips_per_need_target,
+            use_processor_broll=request.use_processor_broll,
+            semantic_verification_enabled=request.semantic_verification_enabled,
+            style_detection_enabled=request.style_detection_enabled,
         )
     )
     _background_tasks.add(task)

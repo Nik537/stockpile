@@ -56,6 +56,8 @@ class SceneScript:
     transition_in: str = "cut"  # Transition from previous scene
     music_mood: str = "neutral"  # Music mood cue
     sound_effect: str = "none"  # Optional SFX cue
+    min_clip_duration: Optional[float] = None  # Minimum B-roll clip length (seconds)
+    max_clip_duration: Optional[float] = None  # Maximum B-roll clip length (seconds)
 
 
 @dataclass
@@ -149,6 +151,20 @@ class DraftReview:
     notes: str = ""  # General reviewer notes
 
 
+@dataclass
+class VisualTypeDecision:
+    """Director's decision on visual type for a scene.
+
+    The director analyzes both photo and video candidates
+    and decides which type best serves the scene's narrative.
+    """
+
+    scene_id: int  # Scene this decision applies to
+    chosen_type: VisualType  # BROLL_VIDEO or GENERATED_IMAGE
+    confidence: float  # 0.0-1.0 confidence in decision
+    rationale: str  # Why this type was chosen
+
+
 __all__ = [
     # Enums
     "VisualType",
@@ -164,4 +180,5 @@ __all__ = [
     # Review models
     "FixRequest",
     "DraftReview",
+    "VisualTypeDecision",
 ]

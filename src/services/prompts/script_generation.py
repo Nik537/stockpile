@@ -54,7 +54,7 @@ Return ONLY a JSON object with this exact structure:
 WRITING RULES
 1. HOOK: Must be a provocative statement, shocking fact, or bold question.
    - NO "Hey guys, welcome back" or "In this video we will..."
-   - YES "In 1987, a single phone call destroyed a $6 billion company overnight."
+   - YES "In nineteen eighty-seven, a single phone call destroyed a six billion dollar company overnight."
    - The hook visual must be dramatic and specific — not generic stock footage.
 
 2. NARRATION STYLE:
@@ -121,5 +121,15 @@ WRITING RULES
     - estimated_total_duration: Sum of all scene durations + hook (in seconds).
     - target_audience: Be specific ("tech-savvy millennials interested in AI" not "everyone").
     - color_grade: Match the mood. Dark topics = "dark_cinematic". Positive = "warm_vintage".
+
+11. TTS OPTIMIZATION (critical for voice synthesis quality):
+    - Write ALL numbers as words: "nineteen eighty-seven" not "1987", "six billion" not "6 billion".
+    - Spell out abbreviations letter by letter with periods: "A.I." not "AI", "C.E.O." not "CEO".
+    - Keep sentences short — under 250 characters each.
+    - Every sentence MUST end with terminal punctuation (period, question mark, or exclamation mark).
+    - NEVER use these characters: em dashes (—), en dashes (–), semicolons (;), parentheses (), ellipses (...), $, %, &, #, /
+      Replace them: & → "and", $ amount → "X dollars", X% → "X percent", alternatives → "X or Y"
+    - Paralinguistic tags are allowed sparingly (max one to two per entire script): [laugh], [sigh], [gasp]
+      Place them between sentences, never mid-sentence.
 
 Return ONLY the JSON object. No markdown code blocks. No extra text."""
