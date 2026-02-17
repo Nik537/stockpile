@@ -4,12 +4,13 @@ import VoiceLibrary from './VoiceLibrary'
 import './TTSGenerator.css'
 import { API_BASE } from '../config'
 
-type TTSModel = 'chatterbox' | 'chatterbox-ext' | 'qwen3'
+type TTSModel = 'chatterbox' | 'chatterbox-ext' | 'qwen3' | 'moss-ttsd'
 
 const MODEL_OPTIONS: { value: TTSModel; label: string; description: string }[] = [
   { value: 'chatterbox-ext', label: 'Chatterbox Extended', description: 'Enhanced — denoising, multi-candidate, Whisper validation' },
   { value: 'chatterbox', label: 'Chatterbox', description: 'Original — fast, reliable voice cloning' },
   { value: 'qwen3', label: 'Qwen3-TTS', description: 'Higher quality — custom voice presets, multilingual' },
+  { value: 'moss-ttsd', label: 'MOSS-TTSD', description: 'Multi-speaker dialogue — up to 5 speakers, 20 languages, voice cloning' },
 ]
 
 const SPEED_PRESETS = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
@@ -29,6 +30,36 @@ const QWEN3_LANGUAGES = [
   { value: 'es', label: 'Spanish' },
 ]
 
+const MOSS_TTSD_LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'de', label: 'German' },
+  { value: 'fr', label: 'French' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'it', label: 'Italian' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'fa', label: 'Persian' },
+  { value: 'he', label: 'Hebrew' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'da', label: 'Danish' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'hu', label: 'Hungarian' },
+  { value: 'el', label: 'Greek' },
+  { value: 'tr', label: 'Turkish' },
+]
+
+const MOSS_TTSD_MODES = [
+  { value: 'generation', label: 'Generation', description: 'Model uses its own voices' },
+  { value: 'voice_clone', label: 'Voice Clone', description: 'Clone from reference audio' },
+  { value: 'continuation', label: 'Continuation', description: 'Continue from prompt audio' },
+  { value: 'voice_clone_and_continuation', label: 'Clone + Continue', description: 'Best quality — clone and continue' },
+]
+
 interface EndpointStatus {
   configured: boolean
   available: boolean
@@ -40,6 +71,7 @@ interface AllStatus {
   runpod: EndpointStatus
   qwen3: EndpointStatus
   chatterbox_ext: EndpointStatus
+  moss_ttsd: EndpointStatus
   colab: any
 }
 
@@ -83,6 +115,13 @@ function TTSGenerator() {
   const [qwen3TopP, setQwen3TopP] = useState(0.9)
   const [voiceReferenceTranscript, setVoiceReferenceTranscript] = useState('')
   const [isTranscribing, setIsTranscribing] = useState(false)
+
+  // MOSS-TTSD-specific params
+  const [mossLanguage, setMossLanguage] = useState('en')
+  const [mossSpeakers, setMossSpeakers] = useState(1)
+  const [mossMode, setMossMode] = useState('generation')
+  const [mossTemperature, setMossTemperature] = useState(0.9)
+  const [mossMaxTokens, setMossMaxTokens] = useState(2000)
 
   // Completed results array
   const [results, setResults] = useState<TTSResult[]>([])
@@ -152,6 +191,7 @@ function TTSGenerator() {
       case 'chatterbox': return 'runpod'
       case 'chatterbox-ext': return 'chatterbox-ext'
       case 'qwen3': return 'qwen3'
+      case 'moss-ttsd': return 'moss-ttsd'
     }
   }
 
@@ -162,6 +202,7 @@ function TTSGenerator() {
       case 'chatterbox': return allStatus.runpod?.configured && allStatus.runpod?.available
       case 'chatterbox-ext': return allStatus.chatterbox_ext?.configured && allStatus.chatterbox_ext?.available
       case 'qwen3': return allStatus.qwen3?.configured && allStatus.qwen3?.available
+      case 'moss-ttsd': return allStatus.moss_ttsd?.configured && allStatus.moss_ttsd?.available
     }
   }
 
@@ -235,6 +276,14 @@ function TTSGenerator() {
         if (voiceReferenceTranscript) formData.append('voice_reference_transcript', voiceReferenceTranscript)
       }
 
+      if (selectedModel === 'moss-ttsd') {
+        formData.append('language', mossLanguage)
+        formData.append('temperature', mossTemperature.toString())
+        formData.append('num_speakers', mossSpeakers.toString())
+        formData.append('moss_ttsd_mode', mossMode)
+        formData.append('moss_ttsd_max_tokens', mossMaxTokens.toString())
+      }
+
       const response = await fetch(`${API_BASE}/api/tts/generate`, {
         method: 'POST',
         body: formData,
@@ -301,7 +350,7 @@ function TTSGenerator() {
         <div>
           <h2>Text-to-Speech Generator</h2>
           <p className="section-description">
-            Generate natural speech with voice cloning — choose from 3 TTS backends
+            Generate natural speech with voice cloning — choose from multiple TTS backends
           </p>
         </div>
       </div>
@@ -321,6 +370,7 @@ function TTSGenerator() {
               {allStatus && (() => {
                 const s = opt.value === 'chatterbox' ? allStatus.runpod
                   : opt.value === 'chatterbox-ext' ? allStatus.chatterbox_ext
+                  : opt.value === 'moss-ttsd' ? allStatus.moss_ttsd
                   : allStatus.qwen3
                 return s?.configured ? (
                   <span className="model-status configured">Configured</span>
@@ -353,7 +403,9 @@ function TTSGenerator() {
             id="tts-text"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Enter the text you want to convert to speech. The server handles chunking automatically, so you can paste long texts."
+            placeholder={selectedModel === 'moss-ttsd'
+              ? "Enter dialogue with speaker tags:\n[S1] Hello, how are you today?\n[S2] I'm doing great, thanks for asking!\n[S1] That's wonderful to hear."
+              : "Enter the text you want to convert to speech. The server handles chunking automatically, so you can paste long texts."}
             rows={8}
           />
         </div>
@@ -568,6 +620,85 @@ function TTSGenerator() {
                 </div>
               </>
             )}
+
+            {/* MOSS-TTSD params */}
+            {selectedModel === 'moss-ttsd' && (
+              <>
+                <div className="param-group">
+                  <label htmlFor="moss-language">Language</label>
+                  <select
+                    id="moss-language"
+                    value={mossLanguage}
+                    onChange={(e) => setMossLanguage(e.target.value)}
+                  >
+                    {MOSS_TTSD_LANGUAGES.map(l => (
+                      <option key={l.value} value={l.value}>{l.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="param-group">
+                  <label htmlFor="moss-speakers">
+                    Speakers: {mossSpeakers}
+                  </label>
+                  <input
+                    id="moss-speakers"
+                    type="range"
+                    min="1"
+                    max="5"
+                    step="1"
+                    value={mossSpeakers}
+                    onChange={(e) => setMossSpeakers(parseInt(e.target.value))}
+                  />
+                  <span className="param-hint">Use [S1]-[S5] tags in text to assign speakers</span>
+                </div>
+
+                <div className="param-group">
+                  <label htmlFor="moss-mode">Inference Mode</label>
+                  <select
+                    id="moss-mode"
+                    value={mossMode}
+                    onChange={(e) => setMossMode(e.target.value)}
+                  >
+                    {MOSS_TTSD_MODES.map(m => (
+                      <option key={m.value} value={m.value}>{m.label} — {m.description}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="param-group">
+                  <label htmlFor="moss-temperature">
+                    Temperature: {mossTemperature.toFixed(2)}
+                  </label>
+                  <input
+                    id="moss-temperature"
+                    type="range"
+                    min="0.1"
+                    max="1.5"
+                    step="0.05"
+                    value={mossTemperature}
+                    onChange={(e) => setMossTemperature(parseFloat(e.target.value))}
+                  />
+                  <span className="param-hint">Higher values produce more varied speech</span>
+                </div>
+
+                <div className="param-group">
+                  <label htmlFor="moss-max-tokens">
+                    Max Tokens: {mossMaxTokens}
+                  </label>
+                  <input
+                    id="moss-max-tokens"
+                    type="range"
+                    min="500"
+                    max="8000"
+                    step="500"
+                    value={mossMaxTokens}
+                    onChange={(e) => setMossMaxTokens(parseInt(e.target.value))}
+                  />
+                  <span className="param-hint">~12.5 tokens per second of audio (2000 ≈ 160s)</span>
+                </div>
+              </>
+            )}
           </div>
         </details>
 
@@ -684,6 +815,14 @@ function TTSGenerator() {
                   <span className="status-dot" title="Not configured"></span>
                 )}
               </li>
+              <li>
+                <code>MOSS_TTSD_SERVER_URL</code> — MOSS-TTSD server URL
+                {allStatus?.moss_ttsd?.configured ? (
+                  <span className="status-dot connected" title="Configured"></span>
+                ) : (
+                  <span className="status-dot" title="Not configured"></span>
+                )}
+              </li>
             </ul>
             <div className="setup-tips">
               <h5>Tips</h5>
@@ -692,6 +831,8 @@ function TTSGenerator() {
                 <li>Voice cloning works best with 5-10 seconds of clear speech</li>
                 <li>Qwen3 voice cloning needs only ~3 seconds of reference audio</li>
                 <li>Chatterbox Extended can generate multiple candidates and pick the best</li>
+                <li>MOSS-TTSD requires a self-hosted server (GPU with 24+ GB VRAM)</li>
+                <li>Use [S1]-[S5] speaker tags for multi-speaker dialogue with MOSS-TTSD</li>
               </ul>
             </div>
           </div>

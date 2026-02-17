@@ -53,6 +53,9 @@ async def run_tts_generation(
     num_candidates: int,
     denoising_enabled: bool,
     whisper_enabled: bool,
+    num_speakers: int = 1,
+    moss_ttsd_mode: str = "generation",
+    moss_ttsd_max_tokens: int = 2000,
 ) -> None:
     """Run TTS generation in the background.
 
@@ -73,6 +76,9 @@ async def run_tts_generation(
         num_candidates: Chatterbox Extended candidate count
         denoising_enabled: Chatterbox Extended denoising flag
         whisper_enabled: Chatterbox Extended Whisper validation flag
+        num_speakers: MOSS-TTSD number of speakers (1-5)
+        moss_ttsd_mode: MOSS-TTSD inference mode
+        moss_ttsd_max_tokens: MOSS-TTSD max tokens to generate
     """
     if job_id not in tts_jobs:
         logger.error(f"TTS job {job_id} not found")
@@ -140,6 +146,21 @@ async def run_tts_generation(
                 num_candidates=num_candidates,
                 enable_denoising=denoising_enabled,
                 enable_whisper_validation=whisper_enabled,
+            )
+
+        elif mode == "moss-ttsd":
+            # For single voice reference, map to S1
+            voice_ref_paths = None
+            if voice_path:
+                voice_ref_paths = {"S1": voice_path}
+            audio_bytes = await service.generate_moss_ttsd(
+                text=text,
+                voice_ref_paths=voice_ref_paths,
+                language=language,
+                temperature=temperature,
+                max_tokens=moss_ttsd_max_tokens,
+                inference_mode=moss_ttsd_mode,
+                num_speakers=num_speakers,
             )
 
         else:  # colab
@@ -219,12 +240,14 @@ async def get_tts_status() -> dict:
     runpod_status = await service.check_runpod_health()
     qwen3_status = await service.check_qwen3_health()
     chatterbox_ext_status = await service.check_chatterbox_ext_health()
+    moss_ttsd_status = await service.check_moss_ttsd_health()
 
     return {
         "colab": colab_status,
         "runpod": runpod_status,
         "qwen3": qwen3_status,
         "chatterbox_ext": chatterbox_ext_status,
+        "moss_ttsd": moss_ttsd_status,
     }
 
 
@@ -274,6 +297,10 @@ async def generate_tts(
     num_candidates: int = Form(1),
     enable_denoising: str = Form("false"),
     enable_whisper_validation: str = Form("false"),
+    # MOSS-TTSD-specific params
+    num_speakers: int = Form(1),
+    moss_ttsd_mode: str = Form("generation"),
+    moss_ttsd_max_tokens: int = Form(2000),
 ):
     """Start async TTS generation. Returns 202 with job_id immediately.
 
@@ -308,10 +335,12 @@ async def generate_tts(
         f"cfg_weight={cfg_weight}, temperature={temperature}, "
         f"num_candidates={num_candidates}, denoising={denoising_enabled}, "
         f"whisper={whisper_enabled}, voice_id={voice_id}, "
-        f"language={language}, speaker={speaker_name}, top_p={top_p}"
+        f"language={language}, speaker={speaker_name}, top_p={top_p}, "
+        f"num_speakers={num_speakers}, moss_ttsd_mode={moss_ttsd_mode}, "
+        f"moss_ttsd_max_tokens={moss_ttsd_max_tokens}"
     )
 
-    valid_modes = ("runpod", "qwen3", "chatterbox-ext", "colab")
+    valid_modes = ("runpod", "qwen3", "chatterbox-ext", "moss-ttsd", "colab")
     if mode not in valid_modes:
         raise HTTPException(
             status_code=400,
@@ -338,6 +367,11 @@ async def generate_tts(
         raise HTTPException(
             status_code=400,
             detail="Chatterbox Extended not configured. Set RUNPOD_API_KEY and RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID in .env",
+        )
+    elif mode == "moss-ttsd" and not service.is_moss_ttsd_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="MOSS-TTSD not configured. Set MOSS_TTSD_SERVER_URL in .env",
         )
 
     # Validate text
@@ -423,6 +457,9 @@ async def generate_tts(
             num_candidates=num_candidates,
             denoising_enabled=denoising_enabled,
             whisper_enabled=whisper_enabled,
+            num_speakers=num_speakers,
+            moss_ttsd_mode=moss_ttsd_mode,
+            moss_ttsd_max_tokens=moss_ttsd_max_tokens,
         )
     )
     _background_tasks.add(task)
