@@ -9,3 +9,56 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* Thinking state - pulsing indicator with animated dots */
+.streaming-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.streaming-thinking-text {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.streaming-thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.streaming-thinking-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  animation: thinkingBounce 1.4s ease-in-out infinite;
+}
+
+.streaming-thinking-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.streaming-thinking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.streaming-thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinkingBounce {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

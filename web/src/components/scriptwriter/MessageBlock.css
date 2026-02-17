@@ -14,6 +14,58 @@
   align-items: flex-start;
 }
 
+/* Message grouping via adjacent sibling selectors */
+/* Tighter spacing within a user->assistant pair */
+.msg-block--user + .msg-block--assistant {
+  padding-top: var(--space-1);
+}
+
+/* More spacing between assistant->user (new conversational turn) */
+.msg-block--assistant + .msg-block--user {
+  padding-top: var(--space-6);
+}
+
+/* Role indicator */
+.msg-role-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+  padding: 0 var(--space-2);
+}
+
+.msg-role-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+}
+
+.msg-role-dot--user {
+  background: var(--color-primary-500);
+}
+
+.msg-role-dot--assistant {
+  background: var(--color-accent);
+}
+
+.msg-role-name {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-medium);
+  letter-spacing: 0.02em;
+}
+
+/* Bubble wrapper - relative container for action positioning */
+.msg-bubble-wrapper {
+  position: relative;
+  max-width: 80%;
+}
+
+.msg-block--assistant .msg-bubble-wrapper {
+  max-width: 100%;
+}
+
 /* Bubble */
 .msg-bubble {
   border-radius: var(--radius-xl);
@@ -21,17 +73,23 @@
 }
 
 .msg-block--user .msg-bubble {
-  max-width: 80%;
   padding: var(--space-2) var(--space-3);
   background: var(--color-bg-tertiary);
   border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-primary-500);
   border-bottom-right-radius: var(--radius-sm);
 }
 
 .msg-block--assistant .msg-bubble {
   background: transparent;
-  max-width: 100%;
   padding: 0 var(--space-2);
+  border-left: 2px solid transparent;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.msg-block--assistant .msg-bubble:hover {
+  border-left-color: var(--color-accent);
+  background: rgba(139, 92, 246, 0.02);
 }
 
 /* Text */
@@ -256,17 +314,28 @@
   margin: var(--space-2) 0;
 }
 
-/* Message actions on hover */
+/* Message actions on hover - positioned on the right side of the bubble */
 .msg-actions {
+  position: absolute;
+  right: -36px;
+  top: 0;
   display: flex;
+  flex-direction: column;
   gap: var(--space-1);
   opacity: 0;
   transition: opacity var(--transition-fast);
-  margin-bottom: var(--space-1);
+  pointer-events: none;
 }
 
 .msg-block:hover .msg-actions {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* For user messages (right-aligned), put actions on the left side instead */
+.msg-block--user .msg-actions {
+  right: auto;
+  left: -36px;
 }
 
 .msg-action-btn {
@@ -294,6 +363,12 @@
 .msg-action-btn--delete:hover {
   color: var(--color-error);
   border-color: rgba(239, 68, 68, 0.3);
+}
+
+.msg-action-btn--copied {
+  color: var(--color-success);
+  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--color-success-soft);
 }
 
 /* Edit mode */

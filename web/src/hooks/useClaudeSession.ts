@@ -241,7 +241,7 @@ export function useClaudeSession({ workingDir, systemPrompt }: UseClaudeSessionC
     actions().setGenerating(false)
   }, [])
 
-  const refineSelection = useCallback(async (messageId: string, selectedText: string) => {
+  const refineSelection = useCallback(async (_messageId: string, selectedText: string) => {
     if (!sessionIdRef.current || !isTauri()) return
 
     const prompt = `Rewrite the following selected text, keeping the same tone and style. Only output the replacement text, nothing else:\n\n${selectedText}`

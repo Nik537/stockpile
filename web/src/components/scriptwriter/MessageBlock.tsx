@@ -54,9 +54,12 @@ function MessageBlock({ message, onDelete, onUpdateContent, onRefineSelection }:
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [copied, setCopied] = useState(false);
   const [selectionToolbar, setSelectionToolbar] = useState<{ x: number; y: number; text: string } | null>(null);
   const blockRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const isThinking = !isUser && message.isStreaming && !message.content;
 
   // Auto-focus and auto-size textarea when entering edit mode
   useEffect(() => {
@@ -85,6 +88,8 @@ function MessageBlock({ message, onDelete, onUpdateContent, onRefineSelection }:
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }, [message.content]);
 
   const handleDelete = useCallback(() => {
@@ -149,78 +154,94 @@ function MessageBlock({ message, onDelete, onUpdateContent, onRefineSelection }:
       id={`msg-${message.id}`}
       ref={blockRef}
     >
-      {/* Action buttons on hover */}
-      <div className="msg-actions">
-        <button className="msg-action-btn" onClick={handleEdit} title="Edit">
-          &#9998;
-        </button>
-        <button className="msg-action-btn" onClick={handleCopy} title="Copy">
-          &#128203;
-        </button>
-        <button className="msg-action-btn msg-action-btn--delete" onClick={handleDelete} title="Delete">
-          &#128465;
-        </button>
+      {/* Role indicator */}
+      <div className="msg-role-label">
+        <span className={`msg-role-dot msg-role-dot--${message.role}`} />
+        <span className="msg-role-name">{isUser ? 'You' : 'Claude'}</span>
       </div>
 
-      {/* Selection toolbar */}
-      {selectionToolbar && (
-        <div
-          className="msg-selection-toolbar"
-          style={{
-            left: selectionToolbar.x,
-            top: selectionToolbar.y,
-            transform: 'translate(-50%, -100%)',
-          }}
-        >
-          <button className="msg-selection-btn msg-selection-btn--refine" onClick={handleRefine}>
-            Refine with AI
+      <div className="msg-bubble-wrapper">
+        {/* Action buttons on hover - positioned on the right side */}
+        <div className="msg-actions">
+          <button className="msg-action-btn" onClick={handleEdit} title="Edit">
+            &#9998;
           </button>
-          <button className="msg-selection-btn" onClick={handleCopySelection}>
-            Copy
+          <button
+            className={`msg-action-btn ${copied ? 'msg-action-btn--copied' : ''}`}
+            onClick={handleCopy}
+            title={copied ? 'Copied!' : 'Copy'}
+          >
+            {copied ? '\u2713' : '\u{1F4CB}'}
+          </button>
+          <button className="msg-action-btn msg-action-btn--delete" onClick={handleDelete} title="Delete">
+            &#128465;
           </button>
         </div>
-      )}
 
-      <div className="msg-bubble" onMouseUp={handleMouseUp}>
-        {isEditing ? (
-          <div className="msg-edit-container">
-            <textarea
-              ref={editTextareaRef}
-              className="msg-edit-textarea"
-              value={editContent}
-              onChange={(e) => {
-                setEditContent(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
-              }}
-            />
-            <div className="msg-edit-actions">
-              <button className="msg-edit-btn msg-edit-btn--save" onClick={handleSave}>
-                Save
-              </button>
-              <button className="msg-edit-btn msg-edit-btn--cancel" onClick={handleCancel}>
-                Cancel
-              </button>
+        {/* Selection toolbar */}
+        {selectionToolbar && (
+          <div
+            className="msg-selection-toolbar"
+            style={{
+              left: selectionToolbar.x,
+              top: selectionToolbar.y,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <button className="msg-selection-btn msg-selection-btn--refine" onClick={handleRefine}>
+              Refine with AI
+            </button>
+            <button className="msg-selection-btn" onClick={handleCopySelection}>
+              Copy
+            </button>
+          </div>
+        )}
+
+        <div className="msg-bubble" onMouseUp={handleMouseUp}>
+          {isEditing ? (
+            <div className="msg-edit-container">
+              <textarea
+                ref={editTextareaRef}
+                className="msg-edit-textarea"
+                value={editContent}
+                onChange={(e) => {
+                  setEditContent(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+              />
+              <div className="msg-edit-actions">
+                <button className="msg-edit-btn msg-edit-btn--save" onClick={handleSave}>
+                  Save
+                </button>
+                <button className="msg-edit-btn msg-edit-btn--cancel" onClick={handleCancel}>
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        ) : isUser ? (
-          <div className="msg-text">{message.content}</div>
-        ) : (
-          <div className="msg-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-            {message.isStreaming && <StreamingCursor />}
-          </div>
-        )}
+          ) : isThinking ? (
+            <div className="msg-markdown">
+              <StreamingCursor isThinking />
+            </div>
+          ) : isUser ? (
+            <div className="msg-text">{message.content}</div>
+          ) : (
+            <div className="msg-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+              {message.isStreaming && <StreamingCursor />}
+            </div>
+          )}
 
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="msg-tools">
-            {message.toolCalls.map((tc) => (
-              <ToolCallBlock key={tc.id} toolCall={tc} />
-            ))}
-          </div>
-        )}
+          {message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="msg-tools">
+              {message.toolCalls.map((tc) => (
+                <ToolCallBlock key={tc.id} toolCall={tc} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <span className="msg-time">{time}</span>
     </div>

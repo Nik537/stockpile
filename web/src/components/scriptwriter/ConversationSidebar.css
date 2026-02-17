@@ -6,6 +6,17 @@
   background: var(--color-bg-secondary);
   border-right: 1px solid var(--color-border);
   overflow: hidden;
+  transition: width var(--transition-base), min-width var(--transition-base);
+}
+
+.conv-sidebar--collapsed {
+  width: 48px;
+  min-width: 48px;
+}
+
+.conv-sidebar--collapsed .conv-sidebar-header {
+  justify-content: center;
+  padding: var(--space-3) var(--space-2);
 }
 
 .conv-sidebar-header {
@@ -14,6 +25,12 @@
   justify-content: space-between;
   padding: var(--space-3) var(--space-3);
   border-bottom: 1px solid var(--color-border);
+}
+
+.conv-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .conv-sidebar-title {
@@ -46,19 +63,89 @@
   border-color: var(--color-border-hover);
 }
 
+.conv-sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.conv-sidebar-collapse-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* Search */
+.conv-sidebar-search {
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.conv-sidebar-search-icon {
+  position: absolute;
+  left: calc(var(--space-3) + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.conv-sidebar-search-input {
+  width: 100%;
+  padding: var(--space-1) var(--space-2) var(--space-1) calc(var(--space-2) + 18px);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.7rem;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.conv-sidebar-search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.conv-sidebar-search-input:focus {
+  border-color: var(--color-primary-500);
+  box-shadow: none;
+}
+
+/* List */
 .conv-sidebar-list {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-2) 0;
 }
 
+/* Empty state */
 .conv-sidebar-empty {
-  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-3);
   text-align: center;
   font-size: var(--text-xs);
   color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
+.conv-sidebar-empty-icon {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+/* Sidebar items */
 .conv-sidebar-item {
   display: flex;
   align-items: flex-start;
@@ -67,16 +154,46 @@
   padding: var(--space-2) var(--space-3);
   background: transparent;
   border: none;
+  border-left: 2px solid transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .conv-sidebar-item:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
+}
+
+.conv-sidebar-item--active {
+  background: var(--color-bg-tertiary);
+  border-left-color: var(--color-primary-500);
+  color: var(--color-text-primary);
+}
+
+/* Collapsed icon items */
+.conv-sidebar-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-2) 0;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.conv-sidebar-item-icon:hover {
+  background: var(--color-bg-hover);
+}
+
+.conv-sidebar-item-icon.conv-sidebar-item--active {
+  border-left-color: var(--color-primary-500);
+  background: var(--color-bg-tertiary);
 }
 
 .conv-sidebar-index {
@@ -98,6 +215,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.4;
+}
+
+.conv-sidebar-time {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  color: var(--color-text-muted);
   line-height: 1.4;
 }
 
