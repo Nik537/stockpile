@@ -1,5 +1,6 @@
-"""Google Images source via SerpAPI for web image search."""
+"""Google Images source via Google Custom Search Engine (CSE) JSON API."""
 
+import hashlib
 import logging
 import os
 from typing import Optional
@@ -14,37 +15,40 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleImageSource(ImageSource):
-    """Google Images source via SerpAPI.
+    """Google Images source via Custom Search Engine (CSE) JSON API.
 
-    Uses SerpAPI to access Google Images search results programmatically.
-    Provides access to a wider variety of images than stock photo sites.
+    Uses Google's official Custom Search JSON API for image search.
+    Provides 100 free queries/day (3,000/month).
 
-    API Documentation: https://serpapi.com/google-images-api
+    API Documentation: https://developers.google.com/custom-search/v1/overview
 
-    To get an API key:
-    1. Create an account at https://serpapi.com
-    2. Copy your API key from the dashboard
+    Setup:
+    1. Create a Programmable Search Engine at https://programmablesearchengine.google.com/
+       - Enable "Search the entire web" and "Image search"
+       - Copy the Search Engine ID (cx)
+    2. Get an API key at https://console.cloud.google.com/
+       - Enable "Custom Search API"
+       - Create credentials -> API key
+    3. Set GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX in .env
 
-    Rate limits: Depends on plan (100-5000 searches/month)
-
-    Note: Images from Google may have various licensing. This source
-    filters for images with creative commons licenses when possible.
+    Rate limits: 100 queries/day free, then $5 per 1000 queries
     """
 
-    BASE_URL = "https://serpapi.com/search"
+    BASE_URL = "https://www.googleapis.com/customsearch/v1"
 
     def __init__(self, max_results: int = 10):
-        """Initialize Google image source via SerpAPI.
+        """Initialize Google image source via CSE.
 
         Args:
             max_results: Maximum number of search results to return
         """
-        self.max_results = min(max_results, 100)  # SerpAPI limit
-        self.api_key = os.getenv("SERPAPI_KEY", "")
+        self.max_results = min(max_results, 10)  # CSE returns max 10 per request
+        self.api_key = os.getenv("GOOGLE_CSE_API_KEY", "")
+        self.cx = os.getenv("GOOGLE_CSE_CX", "")
 
-        if not self.api_key:
+        if not self.api_key or not self.cx:
             logger.warning(
-                "[Google Images] No API key configured. Set SERPAPI_KEY to enable Google Images search."
+                "[Google Images] Not configured. Set GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX to enable."
             )
 
     def get_source_name(self) -> str:
@@ -53,11 +57,11 @@ class GoogleImageSource(ImageSource):
 
     def is_configured(self) -> bool:
         """Check if this source has required configuration."""
-        return bool(self.api_key)
+        return bool(self.api_key and self.cx)
 
     @retry_api_call(max_retries=3, base_delay=1.0)
     async def search_images(self, phrase: str, per_page: int = 1) -> list[ImageResult]:
-        """Search Google Images for matching images via SerpAPI.
+        """Search Google Images via Custom Search Engine JSON API.
 
         Args:
             phrase: Search query string
@@ -69,20 +73,20 @@ class GoogleImageSource(ImageSource):
         if not phrase.strip():
             return []
 
-        if not self.api_key:
-            logger.debug("[Google Images] Skipping search - no API key configured")
+        if not self.api_key or not self.cx:
+            logger.debug("[Google Images] Skipping search - not configured")
             return []
 
         logger.debug(f"[Google Images] Searching for: '{phrase}'")
 
         params = {
-            "api_key": self.api_key,
-            "engine": "google_images",
+            "key": self.api_key,
+            "cx": self.cx,
             "q": phrase,
+            "searchType": "image",
             "num": min(per_page, self.max_results),
-            # Filter for images that can be reused
-            "tbs": "itp:photo,isz:l",  # Large photos only
-            "safe": "active",  # Safe search enabled
+            "imgSize": "large",
+            "safe": "active",
         }
 
         try:
@@ -95,8 +99,17 @@ class GoogleImageSource(ImageSource):
                         return []
 
                     if response.status == 429:
-                        logger.warning("[Google Images] Rate limit exceeded")
-                        raise TemporaryServiceError("SerpAPI rate limit exceeded")
+                        logger.warning("[Google Images] Daily quota exceeded")
+                        raise TemporaryServiceError("Google CSE daily quota exceeded")
+
+                    if response.status == 403:
+                        data = await response.json()
+                        error_msg = data.get("error", {}).get("message", "")
+                        if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                            logger.warning(f"[Google Images] Quota exceeded: {error_msg}")
+                            raise TemporaryServiceError("Google CSE quota exceeded")
+                        logger.error(f"[Google Images] Forbidden: {error_msg}")
+                        return []
 
                     if response.status != 200:
                         logger.warning(
@@ -106,18 +119,21 @@ class GoogleImageSource(ImageSource):
 
                     data = await response.json()
 
-                    # Check for API errors
                     if "error" in data:
                         logger.error(f"[Google Images] API error: {data['error']}")
                         return []
 
-                    images_results = data.get("images_results", [])
+                    # Log remaining quota info if available
+                    total_results = data.get("searchInformation", {}).get("totalResults", "?")
+                    logger.debug(f"[Google Images] Total results available: {total_results}")
+
+                    items = data.get("items", [])
 
                     results = []
-                    for idx, image in enumerate(images_results):
+                    for idx, item in enumerate(items):
                         if idx >= per_page:
                             break
-                        result = self._parse_image(image, idx)
+                        result = self._parse_image(item, idx)
                         if result:
                             results.append(result)
 
@@ -128,55 +144,55 @@ class GoogleImageSource(ImageSource):
             logger.error(f"[Google Images] Network error: {e}")
             raise NetworkError(f"Google Images network error: {e}") from e
 
-    def _parse_image(self, image: dict, idx: int) -> Optional[ImageResult]:
-        """Parse SerpAPI Google Images response into ImageResult.
+    def _parse_image(self, item: dict, idx: int) -> Optional[ImageResult]:
+        """Parse Google CSE response item into ImageResult.
 
         Args:
-            image: Image dict from SerpAPI response
+            item: Item dict from CSE response
             idx: Index for generating unique ID
 
         Returns:
             ImageResult or None if parsing fails
         """
         try:
-            # Get the direct image URL
-            original_url = image.get("original", "")
-            if not original_url:
+            # Direct image URL
+            download_url = item.get("link", "")
+            if not download_url:
                 return None
 
-            # Get thumbnail for AI evaluation
-            thumbnail = image.get("thumbnail", "")
+            image_info = item.get("image", {})
 
-            # Get page URL where image is hosted
-            link = image.get("link", "")
+            # Thumbnail URL
+            thumbnail = image_info.get("thumbnailLink", "")
 
-            # Get dimensions if available
-            width = image.get("original_width", 0)
-            height = image.get("original_height", 0)
+            # Dimensions
+            width = image_info.get("width", 0)
+            height = image_info.get("height", 0)
 
-            # Get title
-            title = image.get("title", "")[:100] if image.get("title") else f"Google Image {idx + 1}"
+            # Title
+            title = item.get("title", "")[:100] if item.get("title") else f"Google Image {idx + 1}"
 
-            # Get source domain
-            source_domain = image.get("source", "")
+            # Source domain
+            source_domain = item.get("displayLink", "")
 
-            # Generate a unique ID from URL hash
-            import hashlib
+            # Page URL where image is hosted
+            page_url = image_info.get("contextLink", download_url)
 
-            url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
+            # Generate unique ID from URL hash
+            url_hash = hashlib.md5(download_url.encode()).hexdigest()[:8]
             image_id = f"google_{url_hash}"
 
             return ImageResult(
                 image_id=image_id,
                 title=title,
-                url=link or original_url,
-                download_url=original_url,
+                url=page_url,
+                download_url=download_url,
                 width=width,
                 height=height,
                 source="google",
                 description=f"From {source_domain}" if source_domain else None,
-                license="Unknown (Google Images)",  # License varies
-                photographer=source_domain,  # Use source as attribution
+                license="Unknown (Google Images)",
+                photographer=source_domain,
                 thumbnail_url=thumbnail,
             )
 
@@ -187,7 +203,7 @@ class GoogleImageSource(ImageSource):
     async def download_image(self, image: ImageResult, output_path: str) -> Optional[str]:
         """Download an image from Google Images.
 
-        Override base implementation to add better error handling for
+        Override base implementation to add custom headers for
         potentially problematic URLs from various sources.
 
         Args:
@@ -219,7 +235,6 @@ class GoogleImageSource(ImageSource):
 
                     content = await response.read()
 
-                    # Verify it's actually an image
                     content_type = response.headers.get("content-type", "")
                     if not content_type.startswith("image/"):
                         logger.warning(

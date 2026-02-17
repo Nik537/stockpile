@@ -3,8 +3,13 @@
  *
  * In development: Vite proxy handles /api/* and /ws/* -> localhost:8000
  * In production: Set VITE_API_BASE to your backend URL (e.g. https://api.example.com)
+ * In Tauri: setBackendPort() is called once the sidecar is ready.
  */
-export const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+export let API_BASE = import.meta.env.VITE_API_BASE ?? ''
+
+export function setBackendPort(port: number): void {
+  API_BASE = `http://127.0.0.1:${port}`
+}
 
 /** Build a WebSocket URL that respects API_BASE. */
 export function getWsUrl(path: string): string {

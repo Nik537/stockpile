@@ -14,7 +14,7 @@
 
 .app-header {
   position: relative;
-  padding: var(--space-12) var(--space-8);
+  padding: var(--space-6) var(--space-4);
   text-align: center;
   background: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
@@ -28,8 +28,8 @@
   top: -50%;
   left: 50%;
   transform: translateX(-50%);
-  width: 600px;
-  height: 600px;
+  width: 400px;
+  height: 400px;
   background: radial-gradient(
     circle,
     rgba(99, 102, 241, 0.25) 0%,
@@ -49,7 +49,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .app-header .logo-icon {
@@ -59,7 +59,7 @@
 }
 
 .app-header h1 {
-  font-size: var(--text-4xl);
+  font-size: var(--text-3xl);
   font-weight: var(--font-bold);
   background: linear-gradient(
     135deg,
@@ -88,7 +88,7 @@
   display: flex;
   justify-content: center;
   gap: var(--space-2);
-  margin-top: var(--space-6);
+  margin-top: var(--space-4);
   padding: var(--space-1);
   background: var(--color-bg-tertiary);
   border-radius: var(--radius-xl);
@@ -99,7 +99,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-2) var(--space-4);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
@@ -134,7 +134,7 @@
   max-width: 1000px;
   width: 100%;
   margin: 0 auto;
-  padding: var(--space-10) var(--space-6);
+  padding: var(--space-6) var(--space-4);
 }
 
 /* Section Cards */
@@ -195,7 +195,7 @@
 .app-footer {
   background: var(--color-bg-secondary);
   border-top: 1px solid var(--color-border);
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-4) var(--space-4);
   text-align: center;
 }
 

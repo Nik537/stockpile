@@ -45,7 +45,12 @@ app = FastAPI(
 )
 
 # CORS middleware
-cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+cors_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "tauri://localhost",
+    "https://tauri.localhost",
+]
 extra_origin = os.environ.get("CORS_ORIGIN")
 if extra_origin:
     cors_origins.append(extra_origin)
@@ -81,7 +86,19 @@ async def startup_validation():
         logger.info("Configuration validated successfully")
 
 
+def create_app() -> FastAPI:
+    """Application factory for uvicorn --factory mode."""
+    return app
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(
+        "src.api.server:create_app",
+        factory=True,
+        host="127.0.0.1",
+        port=port,
+        reload=True,
+    )

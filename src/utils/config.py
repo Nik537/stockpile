@@ -10,8 +10,9 @@ from rich.logging import RichHandler
 # Get the project root directory (parent of src)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-# Load environment variables from .env file in project root
-load_dotenv(PROJECT_ROOT / ".env")
+# Allow sidecar to override .env location
+_env_file = os.getenv("STOCKPILE_ENV_FILE", str(PROJECT_ROOT / ".env"))
+load_dotenv(_env_file)
 
 
 def load_config() -> dict:

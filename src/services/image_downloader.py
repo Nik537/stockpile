@@ -319,7 +319,7 @@ class ImageAcquisitionService:
 
         # Fallback to first candidate (prefer google for variety)
         # Sort by source priority: google > pexels > pixabay
-        priority = {"google": 0, "pexels": 1, "pixabay": 2}
+        priority = {"google": 0, "pexels": 1, "pixabay": 2, "openverse": 3, "duckduckgo": 4}
         candidates.sort(key=lambda c: priority.get(c[0].source, 99))
         return candidates[0]
 

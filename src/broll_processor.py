@@ -38,6 +38,8 @@ from services.image_sources import (
     PexelsImageSource,
     PixabayImageSource,
     GoogleImageSource,
+    OpenverseImageSource,
+    DuckDuckGoImageSource,
 )
 from services.image_downloader import ImageAcquisitionService
 from services.transcription_planning_service import TranscriptionPlanningService
@@ -238,7 +240,19 @@ class BRollProcessor:
                         google_img_source = GoogleImageSource(max_results=5)
                         if google_img_source.is_configured():
                             self.image_sources.append(google_img_source)
-                            logger.debug("[ImageSources] Enabled: Google Images")
+                            logger.debug("[ImageSources] Enabled: Google Images (CSE)")
+
+                    elif source_name == "openverse":
+                        openverse_source = OpenverseImageSource(max_results=5)
+                        if openverse_source.is_configured():
+                            self.image_sources.append(openverse_source)
+                            logger.debug("[ImageSources] Enabled: Openverse (CC-licensed)")
+
+                    elif source_name == "duckduckgo":
+                        ddg_source = DuckDuckGoImageSource(max_results=5)
+                        if ddg_source.is_configured():
+                            self.image_sources.append(ddg_source)
+                            logger.debug("[ImageSources] Enabled: DuckDuckGo (emergency fallback)")
 
         if image_acquisition_service is not None:
             self.image_acquisition_service: Optional[ImageAcquisitionService] = image_acquisition_service

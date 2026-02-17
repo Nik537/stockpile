@@ -63,6 +63,9 @@ structlog>=24.1.0
 # libsql with embedded replicas for cloud+local sync
 libsql-experimental==0.0.55
 
+# DuckDuckGo image search (emergency fallback - no API key needed)
+duckduckgo-search>=7.0.0
+
 # Outlier Finder Enhancement - Phase 3: Reddit Integration
 # Higher rate limits with authenticated Reddit API access
 praw==7.8.1

@@ -42,6 +42,9 @@ webapp/
 src.backup.*/
 *.bak
 
+# Tauri build artifacts
+web/src-tauri/target/
+
 # Artifacts
 =*
 .vercel

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import './App.css'
 import JobList from './components/JobList'
 import UploadForm from './components/UploadForm'
@@ -10,8 +10,11 @@ import MusicGenerator from './components/MusicGenerator'
 import DatasetGenerator from './components/DatasetGenerator'
 import JobQueueBar from './components/JobQueueBar'
 import { useJobStore, useJobQueueStore } from './stores'
+import { isTauri } from './lib/tauri'
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset'
+const ScriptwriterCanvas = React.lazy(() => import('./components/scriptwriter/ScriptwriterCanvas'))
+
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'claude'
 
 function App() {
   const { loading, fetchJobs } = useJobStore()
@@ -93,6 +96,15 @@ function App() {
               <span className="tab-icon">&#x1F34C;</span>
               Dataset Gen
             </button>
+            {isTauri() && (
+              <button
+                className={`tab-btn ${activeTab === 'claude' ? 'active' : ''}`}
+                onClick={() => setActiveTab('claude')}
+              >
+                <span className="tab-icon">&#x270D;</span>
+                Scriptwriter
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -152,6 +164,14 @@ function App() {
 
         <div style={{ display: activeTab === 'dataset' ? 'block' : 'none' }}>
           <DatasetGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'claude' ? 'block' : 'none' }}>
+          {isTauri() && (
+            <React.Suspense fallback={<div>Loading scriptwriter...</div>}>
+              <ScriptwriterCanvas />
+            </React.Suspense>
+          )}
         </div>
       </main>
 
