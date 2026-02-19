@@ -11,20 +11,9 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 30
 
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -52,12 +41,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./runpod-moss-ttsd-worker
+          file: ./runpod-moss-ttsd-worker/Dockerfile.slim
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-to: type=gha,mode=max
           provenance: false
 
       - name: Image digest
@@ -66,5 +56,5 @@ jobs:
       - name: Write next steps summary
         run: |
           echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Go to https://runpod.io/console/serverless and create endpoint with image: techtawn/moss-ttsd-runpod:latest" >> $GITHUB_STEP_SUMMARY
-          echo "2. Set RUNPOD_MOSS_TTSD_ENDPOINT_ID in Render dashboard env vars" >> $GITHUB_STEP_SUMMARY
+          echo "Image built from Dockerfile.slim (models download on first cold start)" >> $GITHUB_STEP_SUMMARY
+          echo "First cold start will take ~5-10 min to download model weights" >> $GITHUB_STEP_SUMMARY
