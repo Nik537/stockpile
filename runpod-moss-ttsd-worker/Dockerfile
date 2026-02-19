@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Install transformers 5.x (required by MOSS-TTSD)
-RUN pip install --no-cache-dir transformers==5.0.0
+RUN pip install --no-cache-dir "transformers>=5.0.0"
 
 # Install FlashAttention2 for faster generation and lower VRAM
 RUN pip install flash-attn --no-build-isolation || echo "FlashAttention2 install failed, will use SDPA"
