@@ -87,8 +87,10 @@ def _ensure_model_loaded():
             print("  Processor loaded OK")
         except Exception as proc_err:
             import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Processor load failed: {proc_err}") from proc_err
+            full_tb = traceback.format_exc()
+            print(full_tb)
+            # Include full traceback in error so RunPod captures it
+            raise RuntimeError(f"Processor load failed:\n{full_tb}") from proc_err
 
         try:
             MODEL = AutoModel.from_pretrained(
@@ -100,8 +102,9 @@ def _ensure_model_loaded():
             print("  Model loaded OK")
         except Exception as model_err:
             import traceback
-            traceback.print_exc()
-            raise RuntimeError(f"Model load failed: {model_err}") from model_err
+            full_tb = traceback.format_exc()
+            print(full_tb)
+            raise RuntimeError(f"Model load failed:\n{full_tb}") from model_err
 
         print(f"MOSS-TTSD model loaded on {DEVICE}!")
 
