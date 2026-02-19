@@ -352,3 +352,19 @@ class StoryboardGenerateRequest(BaseModel):
     width: int = 1080
     height: int = 1920
     user_reference_images: dict[str, str] | None = None  # character_name -> base64 data URL
+
+
+class VideoGenerateRequest(BaseModel):
+    """Request body for LTX-Video 2 generation."""
+
+    prompt: str
+    negative_prompt: str = ""
+    width: int = Field(default=768, description="Must be divisible by 32")
+    height: int = Field(default=512, description="Must be divisible by 32")
+    num_frames: int = Field(default=97, description="Must be 8n+1 (e.g. 25, 49, 97, 121)")
+    num_inference_steps: int = Field(default=30, ge=1, le=100)
+    guidance_scale: float = Field(default=3.0, ge=1.0, le=20.0)
+    seed: int | None = None
+    fps: int = Field(default=24, ge=8, le=60)
+    conditioning_images: list[str] | None = None  # base64 data URLs or image URLs
+    conditioning_strength: float = Field(default=1.0, ge=0.0, le=1.0)

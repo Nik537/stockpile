@@ -344,7 +344,7 @@ export interface MusicGenerationParams {
 }
 
 // Background Job Queue Types
-export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music' | 'storyboard'
+export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music' | 'storyboard' | 'video'
 export type BackgroundJobStatus = 'processing' | 'completed' | 'failed'
 
 export interface BackgroundJob {

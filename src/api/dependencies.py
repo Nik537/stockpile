@@ -7,6 +7,7 @@ from services.image_generation_service import ImageGenerationService
 from services.music_service import MusicService
 from services.storyboard_service import StoryboardService
 from services.tts_service import TTSService
+from services.video_gen_service import VideoGenService
 from services.voice_library import VoiceLibrary
 from utils.config import load_config
 
@@ -19,6 +20,7 @@ _voice_library: VoiceLibrary | None = None
 _music_service: MusicService | None = None
 _dataset_gen_service: DatasetGeneratorService | None = None
 _storyboard_service: StoryboardService | None = None
+_video_gen_service: VideoGenService | None = None
 
 
 def get_image_gen_service() -> ImageGenerationService:
@@ -102,3 +104,11 @@ def get_storyboard_service() -> StoryboardService:
             image_gen_service=get_image_gen_service(),
         )
     return _storyboard_service
+
+
+def get_video_gen_service() -> VideoGenService:
+    """Get or create the video generation service instance."""
+    global _video_gen_service
+    if _video_gen_service is None:
+        _video_gen_service = VideoGenService()
+    return _video_gen_service

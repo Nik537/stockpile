@@ -9,13 +9,14 @@ import BulkImageGenerator from './components/BulkImageGenerator'
 import MusicGenerator from './components/MusicGenerator'
 import DatasetGenerator from './components/DatasetGenerator'
 import StoryboardGenerator from './components/StoryboardGenerator'
+import VideoGenerator from './components/VideoGenerator'
 import JobQueueBar from './components/JobQueueBar'
 import { useJobStore, useJobQueueStore } from './stores'
 import { isTauri } from './lib/tauri'
 
 const ScriptwriterCanvas = React.lazy(() => import('./components/scriptwriter/ScriptwriterCanvas'))
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'storyboard' | 'claude'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'storyboard' | 'video' | 'claude'
 
 function App() {
   const { loading, fetchJobs } = useJobStore()
@@ -104,6 +105,13 @@ function App() {
               <span className="tab-icon">&#x1F4F7;</span>
               Storyboard
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+              onClick={() => setActiveTab('video')}
+            >
+              <span className="tab-icon">&#x1F3AC;</span>
+              Video
+            </button>
             {isTauri() && (
               <button
                 className={`tab-btn ${activeTab === 'claude' ? 'active' : ''}`}
@@ -176,6 +184,10 @@ function App() {
 
         <div style={{ display: activeTab === 'storyboard' ? 'block' : 'none' }}>
           <StoryboardGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'video' ? 'block' : 'none' }}>
+          <VideoGenerator />
         </div>
 
         <div style={{ display: activeTab === 'claude' ? 'block' : 'none' }}>
