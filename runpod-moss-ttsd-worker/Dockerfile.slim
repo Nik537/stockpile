@@ -1,0 +1,58 @@
+# RunPod Serverless Worker for MOSS-TTSD (Multi-Speaker Dialogue TTS) — SLIM VARIANT
+#
+# This is the slim build: models are NOT pre-baked into the image.
+# First cold start will download ~20GB of model weights (~5-10 min).
+# Use the regular Dockerfile for a pre-baked image (~25GB) with fast cold starts.
+#
+# Image size: ~5-8GB (vs ~25GB for pre-baked)
+# Suitable for: GitHub Actions builds, local development, CI/CD pipelines
+#
+# Build: docker build --platform linux/amd64 -f Dockerfile.slim -t techtawn/moss-ttsd-runpod:latest .
+# Push: docker push techtawn/moss-ttsd-runpod:latest
+
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+WORKDIR /app
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# HuggingFace caching — models download to /tmp on cold start
+ENV HF_HOME=/tmp/hf_cache
+ENV TRANSFORMERS_CACHE=/tmp/hf_cache
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade PyTorch to 2.9.1 with CUDA 12.8 (required by MOSS-TTSD)
+RUN pip install --no-cache-dir \
+    torch==2.9.1 \
+    torchaudio==2.9.1 \
+    --extra-index-url https://download.pytorch.org/whl/cu128
+
+# Install transformers 5.x (required by MOSS-TTSD)
+RUN pip install --no-cache-dir transformers==5.0.0
+
+# Install FlashAttention2 for faster generation and lower VRAM
+RUN pip install flash-attn --no-build-isolation || echo "FlashAttention2 install failed, will use SDPA"
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# RunPod execution timeout (10 minutes)
+ENV RUNPOD_EXECUTION_TIMEOUT_MS=600000
+
+# Copy handler
+COPY handler.py .
+
+# NOTE: Model weights are NOT downloaded here (slim variant).
+# They will be fetched from HuggingFace Hub on first cold start and cached to HF_HOME.
+
+# Start handler
+CMD ["python", "-u", "handler.py"]

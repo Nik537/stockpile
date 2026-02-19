@@ -51,3 +51,9 @@ jobs:
 
       - name: Image digest
         run: echo "Image pushed with digest ${{ steps.meta.outputs.digest }}"
+
+      - name: Write next steps summary
+        run: |
+          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to https://runpod.io/console/serverless and create endpoint with image: techtawn/moss-ttsd-runpod:latest" >> $GITHUB_STEP_SUMMARY
+          echo "2. Set RUNPOD_MOSS_TTSD_ENDPOINT_ID in Render dashboard env vars" >> $GITHUB_STEP_SUMMARY
