@@ -19,9 +19,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade PyTorch to 2.9.1 with CUDA 12.6 (compatible with RunPod Ampere fleet drivers)
+# Must also upgrade torchvision — base image ships torchvision for PyTorch 2.5.1
+# which crashes on operator registration with torch 2.9.1
 RUN pip install --no-cache-dir \
     torch==2.9.1 \
     torchaudio==2.9.1 \
+    torchvision \
     --extra-index-url https://download.pytorch.org/whl/cu126
 
 # Install transformers 5.x (required by MOSS-TTSD)
