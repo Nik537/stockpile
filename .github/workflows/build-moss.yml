@@ -18,6 +18,7 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
           sudo rm -rf /usr/share/swift /usr/local/.ghcup /usr/lib/jvm
+          sudo rm -rf /opt/hostedtoolcache /usr/share/az_* /opt/microsoft
           sudo apt-get clean
           docker system prune -af
           df -h /
@@ -53,8 +54,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           provenance: false
 
       - name: Image digest
