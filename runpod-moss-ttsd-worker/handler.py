@@ -36,34 +36,35 @@ MODEL = None
 _model_lock = threading.Lock()
 
 
+_model_load_error = None  # Stores load error for returning via job result
+
+
 def _ensure_model_loaded():
-    """Load MOSS-TTSD model lazily on first request."""
-    global PROCESSOR, MODEL
+    """Load MOSS-TTSD model lazily on first request. Returns error string or None."""
+    global PROCESSOR, MODEL, _model_load_error
     if MODEL is not None:
-        return
+        return None
+    if _model_load_error is not None:
+        return _model_load_error
 
     with _model_lock:
         if MODEL is not None:
-            return
+            return None
+        if _model_load_error is not None:
+            return _model_load_error
 
         print("Loading MOSS-TTSD model and audio tokenizer...")
+        import traceback
 
-        # Pre-check critical imports before transformers dynamic loading
-        try:
-            import soundfile as _sf
-            print(f"  soundfile {_sf.__version__} OK")
-        except Exception as e:
-            print(f"  soundfile FAILED: {e}")
-        try:
-            import torchaudio as _ta
-            print(f"  torchaudio {_ta.__version__} OK")
-        except Exception as e:
-            print(f"  torchaudio FAILED: {e}")
-        try:
-            import transformers as _tfm
-            print(f"  transformers {_tfm.__version__} OK")
-        except Exception as e:
-            print(f"  transformers FAILED: {e}")
+        # Pre-check critical imports
+        dep_status = []
+        for mod_name in ("soundfile", "torchaudio", "transformers"):
+            try:
+                mod = __import__(mod_name)
+                dep_status.append(f"{mod_name}={getattr(mod, '__version__', '?')} OK")
+            except Exception as e:
+                dep_status.append(f"{mod_name} FAILED: {e}")
+        print("  Dependencies: " + ", ".join(dep_status))
 
         from transformers import AutoModel, AutoProcessor
 
@@ -85,12 +86,10 @@ def _ensure_model_loaded():
                 codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
             )
             print("  Processor loaded OK")
-        except Exception as proc_err:
-            import traceback
-            full_tb = traceback.format_exc()
-            print(full_tb)
-            # Include full traceback in error so RunPod captures it
-            raise RuntimeError(f"Processor load failed:\n{full_tb}") from proc_err
+        except Exception:
+            _model_load_error = f"Processor load failed:\n{traceback.format_exc()}"
+            print(_model_load_error)
+            return _model_load_error
 
         try:
             MODEL = AutoModel.from_pretrained(
@@ -100,13 +99,13 @@ def _ensure_model_loaded():
                 torch_dtype=torch.bfloat16,
             ).to(DEVICE)
             print("  Model loaded OK")
-        except Exception as model_err:
-            import traceback
-            full_tb = traceback.format_exc()
-            print(full_tb)
-            raise RuntimeError(f"Model load failed:\n{full_tb}") from model_err
+        except Exception:
+            _model_load_error = f"Model load failed:\n{traceback.format_exc()}"
+            print(_model_load_error)
+            return _model_load_error
 
         print(f"MOSS-TTSD model loaded on {DEVICE}!")
+        return None
 
 
 def generate_audio_threaded(text, voice_references, language, temperature,
@@ -128,7 +127,10 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
     def _generate():
         try:
-            _ensure_model_loaded()
+            load_err = _ensure_model_loaded()
+            if load_err:
+                result["error"] = load_err
+                return
 
             # Prepare voice reference audio codes if provided
             reference_audio_codes = None
