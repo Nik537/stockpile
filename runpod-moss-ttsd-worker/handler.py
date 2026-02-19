@@ -47,6 +47,24 @@ def _ensure_model_loaded():
             return
 
         print("Loading MOSS-TTSD model and audio tokenizer...")
+
+        # Pre-check critical imports before transformers dynamic loading
+        try:
+            import soundfile as _sf
+            print(f"  soundfile {_sf.__version__} OK")
+        except Exception as e:
+            print(f"  soundfile FAILED: {e}")
+        try:
+            import torchaudio as _ta
+            print(f"  torchaudio {_ta.__version__} OK")
+        except Exception as e:
+            print(f"  torchaudio FAILED: {e}")
+        try:
+            import transformers as _tfm
+            print(f"  transformers {_tfm.__version__} OK")
+        except Exception as e:
+            print(f"  transformers FAILED: {e}")
+
         from transformers import AutoModel, AutoProcessor
 
         # Try FlashAttention2 first, fall back to SDPA
@@ -60,18 +78,30 @@ def _ensure_model_loaded():
             except ImportError:
                 print("FlashAttention2 not available, using SDPA attention")
 
-        PROCESSOR = AutoProcessor.from_pretrained(
-            "OpenMOSS-Team/MOSS-TTSD-v1.0",
-            trust_remote_code=True,
-            codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
-        )
+        try:
+            PROCESSOR = AutoProcessor.from_pretrained(
+                "OpenMOSS-Team/MOSS-TTSD-v1.0",
+                trust_remote_code=True,
+                codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
+            )
+            print("  Processor loaded OK")
+        except Exception as proc_err:
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"Processor load failed: {proc_err}") from proc_err
 
-        MODEL = AutoModel.from_pretrained(
-            "OpenMOSS-Team/MOSS-TTSD-v1.0",
-            trust_remote_code=True,
-            attn_implementation=attn_impl,
-            torch_dtype=torch.bfloat16,
-        ).to(DEVICE)
+        try:
+            MODEL = AutoModel.from_pretrained(
+                "OpenMOSS-Team/MOSS-TTSD-v1.0",
+                trust_remote_code=True,
+                attn_implementation=attn_impl,
+                torch_dtype=torch.bfloat16,
+            ).to(DEVICE)
+            print("  Model loaded OK")
+        except Exception as model_err:
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"Model load failed: {model_err}") from model_err
 
         print(f"MOSS-TTSD model loaded on {DEVICE}!")
 

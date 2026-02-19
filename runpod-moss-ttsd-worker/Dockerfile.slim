@@ -45,6 +45,9 @@ RUN pip install flash-attn --no-build-isolation || echo "FlashAttention2 install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install MOSS-TTS package (provides processor/model code as a fallback for trust_remote_code)
+RUN pip install --no-cache-dir --no-deps git+https://github.com/OpenMOSS/MOSS-TTS.git
+
 # RunPod execution timeout (10 minutes)
 ENV RUNPOD_EXECUTION_TIMEOUT_MS=600000
 
