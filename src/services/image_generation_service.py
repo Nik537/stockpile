@@ -34,14 +34,12 @@ RUNPOD_API_BASE = "https://api.runpod.ai/v2"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-# RunPod Qwen Image endpoint (custom endpoint overrides public)
+# RunPod Qwen Image endpoint (custom deployment required — no public endpoint yet)
 RUNPOD_QWEN_IMAGE_ENDPOINT_ID = os.getenv("RUNPOD_QWEN_IMAGE_ENDPOINT_ID", "")
-RUNPOD_QWEN_IMAGE_PUBLIC_SLUG = "qwen-image-t2i"
 
-# RunPod public endpoint slugs
+# RunPod endpoint slugs
 RUNPOD_ENDPOINTS = {
     ImageGenerationModel.NANO_BANANA_PRO: "nano-banana-pro-edit",
-    ImageGenerationModel.QWEN_IMAGE: RUNPOD_QWEN_IMAGE_ENDPOINT_ID or RUNPOD_QWEN_IMAGE_PUBLIC_SLUG,
 }
 
 # Runware model ID mapping
@@ -531,27 +529,13 @@ class ImageGenerationService:
     # RunPod - Qwen Image (text-to-image generation)
     # =========================================================================
 
-    @staticmethod
-    def _qwen_size_from_dimensions(width: int, height: int) -> str:
-        """Map pixel dimensions to Qwen Image public endpoint size presets.
-
-        The public qwen-image-t2i endpoint accepts three preset sizes:
-        1328x1328 (square), 1472x1140 (landscape), 1140x1472 (portrait).
-        """
-        ratio = width / height
-        if ratio > 1.15:
-            return "1472x1140"
-        elif ratio < 0.87:
-            return "1140x1472"
-        return "1328x1328"
-
     async def generate_qwen_image(
         self, request: ImageGenerationRequest
     ) -> ImageGenerationResult:
-        """Generate images using Qwen Image via RunPod.
+        """Generate images using Qwen Image 2.0 via a custom RunPod serverless endpoint.
 
-        Supports both the public qwen-image-t2i endpoint and custom serverless
-        endpoints deployed from the Qwen-Image worker.
+        Requires RUNPOD_QWEN_IMAGE_ENDPOINT_ID to be set (no public endpoint yet).
+        Deploy from: https://github.com/arkodeepsen/qwen-image
 
         Args:
             request: The generation request
@@ -560,36 +544,35 @@ class ImageGenerationService:
             ImageGenerationResult with generated images
 
         Raises:
-            ImageGenerationServiceError: If generation fails
+            ImageGenerationServiceError: If generation fails or endpoint not configured
         """
         if not self.is_runpod_configured():
             raise ImageGenerationServiceError(
                 "RUNPOD_API_KEY not configured. Set it in your .env file."
             )
 
-        endpoint_slug = RUNPOD_ENDPOINTS[ImageGenerationModel.QWEN_IMAGE]
-        is_custom = bool(RUNPOD_QWEN_IMAGE_ENDPOINT_ID)
-        url = f"{RUNPOD_API_BASE}/{endpoint_slug}/runsync"
+        if not RUNPOD_QWEN_IMAGE_ENDPOINT_ID:
+            raise ImageGenerationServiceError(
+                "RUNPOD_QWEN_IMAGE_ENDPOINT_ID not configured. "
+                "Qwen-Image-2.0 requires a custom RunPod serverless deployment. "
+                "Deploy from https://github.com/arkodeepsen/qwen-image and set "
+                "the endpoint ID in your .env file."
+            )
+
+        url = f"{RUNPOD_API_BASE}/{RUNPOD_QWEN_IMAGE_ENDPOINT_ID}/runsync"
 
         headers = {
             "Authorization": f"Bearer {self.runpod_api_key}",
             "Content-Type": "application/json",
         }
 
-        # Build payload based on endpoint type
-        input_payload: dict = {"prompt": request.prompt}
-
-        if is_custom:
-            # Custom endpoint accepts width/height and extra params
-            input_payload["width"] = request.width
-            input_payload["height"] = request.height
-            input_payload["negative_prompt"] = ""
-            input_payload["true_cfg_scale"] = request.guidance_scale
-        else:
-            # Public endpoint uses preset size strings
-            input_payload["size"] = self._qwen_size_from_dimensions(
-                request.width, request.height
-            )
+        input_payload: dict = {
+            "prompt": request.prompt,
+            "width": request.width,
+            "height": request.height,
+            "negative_prompt": "",
+            "true_cfg_scale": request.guidance_scale,
+        }
 
         if request.seed is not None:
             input_payload["seed"] = request.seed
@@ -597,8 +580,7 @@ class ImageGenerationService:
         payload = {"input": input_payload}
 
         logger.info(
-            f"Generating image with Qwen Image ({'custom' if is_custom else 'public'} "
-            f"endpoint, {request.width}x{request.height})"
+            f"Generating image with Qwen Image 2.0 ({request.width}x{request.height})"
         )
 
         start_time = time.time()
