@@ -26,6 +26,7 @@ import soundfile as sf
 
 # --- Device selection ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DTYPE = torch.bfloat16 if DEVICE == "cuda" else torch.float32
 
 # --- Lazy model loading ---
 # Models are loaded on first request instead of at startup. This allows
@@ -34,8 +35,6 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PROCESSOR = None
 MODEL = None
 _model_lock = threading.Lock()
-
-
 _model_load_error = None  # Stores load error for returning via job result
 
 
@@ -56,16 +55,6 @@ def _ensure_model_loaded():
         print("Loading MOSS-TTSD model and audio tokenizer...")
         import traceback
 
-        # Pre-check critical imports
-        dep_status = []
-        for mod_name in ("soundfile", "torchaudio", "transformers"):
-            try:
-                mod = __import__(mod_name)
-                dep_status.append(f"{mod_name}={getattr(mod, '__version__', '?')} OK")
-            except Exception as e:
-                dep_status.append(f"{mod_name} FAILED: {e}")
-        print("  Dependencies: " + ", ".join(dep_status))
-
         from transformers import AutoModel, AutoProcessor
 
         # Try FlashAttention2 first, fall back to SDPA
@@ -85,7 +74,9 @@ def _ensure_model_loaded():
                 trust_remote_code=True,
                 codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
             )
-            print("  Processor loaded OK")
+            # Move audio tokenizer to GPU
+            PROCESSOR.audio_tokenizer = PROCESSOR.audio_tokenizer.to(DEVICE)
+            print(f"  Processor loaded OK (sampling_rate={PROCESSOR.model_config.sampling_rate})")
         except Exception:
             _model_load_error = f"Processor load failed:\n{traceback.format_exc()}"
             print(_model_load_error)
@@ -96,8 +87,9 @@ def _ensure_model_loaded():
                 "OpenMOSS-Team/MOSS-TTSD-v1.0",
                 trust_remote_code=True,
                 attn_implementation=attn_impl,
-                torch_dtype=torch.bfloat16,
+                torch_dtype=DTYPE,
             ).to(DEVICE)
+            MODEL.eval()
             print("  Model loaded OK")
         except Exception:
             _model_load_error = f"Model load failed:\n{traceback.format_exc()}"
@@ -112,48 +104,54 @@ def generate_audio_threaded(text, voice_references, language, temperature,
                             max_tokens, inference_mode, num_speakers, tmpdir):
     """
     Run MOSS-TTSD generation in a separate thread to avoid blocking heartbeats.
-
-    Args:
-        text: Dialogue text with [S1]-[S5] speaker tags.
-        voice_references: Dict mapping speaker tags to base64 audio, or None.
-        language: Language code.
-        temperature: Sampling temperature.
-        max_tokens: Max generation tokens.
-        inference_mode: generation/voice_clone/continuation/voice_clone_and_continuation
-        num_speakers: Number of speakers (1-5).
-        tmpdir: Temp directory for intermediate files.
     """
     result = {"audio": None, "sr": None, "error": None, "done": False}
 
     def _generate():
         try:
+            import torchaudio
+
             load_err = _ensure_model_loaded()
             if load_err:
                 result["error"] = load_err
                 return
+
+            sample_rate = int(PROCESSOR.model_config.sampling_rate)
 
             # Prepare voice reference audio codes if provided
             reference_audio_codes = None
             prompt_audio_codes = None
 
             if voice_references and inference_mode in ("voice_clone", "voice_clone_and_continuation"):
-                # Decode and encode all voice references
-                all_ref_codes = []
+                # Decode and encode all voice references using correct API
+                ref_wavs = []
                 for speaker_tag, audio_b64 in voice_references.items():
                     audio_bytes = base64.b64decode(audio_b64)
                     ref_path = os.path.join(tmpdir, f"ref_{speaker_tag}.wav")
                     with open(ref_path, "wb") as f:
                         f.write(audio_bytes)
-                    codes = PROCESSOR.encode_audio(ref_path)
-                    all_ref_codes.append(codes)
-                    print(f"Encoded voice reference for {speaker_tag}")
+                    wav, sr = torchaudio.load(ref_path)
+                    # Convert to mono
+                    if wav.shape[0] > 1:
+                        wav = wav.mean(dim=0, keepdim=True)
+                    # Resample to model's sampling rate
+                    if sr != sample_rate:
+                        wav = torchaudio.functional.resample(wav, sr, sample_rate)
+                    ref_wavs.append(wav)
+                    print(f"Loaded voice reference for {speaker_tag}: {wav.shape}")
 
-                # Combine references
-                if all_ref_codes:
-                    reference_audio_codes = all_ref_codes[0]
-                    # For continuation modes, use the first reference as prompt too
+                if ref_wavs:
+                    reference_audio_codes = PROCESSOR.encode_audios_from_wav(
+                        ref_wavs, sampling_rate=sample_rate
+                    )
+                    print(f"Encoded {len(ref_wavs)} voice references")
+
+                    # For continuation modes, concatenate all refs as prompt
                     if inference_mode == "voice_clone_and_continuation":
-                        prompt_audio_codes = all_ref_codes[0]
+                        concat_wav = torch.cat(ref_wavs, dim=-1)
+                        prompt_audio_codes = PROCESSOR.encode_audios_from_wav(
+                            [concat_wav], sampling_rate=sample_rate
+                        )[0]
 
             elif voice_references and inference_mode == "continuation":
                 # Use first reference as continuation prompt
@@ -162,7 +160,14 @@ def generate_audio_threaded(text, voice_references, language, temperature,
                     ref_path = os.path.join(tmpdir, f"prompt_{speaker_tag}.wav")
                     with open(ref_path, "wb") as f:
                         f.write(audio_bytes)
-                    prompt_audio_codes = PROCESSOR.encode_audio(ref_path)
+                    wav, sr = torchaudio.load(ref_path)
+                    if wav.shape[0] > 1:
+                        wav = wav.mean(dim=0, keepdim=True)
+                    if sr != sample_rate:
+                        wav = torchaudio.functional.resample(wav, sr, sample_rate)
+                    prompt_audio_codes = PROCESSOR.encode_audios_from_wav(
+                        [wav], sampling_rate=sample_rate
+                    )[0]
                     print(f"Encoded prompt audio for {speaker_tag}")
                     break  # Only use first reference as prompt
 
@@ -186,73 +191,38 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
             # Process and generate
             batch = PROCESSOR(conversations, mode=proc_mode)
-            outputs = MODEL.generate(
-                input_ids=batch["input_ids"].to(DEVICE),
-                attention_mask=batch["attention_mask"].to(DEVICE),
-                max_new_tokens=max_tokens,
-                temperature=temperature,
-                do_sample=True,
-            )
+            print(f"Batch prepared (mode={proc_mode}), generating...")
 
-            # Decode outputs to audio
-            messages = PROCESSOR.decode(outputs)
+            with torch.no_grad():
+                outputs = MODEL.generate(
+                    input_ids=batch["input_ids"].to(DEVICE),
+                    attention_mask=batch["attention_mask"].to(DEVICE),
+                    max_new_tokens=max_tokens,
+                    audio_temperature=temperature,
+                    audio_top_p=0.9,
+                    audio_top_k=50,
+                    audio_repetition_penalty=1.1,
+                )
 
-            # Extract audio from decoded messages
-            # The decode method returns messages with audio data
+            print(f"Generation complete, decoding audio...")
+
+            # Decode outputs to audio using correct API
             audio_data = None
-            sample_rate = 32000  # MOSS-TTSD native sample rate
+            for message in PROCESSOR.decode(outputs):
+                if hasattr(message, "audio_codes_list") and message.audio_codes_list:
+                    audio_tensor = message.audio_codes_list[0]
+                    # Save to temporary WAV file and read back as numpy
+                    out_path = os.path.join(tmpdir, "output.wav")
+                    torchaudio.save(out_path, audio_tensor.unsqueeze(0), sample_rate)
+                    audio_data, _ = sf.read(out_path)
+                    print(f"Decoded audio: {audio_data.shape}, sr={sample_rate}")
+                    break
 
-            if messages and len(messages) > 0:
-                for msg_group in messages:
-                    if isinstance(msg_group, list):
-                        for msg in msg_group:
-                            if hasattr(msg, "audio") and msg.audio is not None:
-                                audio_data = msg.audio
-                                break
-                            if isinstance(msg, dict) and "audio" in msg:
-                                audio_data = msg["audio"]
-                                break
-                    elif hasattr(msg_group, "audio") and msg_group.audio is not None:
-                        audio_data = msg_group.audio
-                        break
-
-            # Fallback: try to get audio directly from the output
-            if audio_data is None:
-                # Some versions return audio directly
-                for msg_group in messages:
-                    if isinstance(msg_group, (np.ndarray, torch.Tensor)):
-                        audio_data = msg_group
-                        break
-                    if isinstance(msg_group, list):
-                        for item in msg_group:
-                            if isinstance(item, (np.ndarray, torch.Tensor)):
-                                audio_data = item
-                                break
-                            if isinstance(item, dict):
-                                for v in item.values():
-                                    if isinstance(v, (np.ndarray, torch.Tensor)):
-                                        audio_data = v
-                                        break
-
-            if audio_data is None:
-                # Last resort: save all outputs and check
-                output_path = os.path.join(tmpdir, "output.wav")
-                try:
-                    PROCESSOR.save_audio(messages, output_path)
-                    audio_data, sample_rate = sf.read(output_path)
-                except Exception as save_err:
-                    result["error"] = f"Could not extract audio from model output: {save_err}"
-                    return
-
-            # Convert to numpy if tensor
-            if isinstance(audio_data, torch.Tensor):
-                audio_data = audio_data.cpu().numpy()
-
-            if isinstance(audio_data, np.ndarray) and audio_data.size > 0:
+            if audio_data is not None and isinstance(audio_data, np.ndarray) and audio_data.size > 0:
                 result["audio"] = audio_data
                 result["sr"] = sample_rate
             else:
-                result["error"] = "Generation produced empty audio"
+                result["error"] = "Generation produced no audio - decode returned empty result"
 
         except Exception as e:
             import traceback
@@ -281,7 +251,7 @@ def handler(job):
 
     Output:
         audio_base64 (str): Base64-encoded WAV audio
-        sample_rate (int): Audio sample rate (32000)
+        sample_rate (int): Audio sample rate
         format (str): "wav"
     """
     job_input = job["input"]
@@ -294,31 +264,26 @@ def handler(job):
     if job_input.get("diagnose"):
         import traceback
         results = {"device": str(DEVICE), "steps": []}
-        # Step 1: Check transformers version
         try:
             import transformers
             results["steps"].append(f"transformers={transformers.__version__} OK")
         except Exception as e:
             results["steps"].append(f"transformers FAIL: {e}")
             return results
-        # Step 2: Check torch
         try:
             results["steps"].append(f"torch={torch.__version__} cuda={torch.cuda.is_available()}")
         except Exception as e:
             results["steps"].append(f"torch FAIL: {e}")
-        # Step 3: Check torchaudio
         try:
             import torchaudio
             results["steps"].append(f"torchaudio={torchaudio.__version__} OK")
         except Exception as e:
             results["steps"].append(f"torchaudio FAIL: {traceback.format_exc()}")
-        # Step 4: Check soundfile
         try:
             import soundfile
             results["steps"].append(f"soundfile={soundfile.__version__} OK")
         except Exception as e:
             results["steps"].append(f"soundfile FAIL: {traceback.format_exc()}")
-        # Step 5: Try AutoProcessor.from_pretrained
         try:
             from transformers import AutoProcessor
             proc = AutoProcessor.from_pretrained(
