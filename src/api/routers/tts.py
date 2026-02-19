@@ -371,7 +371,7 @@ async def generate_tts(
     elif mode == "moss-ttsd" and not service.is_moss_ttsd_configured():
         raise HTTPException(
             status_code=400,
-            detail="MOSS-TTSD not configured. Set MOSS_TTSD_SERVER_URL in .env",
+            detail="MOSS-TTSD not configured. Set RUNPOD_API_KEY and RUNPOD_MOSS_TTSD_ENDPOINT_ID in .env",
         )
 
     # Validate text

@@ -22,7 +22,7 @@ RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
 RUNPOD_ENDPOINT_ID = os.getenv("RUNPOD_ENDPOINT_ID", "")
 RUNPOD_QWEN3_ENDPOINT_ID = os.getenv("RUNPOD_QWEN3_ENDPOINT_ID", "")
 RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID = os.getenv("RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID", "")
-MOSS_TTSD_SERVER_URL = os.getenv("MOSS_TTSD_SERVER_URL", "")
+RUNPOD_MOSS_TTSD_ENDPOINT_ID = os.getenv("RUNPOD_MOSS_TTSD_ENDPOINT_ID", "")
 
 # RunPod public TTS endpoint
 RUNPOD_PUBLIC_TTS_ENDPOINT = "chatterbox-turbo"
@@ -62,7 +62,7 @@ class TTSService:
         self.runpod_endpoint_id = RUNPOD_ENDPOINT_ID
         self.runpod_qwen3_endpoint_id = RUNPOD_QWEN3_ENDPOINT_ID
         self.runpod_chatterbox_ext_endpoint_id = RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID
-        self.moss_ttsd_server_url = MOSS_TTSD_SERVER_URL
+        self.runpod_moss_ttsd_endpoint_id = RUNPOD_MOSS_TTSD_ENDPOINT_ID
 
     def _load_settings(self) -> dict:
         """Load TTS settings from file."""
@@ -938,43 +938,26 @@ class TTSService:
         return audio_bytes
 
     # =========================================================================
-    # MOSS-TTSD (Multi-Speaker Dialogue TTS)
+    # MOSS-TTSD (Multi-Speaker Dialogue TTS) via RunPod Serverless
     # =========================================================================
 
     def is_moss_ttsd_configured(self) -> bool:
-        """Check if MOSS-TTSD server URL is configured."""
-        return bool(self.moss_ttsd_server_url)
+        """Check if MOSS-TTSD RunPod endpoint is configured."""
+        return bool(self.runpod_api_key and self.runpod_moss_ttsd_endpoint_id)
 
     async def check_moss_ttsd_health(self) -> dict:
-        """Check if MOSS-TTSD server is configured and accessible."""
+        """Check if MOSS-TTSD RunPod endpoint is configured."""
         if not self.is_moss_ttsd_configured():
             return {
                 "configured": False,
                 "available": False,
-                "error": "MOSS_TTSD_SERVER_URL not configured",
+                "error": "RUNPOD_MOSS_TTSD_ENDPOINT_ID not configured",
             }
-        try:
-            response = await self.client.get(
-                f"{self.moss_ttsd_server_url}/health",
-                timeout=10.0,
-            )
-            if response.status_code == 200:
-                return {
-                    "configured": True,
-                    "available": True,
-                    "server_url": self.moss_ttsd_server_url,
-                }
-            return {
-                "configured": True,
-                "available": False,
-                "error": f"Server returned status {response.status_code}",
-            }
-        except httpx.TimeoutException:
-            return {"configured": True, "available": False, "error": "Connection timed out"}
-        except httpx.ConnectError as e:
-            return {"configured": True, "available": False, "error": f"Connection failed: {e}"}
-        except Exception as e:
-            return {"configured": True, "available": False, "error": str(e)}
+        return {
+            "configured": True,
+            "available": True,
+            "endpoint_id": self.runpod_moss_ttsd_endpoint_id,
+        }
 
     async def generate_moss_ttsd(
         self,
@@ -986,7 +969,7 @@ class TTSService:
         inference_mode: str = "generation",
         num_speakers: int = 1,
     ) -> bytes:
-        """Generate audio using MOSS-TTSD server.
+        """Generate audio using MOSS-TTSD via RunPod serverless.
 
         MOSS-TTSD is an 8B parameter model for multi-speaker dialogue synthesis.
         It supports up to 5 speakers with [S1]-[S5] tags and 20 languages.
@@ -1006,10 +989,10 @@ class TTSService:
         """
         if not self.is_moss_ttsd_configured():
             raise TTSServiceError(
-                "MOSS-TTSD not configured. Set MOSS_TTSD_SERVER_URL in .env"
+                "MOSS-TTSD not configured. Set RUNPOD_API_KEY and RUNPOD_MOSS_TTSD_ENDPOINT_ID in .env"
             )
 
-        payload: dict = {
+        input_data: dict = {
             "text": text,
             "language": language,
             "temperature": temperature,
@@ -1030,54 +1013,22 @@ class TTSService:
                 with open(path, "rb") as f:
                     references[speaker_tag] = base64.b64encode(f.read()).decode()
                 logger.info(f"MOSS-TTSD: Using voice reference for {speaker_tag}: {path.name}")
-            payload["voice_references"] = references
+            input_data["voice_references"] = references
 
         logger.info(
             f"Generating TTS via MOSS-TTSD for {len(text)} characters "
             f"(lang={language}, speakers={num_speakers}, mode={inference_mode})"
         )
 
-        try:
-            response = await self.client.post(
-                f"{self.moss_ttsd_server_url}/generate",
-                json=payload,
-                timeout=600.0,
-            )
-            response.raise_for_status()
+        payload = {"input": input_data}
+        output = await self._poll_runpod_job(self.runpod_moss_ttsd_endpoint_id, payload)
 
-            # Check if response is JSON with audio_base64 or raw audio bytes
-            content_type = response.headers.get("content-type", "")
-            if "application/json" in content_type:
-                result = response.json()
-                if "error" in result:
-                    raise TTSServiceError(f"MOSS-TTSD error: {result['error']}")
-                if "audio_base64" in result:
-                    audio_bytes = base64.b64decode(result["audio_base64"])
-                else:
-                    raise TTSServiceError("No audio returned from MOSS-TTSD")
-            else:
-                # Raw audio bytes in response
-                audio_bytes = response.content
+        if "audio_base64" not in output:
+            raise TTSServiceError("No audio returned from MOSS-TTSD")
 
-            logger.info(f"MOSS-TTSD generation complete: {len(audio_bytes)} bytes")
-            return audio_bytes
-
-        except httpx.TimeoutException:
-            raise TTSServiceError(
-                "MOSS-TTSD generation timed out. The model may need more time for long dialogues."
-            )
-        except httpx.HTTPStatusError as e:
-            error_detail = ""
-            try:
-                error_data = e.response.json()
-                error_detail = error_data.get("detail", str(e))
-            except Exception:
-                error_detail = e.response.text or str(e)
-            raise TTSServiceError(f"MOSS-TTSD server error: {error_detail}")
-        except TTSServiceError:
-            raise
-        except Exception as e:
-            raise TTSServiceError(f"MOSS-TTSD generation failed: {e}")
+        audio_bytes = base64.b64decode(output["audio_base64"])
+        logger.info(f"MOSS-TTSD generation complete: {len(audio_bytes)} bytes")
+        return audio_bytes
 
     async def download_audio(self, audio_url: str) -> bytes:
         """Download audio from a URL.

@@ -816,7 +816,7 @@ function TTSGenerator() {
                 )}
               </li>
               <li>
-                <code>MOSS_TTSD_SERVER_URL</code> — MOSS-TTSD server URL
+                <code>RUNPOD_MOSS_TTSD_ENDPOINT_ID</code> — MOSS-TTSD (RunPod)
                 {allStatus?.moss_ttsd?.configured ? (
                   <span className="status-dot connected" title="Configured"></span>
                 ) : (
@@ -831,7 +831,7 @@ function TTSGenerator() {
                 <li>Voice cloning works best with 5-10 seconds of clear speech</li>
                 <li>Qwen3 voice cloning needs only ~3 seconds of reference audio</li>
                 <li>Chatterbox Extended can generate multiple candidates and pick the best</li>
-                <li>MOSS-TTSD requires a self-hosted server (GPU with 24+ GB VRAM)</li>
+                <li>MOSS-TTSD runs on RunPod serverless (GPU with 24+ GB VRAM)</li>
                 <li>Use [S1]-[S5] speaker tags for multi-speaker dialogue with MOSS-TTSD</li>
               </ul>
             </div>
