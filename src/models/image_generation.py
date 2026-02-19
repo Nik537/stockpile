@@ -1,4 +1,4 @@
-"""Models for AI image generation (Runware, Gemini, Nano Banana Pro)."""
+"""Models for AI image generation (Runware, Gemini, Nano Banana Pro, Qwen Image)."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,6 +14,7 @@ class ImageGenerationModel(str, Enum):
     RUNWARE_Z_IMAGE = "runware-z-image"                  # $0.0006/img
     GEMINI_FLASH = "gemini-flash"                        # FREE (500/day)
     NANO_BANANA_PRO = "nano-banana-pro"                  # RunPod public endpoint
+    QWEN_IMAGE = "qwen-image"                              # RunPod (public or custom)
 
 
 class ImageGenerationStatus(str, Enum):

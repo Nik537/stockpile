@@ -680,6 +680,7 @@ curl -X POST "https://api.runpod.ai/v2/chatterbox-turbo/runsync" \
 | Flux Dev | `black-forest-labs-flux-1-dev` | `prompt`, `width`, `height` | `images[].url` | $0.02/megapixel |
 | Flux Schnell | `black-forest-labs-flux-1-schnell` | `prompt`, `width`, `height` | `images[].url` | $0.0024/megapixel |
 | Flux Kontext | `black-forest-labs-flux-1-kontext-dev` | `prompt`, `image_url` | `images[].url` | ~$0.02/megapixel |
+| Qwen Image | `qwen-image-t2i` | `prompt`, `size`, `seed` | `image` (base64) | $0.02/request |
 
 **Example (Flux Dev):**
 ```bash
@@ -721,6 +722,7 @@ curl -X POST "https://api.runpod.ai/v2/black-forest-labs-flux-1-dev/runsync" \
 The codebase supports both public and custom endpoints:
 
 - **TTS:** `TTSService.generate_public()` uses `chatterbox-turbo`
-- **Images:** `ImageGenerationService.generate_runpod()` uses Flux models
+- **Images:** `ImageGenerationService.generate_runpod()` uses Nano Banana Pro (editing)
+- **Qwen Image:** `ImageGenerationService.generate_qwen_image()` uses `qwen-image-t2i` (or custom endpoint via `RUNPOD_QWEN_IMAGE_ENDPOINT_ID`)
 
 See `src/services/tts_service.py` and `src/services/image_generation_service.py` for implementation.

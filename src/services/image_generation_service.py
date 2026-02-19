@@ -1,4 +1,4 @@
-"""Image Generation Service - Runware, Gemini, and Nano Banana Pro providers."""
+"""Image Generation Service - Runware, Gemini, Nano Banana Pro, and Qwen Image providers."""
 
 import json
 import logging
@@ -34,9 +34,14 @@ RUNPOD_API_BASE = "https://api.runpod.ai/v2"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-# RunPod public endpoint slugs (only Nano Banana Pro for editing)
+# RunPod Qwen Image endpoint (custom endpoint overrides public)
+RUNPOD_QWEN_IMAGE_ENDPOINT_ID = os.getenv("RUNPOD_QWEN_IMAGE_ENDPOINT_ID", "")
+RUNPOD_QWEN_IMAGE_PUBLIC_SLUG = "qwen-image-t2i"
+
+# RunPod public endpoint slugs
 RUNPOD_ENDPOINTS = {
     ImageGenerationModel.NANO_BANANA_PRO: "nano-banana-pro-edit",
+    ImageGenerationModel.QWEN_IMAGE: RUNPOD_QWEN_IMAGE_ENDPOINT_ID or RUNPOD_QWEN_IMAGE_PUBLIC_SLUG,
 }
 
 # Runware model ID mapping
@@ -53,6 +58,7 @@ PRICING_PER_MP = {
     ImageGenerationModel.RUNWARE_Z_IMAGE: 0.0006,
     ImageGenerationModel.GEMINI_FLASH: 0.0,
     ImageGenerationModel.NANO_BANANA_PRO: 0.04,
+    ImageGenerationModel.QWEN_IMAGE: 0.02,
 }
 
 # Aspect ratio mapping for Gemini (uses ratios, not pixels)
@@ -333,7 +339,10 @@ class ImageGenerationService:
         return {
             "configured": True,
             "available": True,
-            "models": [ImageGenerationModel.NANO_BANANA_PRO.value],
+            "models": [
+                ImageGenerationModel.NANO_BANANA_PRO.value,
+                ImageGenerationModel.QWEN_IMAGE.value,
+            ],
         }
 
     @staticmethod
@@ -519,6 +528,199 @@ class ImageGenerationService:
             raise ImageGenerationServiceError(f"RunPod image editing failed: {e}")
 
     # =========================================================================
+    # RunPod - Qwen Image (text-to-image generation)
+    # =========================================================================
+
+    @staticmethod
+    def _qwen_size_from_dimensions(width: int, height: int) -> str:
+        """Map pixel dimensions to Qwen Image public endpoint size presets.
+
+        The public qwen-image-t2i endpoint accepts three preset sizes:
+        1328x1328 (square), 1472x1140 (landscape), 1140x1472 (portrait).
+        """
+        ratio = width / height
+        if ratio > 1.15:
+            return "1472x1140"
+        elif ratio < 0.87:
+            return "1140x1472"
+        return "1328x1328"
+
+    async def generate_qwen_image(
+        self, request: ImageGenerationRequest
+    ) -> ImageGenerationResult:
+        """Generate images using Qwen Image via RunPod.
+
+        Supports both the public qwen-image-t2i endpoint and custom serverless
+        endpoints deployed from the Qwen-Image worker.
+
+        Args:
+            request: The generation request
+
+        Returns:
+            ImageGenerationResult with generated images
+
+        Raises:
+            ImageGenerationServiceError: If generation fails
+        """
+        if not self.is_runpod_configured():
+            raise ImageGenerationServiceError(
+                "RUNPOD_API_KEY not configured. Set it in your .env file."
+            )
+
+        endpoint_slug = RUNPOD_ENDPOINTS[ImageGenerationModel.QWEN_IMAGE]
+        is_custom = bool(RUNPOD_QWEN_IMAGE_ENDPOINT_ID)
+        url = f"{RUNPOD_API_BASE}/{endpoint_slug}/runsync"
+
+        headers = {
+            "Authorization": f"Bearer {self.runpod_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        # Build payload based on endpoint type
+        input_payload: dict = {"prompt": request.prompt}
+
+        if is_custom:
+            # Custom endpoint accepts width/height and extra params
+            input_payload["width"] = request.width
+            input_payload["height"] = request.height
+            input_payload["negative_prompt"] = ""
+            input_payload["true_cfg_scale"] = request.guidance_scale
+        else:
+            # Public endpoint uses preset size strings
+            input_payload["size"] = self._qwen_size_from_dimensions(
+                request.width, request.height
+            )
+
+        if request.seed is not None:
+            input_payload["seed"] = request.seed
+
+        payload = {"input": input_payload}
+
+        logger.info(
+            f"Generating image with Qwen Image ({'custom' if is_custom else 'public'} "
+            f"endpoint, {request.width}x{request.height})"
+        )
+
+        start_time = time.time()
+
+        try:
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result_data = response.json()
+            generation_time_ms = int((time.time() - start_time) * 1000)
+
+            if result_data.get("status") == "FAILED":
+                error_msg = result_data.get("error", "Unknown error")
+                raise ImageGenerationServiceError(
+                    f"Qwen Image generation failed: {error_msg}"
+                )
+
+            output = result_data.get("output", {})
+            images = []
+
+            # Custom endpoint returns base64 image in output.image
+            if output.get("image"):
+                data_url = f"data:image/png;base64,{output['image']}"
+                images.append(
+                    GeneratedImage(
+                        url=data_url,
+                        width=request.width,
+                        height=request.height,
+                        content_type="image/png",
+                        seed=output.get("seed"),
+                    )
+                )
+
+            # Public endpoint may return image_url or images array
+            if not images and output.get("image_url"):
+                images.append(
+                    GeneratedImage(
+                        url=output["image_url"],
+                        width=request.width,
+                        height=request.height,
+                        content_type="image/png",
+                        seed=output.get("seed"),
+                    )
+                )
+
+            if not images:
+                for img_data in output.get("images", []):
+                    img_url = (
+                        img_data.get("url", "")
+                        if isinstance(img_data, dict)
+                        else img_data
+                    )
+                    if img_url:
+                        images.append(
+                            GeneratedImage(
+                                url=img_url,
+                                width=request.width,
+                                height=request.height,
+                                content_type="image/png",
+                                seed=output.get("seed"),
+                            )
+                        )
+
+            # Fallback: output.result (some RunPod endpoints use this)
+            if not images and output.get("result"):
+                result_val = output["result"]
+                if isinstance(result_val, str) and result_val.startswith("http"):
+                    images.append(
+                        GeneratedImage(
+                            url=result_val,
+                            width=request.width,
+                            height=request.height,
+                            content_type="image/png",
+                            seed=output.get("seed"),
+                        )
+                    )
+
+            cost = output.get("cost", 0.0)
+            if not cost:
+                cost = self._calculate_cost(
+                    ImageGenerationModel.QWEN_IMAGE,
+                    request.width,
+                    request.height,
+                    len(images) or 1,
+                )
+
+            logger.info(
+                f"Qwen Image generated {len(images)} image(s) in {generation_time_ms}ms "
+                f"(cost: ${cost:.4f})"
+            )
+
+            return ImageGenerationResult(
+                images=images,
+                model=ImageGenerationModel.QWEN_IMAGE,
+                prompt=request.prompt,
+                generation_time_ms=generation_time_ms,
+                cost_estimate=cost,
+            )
+
+        except httpx.TimeoutException:
+            raise ImageGenerationServiceError(
+                "Qwen Image request timed out. The model may need longer "
+                "for high-resolution images — try again."
+            )
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", str(e))
+            except Exception:
+                error_detail = e.response.text or str(e)
+            raise ImageGenerationServiceError(
+                f"Qwen Image API error: {error_detail}"
+            )
+        except ImageGenerationServiceError:
+            raise
+        except Exception as e:
+            raise ImageGenerationServiceError(
+                f"Qwen Image generation failed: {e}"
+            )
+
+    # =========================================================================
     # Gemini (Google) - FREE 500/day
     # =========================================================================
 
@@ -647,6 +849,8 @@ class ImageGenerationService:
             return await self.generate_gemini(request)
         elif model == ImageGenerationModel.NANO_BANANA_PRO:
             return await self.generate_runpod(request)
+        elif model == ImageGenerationModel.QWEN_IMAGE:
+            return await self.generate_qwen_image(request)
         else:
             raise ImageGenerationServiceError(f"Unknown model: {model.value}")
 
