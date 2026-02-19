@@ -290,6 +290,47 @@ def handler(job):
     if job_input.get("ping"):
         return {"pong": True, "device": str(DEVICE), "model_loaded": MODEL is not None}
 
+    # Deep diagnostic - test each import/load step
+    if job_input.get("diagnose"):
+        import traceback
+        results = {"device": str(DEVICE), "steps": []}
+        # Step 1: Check transformers version
+        try:
+            import transformers
+            results["steps"].append(f"transformers={transformers.__version__} OK")
+        except Exception as e:
+            results["steps"].append(f"transformers FAIL: {e}")
+            return results
+        # Step 2: Check torch
+        try:
+            results["steps"].append(f"torch={torch.__version__} cuda={torch.cuda.is_available()}")
+        except Exception as e:
+            results["steps"].append(f"torch FAIL: {e}")
+        # Step 3: Check torchaudio
+        try:
+            import torchaudio
+            results["steps"].append(f"torchaudio={torchaudio.__version__} OK")
+        except Exception as e:
+            results["steps"].append(f"torchaudio FAIL: {traceback.format_exc()}")
+        # Step 4: Check soundfile
+        try:
+            import soundfile
+            results["steps"].append(f"soundfile={soundfile.__version__} OK")
+        except Exception as e:
+            results["steps"].append(f"soundfile FAIL: {traceback.format_exc()}")
+        # Step 5: Try AutoProcessor.from_pretrained
+        try:
+            from transformers import AutoProcessor
+            proc = AutoProcessor.from_pretrained(
+                "OpenMOSS-Team/MOSS-TTSD-v1.0",
+                trust_remote_code=True,
+                codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
+            )
+            results["steps"].append(f"AutoProcessor loaded: {type(proc).__name__}")
+        except Exception as e:
+            results["steps"].append(f"AutoProcessor FAIL: {traceback.format_exc()}")
+        return results
+
     text = job_input.get("text", "")
     language = job_input.get("language", "en")
     temperature = float(job_input.get("temperature", 0.9))
