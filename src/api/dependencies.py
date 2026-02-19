@@ -5,6 +5,7 @@ from services.bulk_image_service import BulkImageService
 from services.dataset_generator_service import DatasetGeneratorService
 from services.image_generation_service import ImageGenerationService
 from services.music_service import MusicService
+from services.storyboard_service import StoryboardService
 from services.tts_service import TTSService
 from services.voice_library import VoiceLibrary
 from utils.config import load_config
@@ -17,6 +18,7 @@ _ai_service: AIService | None = None
 _voice_library: VoiceLibrary | None = None
 _music_service: MusicService | None = None
 _dataset_gen_service: DatasetGeneratorService | None = None
+_storyboard_service: StoryboardService | None = None
 
 
 def get_image_gen_service() -> ImageGenerationService:
@@ -89,3 +91,14 @@ def get_dataset_gen_service() -> DatasetGeneratorService:
             image_gen_service=get_image_gen_service(),
         )
     return _dataset_gen_service
+
+
+def get_storyboard_service() -> StoryboardService:
+    """Get or create the storyboard service instance."""
+    global _storyboard_service
+    if _storyboard_service is None:
+        _storyboard_service = StoryboardService(
+            ai_service=get_ai_service(),
+            image_gen_service=get_image_gen_service(),
+        )
+    return _storyboard_service

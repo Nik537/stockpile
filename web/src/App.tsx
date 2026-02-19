@@ -8,13 +8,14 @@ import ImageGenerator from './components/ImageGenerator'
 import BulkImageGenerator from './components/BulkImageGenerator'
 import MusicGenerator from './components/MusicGenerator'
 import DatasetGenerator from './components/DatasetGenerator'
+import StoryboardGenerator from './components/StoryboardGenerator'
 import JobQueueBar from './components/JobQueueBar'
 import { useJobStore, useJobQueueStore } from './stores'
 import { isTauri } from './lib/tauri'
 
 const ScriptwriterCanvas = React.lazy(() => import('./components/scriptwriter/ScriptwriterCanvas'))
 
-type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'claude'
+type ActiveTab = 'broll' | 'outliers' | 'tts' | 'imagegen' | 'bulkimage' | 'music' | 'dataset' | 'storyboard' | 'claude'
 
 function App() {
   const { loading, fetchJobs } = useJobStore()
@@ -96,6 +97,13 @@ function App() {
               <span className="tab-icon">&#x1F34C;</span>
               Dataset Gen
             </button>
+            <button
+              className={`tab-btn ${activeTab === 'storyboard' ? 'active' : ''}`}
+              onClick={() => setActiveTab('storyboard')}
+            >
+              <span className="tab-icon">&#x1F4F7;</span>
+              Storyboard
+            </button>
             {isTauri() && (
               <button
                 className={`tab-btn ${activeTab === 'claude' ? 'active' : ''}`}
@@ -164,6 +172,10 @@ function App() {
 
         <div style={{ display: activeTab === 'dataset' ? 'block' : 'none' }}>
           <DatasetGenerator />
+        </div>
+
+        <div style={{ display: activeTab === 'storyboard' ? 'block' : 'none' }}>
+          <StoryboardGenerator />
         </div>
 
         <div style={{ display: activeTab === 'claude' ? 'block' : 'none' }}>

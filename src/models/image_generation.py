@@ -15,6 +15,9 @@ class ImageGenerationModel(str, Enum):
     GEMINI_FLASH = "gemini-flash"                        # FREE (500/day)
     NANO_BANANA_PRO = "nano-banana-pro"                  # RunPod public endpoint
     QWEN_IMAGE = "qwen-image"                              # RunPod (public or custom)
+    FLUX_DEV = "flux-dev"                                    # RunPod public endpoint ($0.02/MP)
+    FLUX_SCHNELL = "flux-schnell"                            # RunPod public endpoint ($0.0024/MP)
+    FLUX_KONTEXT = "flux-kontext"                            # RunPod public endpoint ($0.02/MP)
 
 
 class ImageGenerationStatus(str, Enum):

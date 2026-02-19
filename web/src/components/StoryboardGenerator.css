@@ -1,0 +1,823 @@
+/* ==========================================================================
+   Storyboard Generator Component
+   ========================================================================== */
+
+.storyboard-section {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8);
+  animation: slideUp 0.4s ease-out;
+}
+
+.storyboard-section h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.storyboard-section .section-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-6) 0;
+}
+
+/* ==========================================================================
+   Error Display
+   ========================================================================== */
+
+.storyboard-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+.storyboard-error .error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--color-error);
+  color: white;
+  border-radius: 50%;
+  font-weight: var(--font-bold);
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+}
+
+.storyboard-error .btn-dismiss {
+  margin-left: auto;
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.storyboard-error .btn-dismiss:hover {
+  background: var(--color-error);
+  color: white;
+}
+
+/* ==========================================================================
+   Step Container
+   ========================================================================== */
+
+.storyboard-step {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+}
+
+/* ==========================================================================
+   Step 1: Input
+   ========================================================================== */
+
+.storyboard-step.step-input .form-group {
+  margin-bottom: var(--space-5);
+}
+
+.storyboard-step.step-input label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.storyboard-step.step-input textarea {
+  width: 100%;
+  padding: var(--space-4);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.storyboard-step.step-input textarea:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.storyboard-step.step-input textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.storyboard-step.step-input select {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.storyboard-step.step-input select:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+.aspect-ratio-options {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.aspect-ratio-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex: 1;
+  min-width: 180px;
+}
+
+.aspect-ratio-option:hover {
+  border-color: var(--color-primary-500);
+}
+
+.aspect-ratio-option.selected {
+  border-color: var(--color-primary-500);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.aspect-ratio-option input[type="radio"] {
+  accent-color: var(--color-primary-500);
+}
+
+.aspect-ratio-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.aspect-ratio-dims {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Step 2: Review Plan
+   ========================================================================== */
+
+.plan-title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Character Cards */
+.character-section-header {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.character-cards {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+}
+
+.character-card {
+  flex: 1;
+  min-width: 260px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.character-card-name {
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  color: var(--color-primary-400);
+  margin-bottom: var(--space-3);
+}
+
+.character-field {
+  margin-bottom: var(--space-2);
+}
+
+.character-field label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.character-field input {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+
+.character-field input:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+/* Character Reference Upload */
+.character-reference-upload {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.character-reference-upload > label:first-child {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.upload-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.upload-zone:hover {
+  border-color: var(--color-primary-500);
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.upload-zone input[type="file"] {
+  display: none;
+}
+
+.upload-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.reference-preview {
+  position: relative;
+  display: inline-block;
+}
+
+.reference-preview img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.btn-remove-ref {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-error);
+  color: white;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.btn-remove-ref:hover {
+  opacity: 0.8;
+}
+
+/* Scene Cards */
+.scenes-section-header {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.scene-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+.scene-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  position: relative;
+}
+
+.scene-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.scene-number-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent));
+  color: white;
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.scene-card-header span:last-child {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.scene-edit-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.scene-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.scene-edit-field.full-width {
+  grid-column: 1 / -1;
+}
+
+.scene-edit-field label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-muted);
+}
+
+.scene-edit-field input,
+.scene-edit-field textarea {
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+
+.scene-edit-field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.scene-edit-field input:focus,
+.scene-edit-field textarea:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+/* Style Guide */
+.style-guide-display {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.style-guide-display h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.style-guide-display p {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Model Selector */
+.model-selector-panel {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.model-selector-group {
+  margin-bottom: var(--space-4);
+}
+
+.model-selector-group:last-child {
+  margin-bottom: 0;
+}
+
+.model-selector-group > label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+/* ==========================================================================
+   Step 3: Generating
+   ========================================================================== */
+
+.phase-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+}
+
+.phase-indicator .loading-spinner-sm {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.phase-text {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.phase-text .phase-detail {
+  color: var(--color-text-tertiary);
+  font-weight: normal;
+  margin-left: var(--space-2);
+}
+
+/* Scene grid during generation */
+.scene-gen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+}
+
+.scene-gen-card {
+  position: relative;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.scene-gen-card.completed {
+  border-color: var(--color-success);
+}
+
+.scene-gen-card.failed {
+  border-color: var(--color-error);
+}
+
+.scene-gen-card .scene-gen-image {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  display: block;
+}
+
+.scene-gen-card .scene-gen-image.landscape {
+  aspect-ratio: 16 / 9;
+}
+
+.scene-gen-card .scene-gen-image.square {
+  aspect-ratio: 1;
+}
+
+.scene-gen-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 9 / 16;
+  background: var(--color-bg-tertiary);
+}
+
+.scene-gen-pending.landscape {
+  aspect-ratio: 16 / 9;
+}
+
+.scene-gen-pending.square {
+  aspect-ratio: 1;
+}
+
+.scene-gen-label {
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.scene-gen-label .scene-number-badge {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.scene-gen-label span:last-child {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Reference images during generation */
+.reference-images-row {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.reference-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  width: 120px;
+}
+
+.reference-card.completed {
+  border-color: var(--color-success);
+}
+
+.reference-card img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+
+.reference-card .reference-name {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reference-card-pending {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
+}
+
+/* ==========================================================================
+   Step 4: Complete - Filmstrip Gallery
+   ========================================================================== */
+
+.filmstrip-gallery {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-left: var(--space-8);
+  margin-bottom: var(--space-5);
+}
+
+/* Connecting line */
+.filmstrip-gallery::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--color-primary-600), var(--color-accent));
+  border-radius: var(--radius-full);
+}
+
+.filmstrip-scene {
+  position: relative;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+/* Dot on the timeline */
+.filmstrip-scene::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-8) + 9px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  background: var(--color-primary-600);
+  border: 3px solid var(--color-bg-tertiary);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.filmstrip-scene-content {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.filmstrip-scene-image {
+  flex-shrink: 0;
+  width: 200px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.filmstrip-scene-image img {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-lg);
+}
+
+.filmstrip-scene-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.filmstrip-scene-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--color-primary-600), var(--color-accent));
+  color: white;
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  border-radius: 50%;
+  margin-bottom: var(--space-1);
+}
+
+.filmstrip-scene-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.filmstrip-scene-tags {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.filmstrip-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+.filmstrip-tag.camera {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--color-primary-400);
+  border-color: rgba(79, 70, 229, 0.2);
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .storyboard-section {
+    padding: var(--space-5);
+  }
+
+  .storyboard-step {
+    padding: var(--space-4);
+  }
+
+  .character-cards {
+    flex-direction: column;
+  }
+
+  .character-card {
+    min-width: 100%;
+  }
+
+  .scene-edit-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-gen-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  .aspect-ratio-options {
+    flex-direction: column;
+  }
+
+  .aspect-ratio-option {
+    min-width: 100%;
+  }
+
+  .filmstrip-gallery {
+    padding-left: var(--space-6);
+  }
+
+  .filmstrip-scene-content {
+    flex-direction: column;
+  }
+
+  .filmstrip-scene-image {
+    width: 100%;
+  }
+
+  .filmstrip-scene::before {
+    left: calc(-1 * var(--space-6) + 9px);
+  }
+
+  .reference-images-row {
+    justify-content: center;
+  }
+
+  .complete-stats {
+    flex-direction: column;
+  }
+
+  .step-actions {
+    flex-direction: column;
+  }
+
+  .step-actions button {
+    width: 100%;
+  }
+}

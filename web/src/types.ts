@@ -344,7 +344,7 @@ export interface MusicGenerationParams {
 }
 
 // Background Job Queue Types
-export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music'
+export type BackgroundJobType = 'tts' | 'image' | 'image-edit' | 'music' | 'storyboard'
 export type BackgroundJobStatus = 'processing' | 'completed' | 'failed'
 
 export interface BackgroundJob {
@@ -369,3 +369,65 @@ export type BackgroundJobWSMessage = {
 // Dataset Generator Types
 export type DatasetGenMode = 'pair' | 'single' | 'reference' | 'layered'
 export type DatasetGenStatus = 'pending' | 'generating_prompts' | 'generating_images' | 'captioning' | 'packaging' | 'completed' | 'failed' | 'cancelled'
+
+// Storyboard Types
+export interface StoryboardCharacter {
+  name: string
+  appearance: string
+  clothing: string
+  accessories: string
+}
+
+export interface StoryboardScene {
+  scene_number: number
+  description: string
+  camera_angle: string
+  character_action: string
+  environment: string
+  image_prompt: string
+}
+
+export interface StoryboardPlan {
+  title: string
+  characters: StoryboardCharacter[]
+  scenes: StoryboardScene[]
+  style_guide: string
+  aspect_ratio: string
+}
+
+export interface StoryboardSceneResult {
+  scene_number: number
+  image_url: string | null
+  status: 'pending' | 'generating' | 'completed' | 'failed'
+  error?: string
+}
+
+export type StoryboardJobStatus = 'pending' | 'planning' | 'generating_references' | 'generating_scenes' | 'completed' | 'failed'
+
+export interface StoryboardJob {
+  job_id: string
+  status: StoryboardJobStatus
+  plan: StoryboardPlan | null
+  reference_images: Record<string, string>
+  scene_images: StoryboardSceneResult[]
+  total_cost: number
+  error?: string
+}
+
+export type StoryboardWSMessageType = 'status' | 'reference_start' | 'reference_complete' | 'reference_failed' | 'scene_start' | 'scene_complete' | 'scene_failed' | 'complete' | 'error'
+
+export interface StoryboardWSMessage {
+  type: StoryboardWSMessageType
+  status?: StoryboardJobStatus
+  character_name?: string  // mapped from backend 'character' field
+  image_url?: string | null
+  scene_number?: number
+  completed_count?: number
+  total_count?: number
+  total_cost?: number
+  step?: number
+  total_steps?: number
+  error?: string
+  message?: string
+  phase?: string
+}

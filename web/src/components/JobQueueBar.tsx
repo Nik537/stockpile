@@ -8,6 +8,7 @@ const TYPE_ICONS: Record<BackgroundJobType, string> = {
   image: '\uD83C\uDFA8',
   'image-edit': '\u270F\uFE0F',
   music: '\uD83C\uDFB5',
+  storyboard: '\uD83D\uDCF7',
 }
 
 function formatElapsed(createdAt: string, completedAt?: string): string {

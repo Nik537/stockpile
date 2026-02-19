@@ -332,3 +332,23 @@ class MusicGenerationResponse(BaseModel):
     duration_seconds: int
     model: str = "stable-audio-2.5"
     cost_estimate: float
+
+
+class StoryboardPlanRequest(BaseModel):
+    """Request body for generating a storyboard plan."""
+
+    idea: str
+    num_scenes: int = 6
+    aspect_ratio: str = "9:16"
+
+
+class StoryboardGenerateRequest(BaseModel):
+    """Request body for generating storyboard images."""
+
+    job_id: str
+    plan: dict
+    ref_model: str = "flux-dev"
+    scene_model: str = "flux-kontext"
+    width: int = 1080
+    height: int = 1920
+    user_reference_images: dict[str, str] | None = None  # character_name -> base64 data URL

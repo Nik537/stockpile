@@ -57,6 +57,9 @@ PRICING_PER_MP = {
     ImageGenerationModel.GEMINI_FLASH: 0.0,
     ImageGenerationModel.NANO_BANANA_PRO: 0.04,
     ImageGenerationModel.QWEN_IMAGE: 0.02,
+    ImageGenerationModel.FLUX_DEV: 0.02,
+    ImageGenerationModel.FLUX_SCHNELL: 0.0024,
+    ImageGenerationModel.FLUX_KONTEXT: 0.02,
 }
 
 # Aspect ratio mapping for Gemini (uses ratios, not pixels)
@@ -340,6 +343,9 @@ class ImageGenerationService:
             "models": [
                 ImageGenerationModel.NANO_BANANA_PRO.value,
                 ImageGenerationModel.QWEN_IMAGE.value,
+                ImageGenerationModel.FLUX_DEV.value,
+                ImageGenerationModel.FLUX_SCHNELL.value,
+                ImageGenerationModel.FLUX_KONTEXT.value,
             ],
         }
 
@@ -703,6 +709,373 @@ class ImageGenerationService:
             )
 
     # =========================================================================
+    # RunPod - Flux Dev (text-to-image generation)
+    # =========================================================================
+
+    async def generate_flux_dev(
+        self, request: ImageGenerationRequest
+    ) -> ImageGenerationResult:
+        """Generate images using Flux Dev via RunPod public endpoint.
+
+        Args:
+            request: The generation request
+
+        Returns:
+            ImageGenerationResult with generated images
+
+        Raises:
+            ImageGenerationServiceError: If generation fails
+        """
+        if not self.is_runpod_configured():
+            raise ImageGenerationServiceError(
+                "RUNPOD_API_KEY not configured. Set it in your .env file."
+            )
+
+        url = f"{RUNPOD_API_BASE}/black-forest-labs-flux-1-dev/runsync"
+
+        headers = {
+            "Authorization": f"Bearer {self.runpod_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "input": {
+                "prompt": request.prompt,
+                "width": request.width,
+                "height": request.height,
+            }
+        }
+
+        if request.seed is not None:
+            payload["input"]["seed"] = request.seed
+
+        logger.info(
+            f"Generating image with Flux Dev ({request.width}x{request.height})"
+        )
+
+        start_time = time.time()
+
+        try:
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result_data = response.json()
+            generation_time_ms = int((time.time() - start_time) * 1000)
+
+            if result_data.get("status") == "FAILED":
+                error_msg = result_data.get("error", "Unknown error")
+                raise ImageGenerationServiceError(
+                    f"Flux Dev generation failed: {error_msg}"
+                )
+
+            output = result_data.get("output", {})
+            images = []
+
+            # Public endpoint returns images array with url
+            for img_data in output.get("images", []):
+                img_url = img_data.get("url", "") if isinstance(img_data, dict) else img_data
+                if img_url:
+                    images.append(
+                        GeneratedImage(
+                            url=img_url,
+                            width=request.width,
+                            height=request.height,
+                            content_type="image/png",
+                            seed=output.get("seed"),
+                        )
+                    )
+
+            # Fallback: image_url
+            if not images and output.get("image_url"):
+                images.append(
+                    GeneratedImage(
+                        url=output["image_url"],
+                        width=request.width,
+                        height=request.height,
+                        content_type="image/png",
+                        seed=output.get("seed"),
+                    )
+                )
+
+            cost = output.get("cost", 0.0)
+            if not cost:
+                cost = self._calculate_cost(
+                    ImageGenerationModel.FLUX_DEV,
+                    request.width,
+                    request.height,
+                    len(images) or 1,
+                )
+
+            logger.info(
+                f"Flux Dev generated {len(images)} image(s) in {generation_time_ms}ms "
+                f"(cost: ${cost:.4f})"
+            )
+
+            return ImageGenerationResult(
+                images=images,
+                model=ImageGenerationModel.FLUX_DEV,
+                prompt=request.prompt,
+                generation_time_ms=generation_time_ms,
+                cost_estimate=cost,
+            )
+
+        except httpx.TimeoutException:
+            raise ImageGenerationServiceError(
+                "Flux Dev request timed out. Try again in a few seconds."
+            )
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", str(e))
+            except Exception:
+                error_detail = e.response.text or str(e)
+            raise ImageGenerationServiceError(f"Flux Dev API error: {error_detail}")
+        except ImageGenerationServiceError:
+            raise
+        except Exception as e:
+            raise ImageGenerationServiceError(f"Flux Dev image generation failed: {e}")
+
+    # =========================================================================
+    # RunPod - Flux Schnell (text-to-image generation)
+    # =========================================================================
+
+    async def generate_flux_schnell(
+        self, request: ImageGenerationRequest
+    ) -> ImageGenerationResult:
+        """Generate images using Flux Schnell via RunPod public endpoint.
+
+        Args:
+            request: The generation request
+
+        Returns:
+            ImageGenerationResult with generated images
+
+        Raises:
+            ImageGenerationServiceError: If generation fails
+        """
+        if not self.is_runpod_configured():
+            raise ImageGenerationServiceError(
+                "RUNPOD_API_KEY not configured. Set it in your .env file."
+            )
+
+        url = f"{RUNPOD_API_BASE}/black-forest-labs-flux-1-schnell/runsync"
+
+        headers = {
+            "Authorization": f"Bearer {self.runpod_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "input": {
+                "prompt": request.prompt,
+                "width": request.width,
+                "height": request.height,
+            }
+        }
+
+        if request.seed is not None:
+            payload["input"]["seed"] = request.seed
+
+        logger.info(
+            f"Generating image with Flux Schnell ({request.width}x{request.height})"
+        )
+
+        start_time = time.time()
+
+        try:
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result_data = response.json()
+            generation_time_ms = int((time.time() - start_time) * 1000)
+
+            if result_data.get("status") == "FAILED":
+                error_msg = result_data.get("error", "Unknown error")
+                raise ImageGenerationServiceError(
+                    f"Flux Schnell generation failed: {error_msg}"
+                )
+
+            output = result_data.get("output", {})
+            images = []
+
+            # Public endpoint returns images array with url
+            for img_data in output.get("images", []):
+                img_url = img_data.get("url", "") if isinstance(img_data, dict) else img_data
+                if img_url:
+                    images.append(
+                        GeneratedImage(
+                            url=img_url,
+                            width=request.width,
+                            height=request.height,
+                            content_type="image/png",
+                            seed=output.get("seed"),
+                        )
+                    )
+
+            # Fallback: image_url
+            if not images and output.get("image_url"):
+                images.append(
+                    GeneratedImage(
+                        url=output["image_url"],
+                        width=request.width,
+                        height=request.height,
+                        content_type="image/png",
+                        seed=output.get("seed"),
+                    )
+                )
+
+            cost = output.get("cost", 0.0)
+            if not cost:
+                cost = self._calculate_cost(
+                    ImageGenerationModel.FLUX_SCHNELL,
+                    request.width,
+                    request.height,
+                    len(images) or 1,
+                )
+
+            logger.info(
+                f"Flux Schnell generated {len(images)} image(s) in {generation_time_ms}ms "
+                f"(cost: ${cost:.4f})"
+            )
+
+            return ImageGenerationResult(
+                images=images,
+                model=ImageGenerationModel.FLUX_SCHNELL,
+                prompt=request.prompt,
+                generation_time_ms=generation_time_ms,
+                cost_estimate=cost,
+            )
+
+        except httpx.TimeoutException:
+            raise ImageGenerationServiceError(
+                "Flux Schnell request timed out. Try again in a few seconds."
+            )
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", str(e))
+            except Exception:
+                error_detail = e.response.text or str(e)
+            raise ImageGenerationServiceError(f"Flux Schnell API error: {error_detail}")
+        except ImageGenerationServiceError:
+            raise
+        except Exception as e:
+            raise ImageGenerationServiceError(f"Flux Schnell image generation failed: {e}")
+
+    # =========================================================================
+    # RunPod - Flux Kontext (image-to-image with reference)
+    # =========================================================================
+
+    async def generate_flux_kontext(
+        self,
+        prompt: str,
+        reference_image_url: str,
+        width: int = 1024,
+        height: int = 1024,
+    ) -> str:
+        """Generate an image using Flux Kontext with a reference image.
+
+        Args:
+            prompt: Text prompt describing the desired image.
+            reference_image_url: URL of the reference image.
+            width: Output image width.
+            height: Output image height.
+
+        Returns:
+            URL of the generated image.
+
+        Raises:
+            ImageGenerationServiceError: If generation fails.
+        """
+        if not self.is_runpod_configured():
+            raise ImageGenerationServiceError(
+                "RUNPOD_API_KEY not configured. Set it in your .env file."
+            )
+
+        url = f"{RUNPOD_API_BASE}/black-forest-labs-flux-1-kontext-dev/runsync"
+
+        headers = {
+            "Authorization": f"Bearer {self.runpod_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "input": {
+                "prompt": prompt,
+                "image_url": reference_image_url,
+                "width": width,
+                "height": height,
+            }
+        }
+
+        logger.info(
+            f"Generating image with Flux Kontext ({width}x{height})"
+        )
+
+        start_time = time.time()
+
+        try:
+            response = await self.client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+
+            result_data = response.json()
+            generation_time_ms = int((time.time() - start_time) * 1000)
+
+            if result_data.get("status") == "FAILED":
+                error_msg = result_data.get("error", "Unknown error")
+                raise ImageGenerationServiceError(
+                    f"Flux Kontext generation failed: {error_msg}"
+                )
+
+            output = result_data.get("output", {})
+
+            # Extract image URL from response
+            image_url = None
+            for img_data in output.get("images", []):
+                img_url = img_data.get("url", "") if isinstance(img_data, dict) else img_data
+                if img_url:
+                    image_url = img_url
+                    break
+
+            if not image_url and output.get("image_url"):
+                image_url = output["image_url"]
+
+            if not image_url and output.get("result"):
+                result_val = output["result"]
+                if isinstance(result_val, str) and result_val.startswith("http"):
+                    image_url = result_val
+
+            if not image_url:
+                raise ImageGenerationServiceError(
+                    "Flux Kontext returned no image URL"
+                )
+
+            logger.info(
+                f"Flux Kontext generated image in {generation_time_ms}ms"
+            )
+
+            return image_url
+
+        except httpx.TimeoutException:
+            raise ImageGenerationServiceError(
+                "Flux Kontext request timed out. Try again in a few seconds."
+            )
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("error", str(e))
+            except Exception:
+                error_detail = e.response.text or str(e)
+            raise ImageGenerationServiceError(f"Flux Kontext API error: {error_detail}")
+        except ImageGenerationServiceError:
+            raise
+        except Exception as e:
+            raise ImageGenerationServiceError(f"Flux Kontext image generation failed: {e}")
+
+    # =========================================================================
     # Gemini (Google) - FREE 500/day
     # =========================================================================
 
@@ -833,6 +1206,10 @@ class ImageGenerationService:
             return await self.generate_runpod(request)
         elif model == ImageGenerationModel.QWEN_IMAGE:
             return await self.generate_qwen_image(request)
+        elif model == ImageGenerationModel.FLUX_DEV:
+            return await self.generate_flux_dev(request)
+        elif model == ImageGenerationModel.FLUX_SCHNELL:
+            return await self.generate_flux_schnell(request)
         else:
             raise ImageGenerationServiceError(f"Unknown model: {model.value}")
 
