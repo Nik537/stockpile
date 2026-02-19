@@ -663,6 +663,72 @@
 }
 
 /* ==========================================================================
+   MOSS-TTSD Per-Speaker Voice Assignment
+   ========================================================================== */
+
+.moss-speaker-voices {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.moss-speaker-voices-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.moss-speaker-voices-header h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.moss-speaker-voices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.moss-speaker-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.moss-speaker-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-primary-400);
+}
+
+.moss-speaker-select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.moss-speaker-select:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+.moss-speaker-select:hover {
+  border-color: var(--color-primary-500);
+}
+
+/* ==========================================================================
    Loading Spinner
    ========================================================================== */
 

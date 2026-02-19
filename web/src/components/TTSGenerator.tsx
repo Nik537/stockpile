@@ -3,6 +3,7 @@ import { useJobQueueStore } from '../stores/useJobQueueStore'
 import VoiceLibrary from './VoiceLibrary'
 import './TTSGenerator.css'
 import { API_BASE } from '../config'
+import { Voice } from '../types'
 
 type TTSModel = 'chatterbox' | 'chatterbox-ext' | 'qwen3' | 'moss-ttsd'
 
@@ -123,6 +124,10 @@ function TTSGenerator() {
   const [mossTemperature, setMossTemperature] = useState(0.9)
   const [mossMaxTokens, setMossMaxTokens] = useState(2000)
 
+  // Per-speaker voice assignment for MOSS-TTSD
+  const [mossSpeakerVoices, setMossSpeakerVoices] = useState<Record<string, string | null>>({})
+  const [voicesList, setVoicesList] = useState<Voice[]>([])
+
   // Completed results array
   const [results, setResults] = useState<TTSResult[]>([])
 
@@ -176,6 +181,22 @@ function TTSGenerator() {
   useEffect(() => {
     checkStatus()
   }, [checkStatus])
+
+  // Fetch voices list for per-speaker assignment
+  useEffect(() => {
+    const fetchVoices = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/tts/voices`)
+        if (response.ok) {
+          const data: Voice[] = await response.json()
+          setVoicesList(data)
+        }
+      } catch (e) {
+        console.error('Failed to fetch voices:', e)
+      }
+    }
+    fetchVoices()
+  }, [])
 
   // Sync playback speed to audio elements
   useEffect(() => {
@@ -250,7 +271,16 @@ function TTSGenerator() {
       formData.append('text', text.trim())
       formData.append('mode', getModeForModel(selectedModel))
 
-      if (selectedVoiceId) {
+      // Per-speaker voices for MOSS-TTSD multi-speaker, otherwise single voice
+      if (selectedModel === 'moss-ttsd' && mossSpeakers > 1) {
+        for (let i = 1; i <= mossSpeakers; i++) {
+          const tag = `S${i}`
+          const voiceId = mossSpeakerVoices[tag]
+          if (voiceId) {
+            formData.append(`voice_id_s${i}`, voiceId)
+          }
+        }
+      } else if (selectedVoiceId) {
         formData.append('voice_id', selectedVoiceId)
       }
 
@@ -384,11 +414,48 @@ function TTSGenerator() {
       </div>
 
       {/* Voice Selection */}
-      <VoiceLibrary
-        selectedVoiceId={selectedVoiceId}
-        onSelectVoice={setSelectedVoiceId}
-        disabled={false}
-      />
+      {selectedModel === 'moss-ttsd' && mossSpeakers > 1 ? (
+        <div className="moss-speaker-voices">
+          <div className="moss-speaker-voices-header">
+            <h3>Speaker Voice Assignment</h3>
+            <span className="voice-count">{mossSpeakers} speakers</span>
+          </div>
+          <div className="moss-speaker-voices-grid">
+            {Array.from({ length: mossSpeakers }, (_, i) => {
+              const tag = `S${i + 1}`
+              return (
+                <div key={tag} className="moss-speaker-slot">
+                  <label htmlFor={`moss-voice-${tag}`} className="moss-speaker-label">
+                    [{tag}]
+                  </label>
+                  <select
+                    id={`moss-voice-${tag}`}
+                    className="moss-speaker-select"
+                    value={mossSpeakerVoices[tag] ?? ''}
+                    onChange={(e) =>
+                      setMossSpeakerVoices(prev => ({
+                        ...prev,
+                        [tag]: e.target.value || null,
+                      }))
+                    }
+                  >
+                    <option value="">No Clone (Default)</option>
+                    {voicesList.map(v => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <VoiceLibrary
+          selectedVoiceId={selectedVoiceId}
+          onSelectVoice={setSelectedVoiceId}
+          disabled={false}
+        />
+      )}
 
       {/* Text Input + Parameters */}
       <div className="tts-form">

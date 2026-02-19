@@ -56,6 +56,7 @@ async def run_tts_generation(
     num_speakers: int = 1,
     moss_ttsd_mode: str = "generation",
     moss_ttsd_max_tokens: int = 2000,
+    voice_ref_paths: dict[str, str] | None = None,
 ) -> None:
     """Run TTS generation in the background.
 
@@ -79,6 +80,7 @@ async def run_tts_generation(
         num_speakers: MOSS-TTSD number of speakers (1-5)
         moss_ttsd_mode: MOSS-TTSD inference mode
         moss_ttsd_max_tokens: MOSS-TTSD max tokens to generate
+        voice_ref_paths: Per-speaker voice reference paths for MOSS-TTSD
     """
     if job_id not in tts_jobs:
         logger.error(f"TTS job {job_id} not found")
@@ -149,13 +151,13 @@ async def run_tts_generation(
             )
 
         elif mode == "moss-ttsd":
-            # For single voice reference, map to S1
-            voice_ref_paths = None
-            if voice_path:
-                voice_ref_paths = {"S1": voice_path}
+            # Use per-speaker voice refs if provided, else fall back to single voice
+            effective_voice_refs = voice_ref_paths
+            if not effective_voice_refs and voice_path:
+                effective_voice_refs = {"S1": voice_path}
             audio_bytes = await service.generate_moss_ttsd(
                 text=text,
-                voice_ref_paths=voice_ref_paths,
+                voice_ref_paths=effective_voice_refs,
                 language=language,
                 temperature=temperature,
                 max_tokens=moss_ttsd_max_tokens,
@@ -301,6 +303,12 @@ async def generate_tts(
     num_speakers: int = Form(1),
     moss_ttsd_mode: str = Form("generation"),
     moss_ttsd_max_tokens: int = Form(2000),
+    # Per-speaker voice IDs for MOSS-TTSD
+    voice_id_s1: str | None = Form(None),
+    voice_id_s2: str | None = Form(None),
+    voice_id_s3: str | None = Form(None),
+    voice_id_s4: str | None = Form(None),
+    voice_id_s5: str | None = Form(None),
 ):
     """Start async TTS generation. Returns 202 with job_id immediately.
 
@@ -422,6 +430,25 @@ async def generate_tts(
             ),
         )
 
+    # Collect per-speaker voice paths for MOSS-TTSD
+    moss_voice_ref_paths = None
+    if mode == "moss-ttsd":
+        per_speaker_ids = {
+            "S1": voice_id_s1, "S2": voice_id_s2, "S3": voice_id_s3,
+            "S4": voice_id_s4, "S5": voice_id_s5,
+        }
+        library = get_voice_library()
+        moss_voice_ref_paths = {}
+        for tag, vid in per_speaker_ids.items():
+            if vid:
+                v = library.get_voice(vid)
+                if v:
+                    audio_path = library.get_audio_path(vid)
+                    if audio_path:
+                        moss_voice_ref_paths[tag] = str(audio_path)
+        if not moss_voice_ref_paths:
+            moss_voice_ref_paths = None
+
     # Create job
     job_id = uuid.uuid4().hex[:12]
     job = {
@@ -460,6 +487,7 @@ async def generate_tts(
             num_speakers=num_speakers,
             moss_ttsd_mode=moss_ttsd_mode,
             moss_ttsd_max_tokens=moss_ttsd_max_tokens,
+            voice_ref_paths=moss_voice_ref_paths,
         )
     )
     _background_tasks.add(task)
