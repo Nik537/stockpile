@@ -1,0 +1,59 @@
+name: Build and Push MOSS-TTSD Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'runpod-moss-ttsd-worker/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: techtawn/moss-ttsd-runpod
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=long
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./runpod-moss-ttsd-worker
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Image digest
+        run: echo "Image pushed with digest ${{ steps.meta.outputs.digest }}"
+
+      - name: Write next steps summary
+        run: |
+          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to https://runpod.io/console/serverless and create endpoint with image: techtawn/moss-ttsd-runpod:latest" >> $GITHUB_STEP_SUMMARY
+          echo "2. Set RUNPOD_MOSS_TTSD_ENDPOINT_ID in Render dashboard env vars" >> $GITHUB_STEP_SUMMARY
