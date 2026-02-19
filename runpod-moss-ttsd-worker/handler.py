@@ -74,8 +74,7 @@ def _ensure_model_loaded():
                 trust_remote_code=True,
                 codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
             )
-            # Move audio tokenizer to GPU
-            PROCESSOR.audio_tokenizer = PROCESSOR.audio_tokenizer.to(DEVICE)
+            # NOTE: audio_tokenizer stays on CPU to save VRAM (model needs ~16GB in bf16)
             print(f"  Processor loaded OK (sampling_rate={PROCESSOR.model_config.sampling_rate})")
         except Exception:
             _model_load_error = f"Processor load failed:\n{traceback.format_exc()}"
