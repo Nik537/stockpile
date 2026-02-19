@@ -27,36 +27,53 @@ import soundfile as sf
 # --- Device selection ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# --- Load MOSS-TTSD model at cold start ---
-print("Loading MOSS-TTSD model and audio tokenizer...")
+# --- Lazy model loading ---
+# Models are loaded on first request instead of at startup. This allows
+# the RunPod handler to register and send heartbeats while the (potentially
+# large) model download and loading happens during the first job.
+PROCESSOR = None
+MODEL = None
+_model_lock = threading.Lock()
 
-from transformers import AutoModel, AutoProcessor
 
-# Try FlashAttention2 first, fall back to SDPA
-attn_impl = "sdpa"
-if torch.cuda.is_available():
-    try:
-        import importlib
-        importlib.import_module("flash_attn")
-        attn_impl = "flash_attention_2"
-        print("Using FlashAttention2")
-    except ImportError:
-        print("FlashAttention2 not available, using SDPA attention")
+def _ensure_model_loaded():
+    """Load MOSS-TTSD model lazily on first request."""
+    global PROCESSOR, MODEL
+    if MODEL is not None:
+        return
 
-PROCESSOR = AutoProcessor.from_pretrained(
-    "OpenMOSS-Team/MOSS-TTSD-v1.0",
-    trust_remote_code=True,
-    codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
-)
+    with _model_lock:
+        if MODEL is not None:
+            return
 
-MODEL = AutoModel.from_pretrained(
-    "OpenMOSS-Team/MOSS-TTSD-v1.0",
-    trust_remote_code=True,
-    attn_implementation=attn_impl,
-    torch_dtype=torch.bfloat16,
-).to(DEVICE)
+        print("Loading MOSS-TTSD model and audio tokenizer...")
+        from transformers import AutoModel, AutoProcessor
 
-print(f"MOSS-TTSD model loaded on {DEVICE}!")
+        # Try FlashAttention2 first, fall back to SDPA
+        attn_impl = "sdpa"
+        if torch.cuda.is_available():
+            try:
+                import importlib
+                importlib.import_module("flash_attn")
+                attn_impl = "flash_attention_2"
+                print("Using FlashAttention2")
+            except ImportError:
+                print("FlashAttention2 not available, using SDPA attention")
+
+        PROCESSOR = AutoProcessor.from_pretrained(
+            "OpenMOSS-Team/MOSS-TTSD-v1.0",
+            trust_remote_code=True,
+            codec_path="OpenMOSS-Team/MOSS-Audio-Tokenizer",
+        )
+
+        MODEL = AutoModel.from_pretrained(
+            "OpenMOSS-Team/MOSS-TTSD-v1.0",
+            trust_remote_code=True,
+            attn_implementation=attn_impl,
+            torch_dtype=torch.bfloat16,
+        ).to(DEVICE)
+
+        print(f"MOSS-TTSD model loaded on {DEVICE}!")
 
 
 def generate_audio_threaded(text, voice_references, language, temperature,
@@ -78,6 +95,8 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
     def _generate():
         try:
+            _ensure_model_loaded()
+
             # Prepare voice reference audio codes if provided
             reference_audio_codes = None
             prompt_audio_codes = None
@@ -232,9 +251,9 @@ def handler(job):
     """
     job_input = job["input"]
 
-    # Diagnostic ping
+    # Diagnostic ping (don't load model for ping - just report status)
     if job_input.get("ping"):
-        return {"pong": True, "device": str(DEVICE)}
+        return {"pong": True, "device": str(DEVICE), "model_loaded": MODEL is not None}
 
     text = job_input.get("text", "")
     language = job_input.get("language", "en")
