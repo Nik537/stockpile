@@ -203,10 +203,13 @@ def generate_audio_threaded(text, voice_references, language, temperature,
                     audio_repetition_penalty=1.1,
                 )
 
-            print(f"Generation complete (output shape: {outputs.shape}), decoding...")
-
-            # Move outputs to CPU for decoding (audio tokenizer is on CPU)
-            outputs_cpu = outputs.cpu()
+            # Handle list or tensor outputs
+            if isinstance(outputs, list):
+                print(f"Generation complete (list of {len(outputs)} items), decoding...")
+                outputs_cpu = outputs  # Already CPU-friendly
+            else:
+                print(f"Generation complete (shape: {outputs.shape}), decoding...")
+                outputs_cpu = outputs.cpu()
 
             # Decode outputs to audio
             audio_data = None
