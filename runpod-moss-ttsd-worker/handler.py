@@ -205,9 +205,17 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
             print(f"Generation complete (output shape: {outputs.shape}), decoding...")
 
+            # Move outputs to CPU for decoding (audio tokenizer is on CPU)
+            outputs_cpu = outputs.cpu()
+
             # Decode outputs to audio
             audio_data = None
-            decoded_messages = list(PROCESSOR.decode(outputs))
+            try:
+                decoded_messages = list(PROCESSOR.decode(outputs_cpu))
+            except Exception as decode_err:
+                import traceback as tb
+                result["error"] = f"Decode failed: {decode_err}\n{tb.format_exc()}"
+                return
             print(f"Decoded {len(decoded_messages)} message(s)")
 
             for idx, message in enumerate(decoded_messages):
@@ -278,7 +286,7 @@ def generate_audio_threaded(text, voice_references, language, temperature,
         except Exception as e:
             import traceback
             traceback.print_exc()
-            result["error"] = str(e)
+            result["error"] = str(e) or repr(e) or f"Unknown error: {type(e).__name__}"
         finally:
             result["done"] = True
 
@@ -394,9 +402,9 @@ def handler(job):
 
         thread.join(timeout=600)
 
-        if result["error"]:
+        if result["error"] is not None:
             print(f"Error: {result['error']}")
-            return {"error": result["error"]}
+            return {"error": result["error"] or "Unknown thread error"}
 
         audio = result["audio"]
         sr = result["sr"] or 32000
