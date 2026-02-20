@@ -985,7 +985,7 @@ class TTSService:
             num_speakers: Number of speakers (1-5).
 
         Returns:
-            Audio bytes (WAV format at 32kHz).
+            Audio bytes (WAV format at 24kHz).
         """
         if not self.is_moss_ttsd_configured():
             raise TTSServiceError(
