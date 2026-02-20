@@ -108,8 +108,6 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
     def _generate():
         try:
-            import torchaudio
-
             load_err = _ensure_model_loaded()
             if load_err:
                 result["error"] = load_err
@@ -117,27 +115,39 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
             sample_rate = int(PROCESSOR.model_config.sampling_rate)
 
+            def _load_audio_ref(audio_b64, tag, tmpdir):
+                """Load a base64 audio reference into a torch tensor [1, T]."""
+                audio_bytes = base64.b64decode(audio_b64)
+                ref_path = os.path.join(tmpdir, f"ref_{tag}.wav")
+                with open(ref_path, "wb") as f:
+                    f.write(audio_bytes)
+                data, sr = sf.read(ref_path, dtype="float32")
+                # soundfile returns (samples,) for mono, (samples, channels) for multi
+                wav = torch.from_numpy(data)
+                if wav.ndim == 1:
+                    wav = wav.unsqueeze(0)  # [1, T]
+                else:
+                    wav = wav.T  # [channels, T]
+                    wav = wav.mean(dim=0, keepdim=True)  # mono
+                # Resample if needed
+                if sr != sample_rate:
+                    # Simple linear interpolation resample
+                    target_len = int(wav.shape[-1] * sample_rate / sr)
+                    wav = torch.nn.functional.interpolate(
+                        wav.unsqueeze(0), size=target_len, mode="linear", align_corners=False
+                    ).squeeze(0)
+                print(f"Loaded voice reference for {tag}: {wav.shape}, sr={sr}->{sample_rate}")
+                return wav
+
             # Prepare voice reference audio codes if provided
             reference_audio_codes = None
             prompt_audio_codes = None
 
             if voice_references and inference_mode in ("voice_clone", "voice_clone_and_continuation"):
-                # Decode and encode all voice references using correct API
                 ref_wavs = []
                 for speaker_tag, audio_b64 in voice_references.items():
-                    audio_bytes = base64.b64decode(audio_b64)
-                    ref_path = os.path.join(tmpdir, f"ref_{speaker_tag}.wav")
-                    with open(ref_path, "wb") as f:
-                        f.write(audio_bytes)
-                    wav, sr = torchaudio.load(ref_path)
-                    # Convert to mono
-                    if wav.shape[0] > 1:
-                        wav = wav.mean(dim=0, keepdim=True)
-                    # Resample to model's sampling rate
-                    if sr != sample_rate:
-                        wav = torchaudio.functional.resample(wav, sr, sample_rate)
+                    wav = _load_audio_ref(audio_b64, speaker_tag, tmpdir)
                     ref_wavs.append(wav)
-                    print(f"Loaded voice reference for {speaker_tag}: {wav.shape}")
 
                 if ref_wavs:
                     reference_audio_codes = PROCESSOR.encode_audios_from_wav(
@@ -155,15 +165,7 @@ def generate_audio_threaded(text, voice_references, language, temperature,
             elif voice_references and inference_mode == "continuation":
                 # Use first reference as continuation prompt
                 for speaker_tag, audio_b64 in voice_references.items():
-                    audio_bytes = base64.b64decode(audio_b64)
-                    ref_path = os.path.join(tmpdir, f"prompt_{speaker_tag}.wav")
-                    with open(ref_path, "wb") as f:
-                        f.write(audio_bytes)
-                    wav, sr = torchaudio.load(ref_path)
-                    if wav.shape[0] > 1:
-                        wav = wav.mean(dim=0, keepdim=True)
-                    if sr != sample_rate:
-                        wav = torchaudio.functional.resample(wav, sr, sample_rate)
+                    wav = _load_audio_ref(audio_b64, speaker_tag, tmpdir)
                     prompt_audio_codes = PROCESSOR.encode_audios_from_wav(
                         [wav], sampling_rate=sample_rate
                     )[0]
