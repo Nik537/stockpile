@@ -285,8 +285,10 @@ def generate_audio_threaded(text, voice_references, language, temperature,
 
         except Exception as e:
             import traceback
-            traceback.print_exc()
-            result["error"] = str(e) or repr(e) or f"Unknown error: {type(e).__name__}"
+            tb_str = traceback.format_exc()
+            print(tb_str)
+            msg = str(e) or repr(e) or f"Unknown error: {type(e).__name__}"
+            result["error"] = f"{msg}\n\nTraceback:\n{tb_str}"[:1500]
         finally:
             result["done"] = True
 
