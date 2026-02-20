@@ -57,6 +57,7 @@ async def run_tts_generation(
     moss_ttsd_mode: str = "generation",
     moss_ttsd_max_tokens: int = 2000,
     voice_ref_paths: dict[str, str] | None = None,
+    optimize_text: bool = False,
 ) -> None:
     """Run TTS generation in the background.
 
@@ -96,6 +97,26 @@ async def run_tts_generation(
             "status": "processing",
             "job_id": job_id,
         })
+
+        # Optimize text for TTS if requested
+        if optimize_text:
+            try:
+                ai_service = get_ai_service()
+                if ai_service.api_key:
+                    original_text = text
+                    text = ai_service.optimize_text_for_tts(text)
+                    logger.info(f"TTS text optimized for job {job_id}")
+                    job["optimized_text"] = text
+                    await notify_tts_clients(job_id, {
+                        "type": "status",
+                        "status": "processing",
+                        "job_id": job_id,
+                        "message": "Text optimized for speech",
+                    })
+                else:
+                    logger.warning("Text optimization requested but Gemini API key not configured, skipping")
+            except Exception as e:
+                logger.warning(f"Text optimization failed, using original text: {e}")
 
         # Generate audio based on mode
         audio_bytes: bytes
@@ -303,6 +324,8 @@ async def generate_tts(
     num_speakers: int = Form(1),
     moss_ttsd_mode: str = Form("generation"),
     moss_ttsd_max_tokens: int = Form(2000),
+    # LLM text optimization
+    optimize_text: str = Form("false"),
     # Per-speaker voice IDs for MOSS-TTSD
     voice_id_s1: str | None = Form(None),
     voice_id_s2: str | None = Form(None),
@@ -337,6 +360,7 @@ async def generate_tts(
     # Parse boolean form fields safely (bool("false") == True in Python!)
     denoising_enabled = enable_denoising.lower() in ("true", "1", "yes", "on")
     whisper_enabled = enable_whisper_validation.lower() in ("true", "1", "yes", "on")
+    optimize_text_enabled = optimize_text.lower() in ("true", "1", "yes", "on")
 
     logger.info(
         f"TTS generate request: mode={mode}, exaggeration={exaggeration}, "
@@ -345,7 +369,8 @@ async def generate_tts(
         f"whisper={whisper_enabled}, voice_id={voice_id}, "
         f"language={language}, speaker={speaker_name}, top_p={top_p}, "
         f"num_speakers={num_speakers}, moss_ttsd_mode={moss_ttsd_mode}, "
-        f"moss_ttsd_max_tokens={moss_ttsd_max_tokens}"
+        f"moss_ttsd_max_tokens={moss_ttsd_max_tokens}, "
+        f"optimize_text={optimize_text_enabled}"
     )
 
     valid_modes = ("runpod", "qwen3", "chatterbox-ext", "moss-ttsd", "colab")
@@ -488,6 +513,7 @@ async def generate_tts(
             moss_ttsd_mode=moss_ttsd_mode,
             moss_ttsd_max_tokens=moss_ttsd_max_tokens,
             voice_ref_paths=moss_voice_ref_paths,
+            optimize_text=optimize_text_enabled,
         )
     )
     _background_tasks.add(task)

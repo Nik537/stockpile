@@ -33,6 +33,7 @@ from services.prompts import (
     STYLE_ANALYZER,
     CONTEXT_QUESTION_GENERATOR,
     BULK_IMAGE_PROMPT_GENERATOR,
+    TTS_TEXT_OPTIMIZER,
 )
 
 logger = logging.getLogger(__name__)
@@ -1884,3 +1885,44 @@ SOURCE VIDEO STYLE:
         except Exception as e:
             logger.error(f"Bulk image prompt generation failed: {e}")
             raise
+
+    # =========================================================================
+    # TTS Text Optimization
+    # =========================================================================
+
+    @retry_api_call(max_retries=3, base_delay=1.0)
+    def optimize_text_for_tts(self, text: str) -> str:
+        """Optimize text for natural-sounding TTS output using Gemini.
+
+        Rewrites abbreviations, numbers, punctuation, and formatting so
+        the text sounds natural when spoken by a TTS engine. The semantic
+        meaning is preserved.
+
+        Args:
+            text: Raw text to optimize for speech.
+
+        Returns:
+            Optimized text ready for TTS input.
+        """
+        if not text or not text.strip():
+            return text
+
+        prompt = TTS_TEXT_OPTIMIZER.format(text=text)
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+            ),
+        )
+
+        if not response.text:
+            logger.warning("TTS text optimization returned empty response, using original text")
+            return text
+
+        optimized = response.text.strip()
+        logger.info(
+            f"TTS text optimized: {len(text)} chars -> {len(optimized)} chars"
+        )
+        return optimized
