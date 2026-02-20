@@ -185,8 +185,8 @@ def generate_audio_threaded(text, voice_references, language, temperature,
                     PROCESSOR.build_assistant_message(audio_codes_list=[prompt_audio_codes])
                 )
 
-            # Determine processor mode
-            proc_mode = "continuation" if prompt_audio_codes is not None else "text_to_audio"
+            # Determine processor mode (only "generation" and "continuation" are valid)
+            proc_mode = "continuation" if prompt_audio_codes is not None else "generation"
 
             # Process and generate
             batch = PROCESSOR(conversations, mode=proc_mode)
