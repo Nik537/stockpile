@@ -1021,7 +1021,8 @@ class TTSService:
         )
 
         payload = {"input": input_data}
-        output = await self._poll_runpod_job(self.runpod_moss_ttsd_endpoint_id, payload)
+        # 900s timeout: cold start can take 8+ min (image pull + 16GB model download)
+        output = await self._poll_runpod_job(self.runpod_moss_ttsd_endpoint_id, payload, max_wait=900)
 
         if "audio_base64" not in output:
             raise TTSServiceError("No audio returned from MOSS-TTSD")

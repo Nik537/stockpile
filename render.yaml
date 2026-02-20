@@ -19,7 +19,7 @@ services:
       - key: RUNPOD_CHATTERBOX_EXT_ENDPOINT_ID
         sync: false
       - key: RUNPOD_MOSS_TTSD_ENDPOINT_ID
-        value: eosk8deptvm5sa
+        value: 1t7x6or4zdld67
       - key: YOUTUBE_API_KEY
         sync: false
       - key: PEXELS_API_KEY
