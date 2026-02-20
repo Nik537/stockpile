@@ -222,68 +222,35 @@ def generate_audio_threaded(text, voice_references, language, temperature,
             print(f"Decoded {len(decoded_messages)} message(s)")
 
             for idx, message in enumerate(decoded_messages):
-                msg_type = type(message).__name__
-                msg_attrs = [a for a in dir(message) if not a.startswith("_")]
-                print(f"  msg[{idx}]: type={msg_type}, attrs={msg_attrs[:15]}")
+                print(f"  msg[{idx}]: type={type(message).__name__}")
 
-                # Try audio_codes_list (documented API)
+                # Extract audio tensor from message
+                audio_tensor = None
                 if hasattr(message, "audio_codes_list") and message.audio_codes_list:
                     audio_tensor = message.audio_codes_list[0]
-                    print(f"  Found audio_codes_list[0]: shape={audio_tensor.shape}, dtype={audio_tensor.dtype}")
-                    if audio_tensor.dim() == 1:
-                        audio_tensor = audio_tensor.unsqueeze(0)
-                    out_path = os.path.join(tmpdir, "output.wav")
-                    torchaudio.save(out_path, audio_tensor.cpu(), sample_rate)
-                    audio_data, _ = sf.read(out_path)
-                    print(f"  Saved audio: {audio_data.shape}, sr={sample_rate}")
-                    break
-
-                # Try audio attribute
-                if hasattr(message, "audio") and message.audio is not None:
+                    print(f"  audio_codes_list[0]: shape={audio_tensor.shape}, dtype={audio_tensor.dtype}")
+                elif hasattr(message, "audio") and message.audio is not None:
                     audio_tensor = message.audio
-                    print(f"  Found .audio: type={type(audio_tensor).__name__}")
-                    if isinstance(audio_tensor, torch.Tensor):
-                        if audio_tensor.dim() == 1:
-                            audio_tensor = audio_tensor.unsqueeze(0)
-                        out_path = os.path.join(tmpdir, "output.wav")
-                        torchaudio.save(out_path, audio_tensor.cpu(), sample_rate)
-                        audio_data, _ = sf.read(out_path)
-                        break
-                    elif isinstance(audio_tensor, np.ndarray):
-                        audio_data = audio_tensor
-                        break
+                    print(f"  .audio: type={type(audio_tensor).__name__}")
 
-                # Try dict-like access
-                if isinstance(message, dict):
-                    print(f"  Dict keys: {list(message.keys())}")
-                    for key in ("audio", "audio_codes", "audio_codes_list", "wav"):
-                        if key in message:
-                            val = message[key]
-                            print(f"  Found dict[{key}]: type={type(val).__name__}")
-                            if isinstance(val, torch.Tensor):
-                                if val.dim() == 1:
-                                    val = val.unsqueeze(0)
-                                out_path = os.path.join(tmpdir, "output.wav")
-                                torchaudio.save(out_path, val.cpu(), sample_rate)
-                                audio_data, _ = sf.read(out_path)
-                                break
-                    if audio_data is not None:
-                        break
+                if audio_tensor is not None and isinstance(audio_tensor, torch.Tensor):
+                    # Convert tensor to numpy for soundfile
+                    wav = audio_tensor.cpu().float().numpy()
+                    if wav.ndim == 2:
+                        wav = wav.squeeze(0)  # Remove batch dim if present
+                    audio_data = wav
+                    print(f"  Audio extracted: {audio_data.shape}, sr={sample_rate}")
+                    break
 
             if audio_data is not None and isinstance(audio_data, np.ndarray) and audio_data.size > 0:
                 result["audio"] = audio_data
                 result["sr"] = sample_rate
             else:
-                # Return debug info as error
-                debug = f"No audio found in {len(decoded_messages)} messages. "
+                debug = f"No audio in {len(decoded_messages)} messages. "
                 for idx, m in enumerate(decoded_messages):
                     debug += f"msg[{idx}]: type={type(m).__name__}, "
                     if hasattr(m, "audio_codes_list"):
-                        debug += f"audio_codes_list={m.audio_codes_list}, "
-                    if hasattr(m, "audio"):
-                        debug += f"audio={type(m.audio).__name__ if m.audio is not None else None}, "
-                    if isinstance(m, dict):
-                        debug += f"keys={list(m.keys())}, "
+                        debug += f"acl={bool(m.audio_codes_list)}, "
                 result["error"] = debug[:500]
 
         except Exception as e:
